@@ -1,3 +1,4 @@
 node_modules/
 *.log
 .hud-tmp/
+/.vs/claude-hud.slnx/FileContentIndex
