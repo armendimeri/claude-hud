@@ -2,3 +2,4 @@ node_modules/
 *.log
 .hud-tmp/
 /.vs/claude-hud/FileContentIndex
+/.vs/slnx.sqlite
