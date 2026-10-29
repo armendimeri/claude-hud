@@ -423,6 +423,24 @@ Every visual choice serves that order. Spectacle is reserved for what is live; e
       colour alone.
 - [ ] The hero screenshot is good enough for the top of the README, and shows the network view with a subagent tree.
 
+### 6.8 Alive (D14, added by the user during P2)
+
+The user wants the page to look **alive at rest**, full cinematic. Motion has three layers:
+1. **Ambient** (not driven by data): reactor heartbeat, a radar sweep over the network, nodes that float, grid
+   shimmer, mouse parallax, drifting particles, holographic flicker on panel edges, glitch transitions. Slow (4–12 s
+   cycles) and dim, so it never competes with layer 3.
+2. **Data:** everything that moves because something happened (sparks for tool calls, flowing dashes to running
+   children, return pulses, rolling counters, filling rings, the ticker).
+3. **Alert:** needs-you, blocked, bounced. The only fast, bright, red motion.
+
+An **EFFECTS** toggle in the top bar (remembered in the browser, on by default) turns layer 1 off; layers 2 and 3
+stay. `prefers-reduced-motion` turns layer 1 off and applies §6.5's reduced-motion rules to layer 2.
+
+This replaces, for layer 1 only: §6.1 "everything at rest is calm and flat", the "three moving things" calm rules
+of §6.4 and §6.5 (they still apply to layer 2), and the checklist item "nothing is decorative without carrying
+information. Glow appears only on live things". The other checklist items still hold with effects on, in
+particular the two-second questions and idle CPU under 5%.
+
 ## 7. Phases and agents
 
 | # | Agent | Scope | Size |

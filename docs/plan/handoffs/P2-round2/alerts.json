@@ -1,0 +1,180 @@
+{
+ "pressed": [
+  "Effects=true",
+  "Voice=true",
+  "Sound=true",
+  "Notifications=true"
+ ],
+ "reactor": "alert",
+ "banners": [
+  "Needs youFidiaCRMQuotation wizard: totals, VAT rows and the discount linePermission: Bash8:59",
+  "Needs youImPOS-MauiPhone app phase 7: battery and Xiaomi autostart switches, runbook for the real-ph"
+ ],
+ "voices": [
+  "Microsoft David - English (United States)",
+  "Microsoft Mark - English (United States)",
+  "Microsoft Zira - English (United States)"
+ ],
+ "notify": [
+  {
+   "at": 1793310207287,
+   "title": "ImPOS-Maui needs you",
+   "body": "Question for you · Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners"
+  },
+  {
+   "at": 1793310237505,
+   "title": "Customer change history and change requests: P2 handed off",
+   "body": "WasteManagement2 · History tab and header"
+  },
+  {
+   "at": 1793310252635,
+   "title": "ImPOS-Maui needs you",
+   "body": "Question for you · Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners"
+  },
+  {
+   "at": 1793310257699,
+   "title": "Customer change history and change requests: P3 handed off",
+   "body": "WasteManagement2 · Change requests in the service"
+  }
+ ],
+ "shown": [
+  "ImPOS-Maui needs you",
+  "Customer change history and change requests: P2 handed off",
+  "ImPOS-Maui needs you",
+  "Customer change history and change requests: P3 handed off"
+ ],
+ "speak": [
+  {
+   "at": 1793310205930,
+   "text": "Voice announcements on",
+   "voice": "Microsoft David - English (United States)"
+  },
+  {
+   "at": 1793310209932,
+   "text": "ImPOS-Maui has a question for you",
+   "voice": "Microsoft David - English (United States)"
+  },
+  {
+   "at": 1793310237505,
+   "text": "Phase P2 handed off",
+   "voice": "Microsoft David - English (United States)"
+  },
+  {
+   "at": 1793310252635,
+   "text": "ImPOS-Maui has a question for you",
+   "voice": "Microsoft David - English (United States)"
+  },
+  {
+   "at": 1793310257699,
+   "text": "Phase P3 handed off",
+   "voice": "Microsoft David - English (United States)"
+  }
+ ],
+ "tones": [
+  {
+   "at": 1793310205993,
+   "hz": 1046
+  },
+  {
+   "at": 1793310207286,
+   "hz": 740
+  },
+  {
+   "at": 1793310207286,
+   "hz": 554
+  },
+  {
+   "at": 1793310214367,
+   "hz": 523
+  },
+  {
+   "at": 1793310214367,
+   "hz": 784
+  },
+  {
+   "at": 1793310215367,
+   "hz": 1046
+  },
+  {
+   "at": 1793310217373,
+   "hz": 659
+  },
+  {
+   "at": 1793310217373,
+   "hz": 880
+  },
+  {
+   "at": 1793310224411,
+   "hz": 523
+  },
+  {
+   "at": 1793310224411,
+   "hz": 784
+  },
+  {
+   "at": 1793310225408,
+   "hz": 1046
+  },
+  {
+   "at": 1793310234498,
+   "hz": 523
+  },
+  {
+   "at": 1793310234498,
+   "hz": 784
+  },
+  {
+   "at": 1793310235503,
+   "hz": 1046
+  },
+  {
+   "at": 1793310237505,
+   "hz": 659
+  },
+  {
+   "at": 1793310237505,
+   "hz": 880
+  },
+  {
+   "at": 1793310244583,
+   "hz": 523
+  },
+  {
+   "at": 1793310244583,
+   "hz": 784
+  },
+  {
+   "at": 1793310245591,
+   "hz": 1046
+  },
+  {
+   "at": 1793310252635,
+   "hz": 740
+  },
+  {
+   "at": 1793310252635,
+   "hz": 554
+  },
+  {
+   "at": 1793310254658,
+   "hz": 523
+  },
+  {
+   "at": 1793310254658,
+   "hz": 784
+  },
+  {
+   "at": 1793310255673,
+   "hz": 1046
+  },
+  {
+   "at": 1793310257699,
+   "hz": 659
+  },
+  {
+   "at": 1793310257699,
+   "hz": 880
+  }
+ ],
+ "hiddenAt": 1793310206578
+}

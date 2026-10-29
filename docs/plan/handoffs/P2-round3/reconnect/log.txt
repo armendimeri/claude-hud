@@ -1,0 +1,9 @@
+0.1s server up {"pid":11244}
+3.7s loaded {"stream":"live","conn":null,"stale":false,"feed":["00:11:14HUDClaude HUDSYSTEMS ONLINE","00:11:11Toolclaude-hudBash · cd \"C:/Users/armen/source/repos/armendimeri/claude-hud\" && rm"],"cards":3}
+8.8s new feed line without reload {"line":"00:11:20Toolclaude-hudBash · curl -s http://127.0.0.1:7783/api/state | node -e 'let s=\"\";p"}
+8.9s server killed
+11.9s 3 s after kill {"stream":"reconnecting","conn":"Connection lost · reconnectinglast update 3s agoRetry now","stale":true,"feed":["00:11:20Toolclaude-hudBash · curl -s http://127.0.0.1:7783/api/state | node -e 'let s=\"\";p","00:11:14HUDClaude HUDSYSTEMS ONLINE","00:11:11Toolclaude-hudBash · cd \"C:/Users/armen/source/repos/armendimeri/claude-hud\" && rm"],"cards":3}
+22.1s 13 s after kill {"stream":"down","conn":"HUD server not answeringlast update 13s agoRetry now","stale":true,"feed":["00:11:20Toolclaude-hudBash · curl -s http://127.0.0.1:7783/api/state | node -e 'let s=\"\";p","00:11:14HUDClaude HUDSYSTEMS ONLINE","00:11:11Toolclaude-hudBash · cd \"C:/Users/armen/source/repos/armendimeri/claude-hud\" && rm"],"cards":3}
+25.3s stream state each second after kill ["reconnecting","reconnecting","reconnecting","reconnecting","reconnecting","reconnecting","reconnecting","reconnecting","reconnecting","down","down","down","down","down","down","down"]
+25.3s server restarted {"pid":7692}
+27.4s recovered {"stream":"live","conn":null,"stale":false,"feed":["00:11:20Toolclaude-hudBash · curl -s http://127.0.0.1:7783/api/state | node -e 'let s=\"\";p","00:11:14HUDClaude HUDSYSTEMS ONLINE","00:11:11Toolclaude-hudBash · cd \"C:/Users/armen/source/repos/armendimeri/claude-hud\" && rm"],"cards":3}

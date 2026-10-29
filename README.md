@@ -11,7 +11,10 @@ every project:
 It's one file, `hud.mjs`, using Node 22 built-ins only: there's no `npm install` and no build step. It makes no model
 or API calls, so it costs no Claude usage. It listens on 127.0.0.1 only.
 
-> The page at `/` is still the engine's plain JSON view. The designed HUD comes next.
+![Claude HUD: the network view. A coordinator session has started subagents three levels deep; two sessions are waiting for you; plan boards on the right, the live feed below.](docs/screenshots/hero-network.png)
+
+*The network view, with `node hud.mjs --demo`: who started whom, sized by tokens, ringed by context fill. Two
+sessions need you (red).*
 
 ## Commands
 
@@ -39,12 +42,46 @@ Without the hooks the HUD still works: it reads the session list and the transcr
 models, tokens and subagents. The hooks add the live parts: the tool running right now, "needs you", and
 instant updates.
 
+## Using the page
+
+Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
+1. **Does anything need me?** A red banner under the top bar, a red reactor, red nodes and rows. Click the banner
+   to go to the session; × hides it until that session asks again.
+2. **What is running?** The number in the reactor, amber sessions, violet subagents.
+3. **What just finished?** LAST DONE in the feed header, and green checks.
+
+**Sessions** show as a **network** or as **cards** (the switch above them; the page remembers your choice, and
+`?view=network` or `?view=cards` in the address picks one).
+- **Network:** each session hangs off the hub (this PC), and each subagent off whoever started it.
+  - Node size is tokens, and the ring around a node is how full its context is. `A` / `B` marks Anthropic or
+    Bedrock.
+  - A double line means "launched from that session's shell". A dashed `+n` node holds finished subagents (click to
+    show them).
+  - Hover a node for its details, or click to pin its card. With the keyboard: arrow keys move between nodes, Enter
+    pins, Escape unpins.
+- **Cards:** one card per session, with its current tool, tokens, context and subagents. Above 8 open sessions they
+  turn into one-line rows. When a panel has more than fits, a bar at its bottom says what is out of sight; click it
+  to scroll there.
+
+**Plans** shows the boards of the projects with open sessions: each phase as a hexagon, colour and badge for its
+state, and the questions waiting for you. **Feed** is the live event list: hover to pause it; the chevron
+collapses it.
+
+**Top bar toggles**, all remembered in the browser:
+- **Effects:** the ambient motion (rotating reactor, radar, floating nodes). Off, everything that moves still means
+  something. Your system's reduced-motion setting turns it off too.
+- **Voice** and **sound:** short spoken or tonal announcements ("FidiaCRM needs your approval"). Off by default.
+- **Notifications:** Windows notifications when a session needs you or a plan phase is blocked, bounced or handed
+  off. Sent only while the tab is in the background.
+
+`/design` is the component gallery: every part of the page in every state.
+
 ## What it reads, and what it never touches
 
 | Source | What the HUD takes from it |
 |---|---|
 | `~/.claude/sessions/<pid>.json` | The list of running sessions: id, folder, name, busy or idle. The `*.key` files next to them are never opened. |
-| `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, and subagents (their `meta.json` gives the parent). Read from where it left off, a line at a time. |
+| `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
 | Hook events (`POST /event`) | What the hooks send: event name, tool name and the few input fields a short summary needs. |
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
 | `~/.claude/settings.json` | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. |
@@ -74,9 +111,15 @@ it restores that backup's exact bytes.
 
 ## Bedrock
 
-Sessions and subagents carry a provider (`anthropic`, `bedrock` or `unknown`), detected from the model id
-(`us.anthropic.claude-…-v1:0`, inference-profile ARNs) and from `CLAUDE_CODE_USE_BEDROCK`. Model ids are shown
-normalised (`claude-opus-5-5`); the raw id stays in the state as `modelRaw`.
+Sessions and subagents carry a provider (`anthropic`, `bedrock` or `unknown`), detected per agent from its
+transcript, so it works however Claude Code was switched to Bedrock (shell, VS Code or system environment, or
+`settings.json`):
+- the model id of each request (`api-request` lines: `us.anthropic.claude-…`, `anthropic.claude-…-v1:0`,
+  inference-profile ARNs). On Bedrock the reply's `message.model` is the plain name, so it can't tell on its own;
+- Bedrock message ids (`msg_bdrk_…`), for transcripts without request lines;
+- as a last resort, `CLAUDE_CODE_USE_BEDROCK` in the `env` block of `~/.claude/settings.json`.
+
+Model ids are shown normalised (`claude-opus-5-5`); the raw id as sent stays in the state as `modelRaw`.
 
 Bedrock usage from your own apps (outside Claude Code) can be added. Both ways are **off by default**:
 - **Ingest:** start the HUD with `HUD_ACCEPT_USAGE=1`, and after each Bedrock response post the usage:

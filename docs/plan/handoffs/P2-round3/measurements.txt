@@ -1,0 +1,40 @@
+Claude HUD P2, round 3: measurements on the final build (2026-10-29/30)
+Playwright-core 1.64 driving headless Edge 156 on the hardware GPU (RTX 3080 Ti, ANGLE D3D11, 120 Hz). Scripts in %TEMP%\hud-p2\scripts.
+
+Overflow (shoot.mjs): 18 viewport captures (demo network, demo cards, dense network, dense rows, /design, live x 1440x900,
+  1024x768, 390x844) and 10 full-page captures at 1024 and 390: no page-level horizontal overflow anywhere.
+  Before round 3, /design overflowed at 1024 (+284 px) and 390 (+422 px).
+
+Contrast (contrast.mjs, demo network, demo cards, dense rows, dense network, live, /design): every body and secondary
+  style >= 4.5:1. Below: only the label-only --ink-3 style, 3.69:1 (worst pixel 3.65), allowed by DESIGN.md section 2.
+  Fixed in round 3: the provider letter on ended network nodes (was 4.43:1, worst pixel 2.64).
+
+Motion (motion.mjs):
+  reduced motion, demo and live: 0 infinite animations, html.rm, effects off; animation-frame callbacks 2/s on the demo
+    (the "more below" bar repainting after the demo's renders), 0/s on the live page at rest.
+  demo, effects on: 49 infinite animations (radar pings 12, float 11, spin 9, flicker 5, flows 5, breathe 3, drift 2,
+    shimmer 1, plan pulse 1); effects off: 13 (flows 5, breathe 4, spin 3, plan pulse 1).
+  No animation touches anything but transform, opacity, stroke-dashoffset, filter.
+
+Idle CPU (cpu.mjs, 30 s, 1440x900, no input):
+                               renderer main thread   browser tree (one core)   whole machine (32 threads)
+  live page, effects on        0.3%                   23.3%                     0.73%
+  live page, effects off       0.3%                   21.3%                     0.67%
+  Busy simulations (not idle: the demo pushes state about 4 times a second, the dense demo has 24 sessions calling tools):
+  demo network, effects on     6.8%                   42.0%                     1.31%
+  demo network, effects off    5.5%                   36.2%                     1.13%
+  dense network, effects on    7.9%                   50.9%                     1.59%
+
+Frames (frames.mjs, 10 s):
+  demo network   119.4 fps, p99 8.5 ms, max 8.5 ms, 0 long tasks, 0 long animation frames (re-run: 119.3 fps, max 16.7 ms)
+                 (an earlier run had 5 long animation frames of 53-83 ms with no script and 0 ms blocking: the frame start
+                 was delayed outside the page; not seen in the two re-runs)
+  dense network  118.8 fps, p99 8.5 ms, max 33.3 ms (2 frames over 25 ms), 0 long tasks, 0 long animation frames
+  live page      119.5 fps, p99 8.5 ms, max 8.6 ms, 0 long tasks
+
+Hook forwarder (hookbench.mjs, 50 calls of `node hud.mjs hook` with a PreToolUse payload):
+  HUD stopped    p50 68 ms, p95 72 ms, max 85 ms, 50 x exit 0, 0 bytes of output
+  HUD running    p50 72 ms, p95 75 ms, max 82 ms, 50 x exit 0, 0 bytes of output
+  final file, HUD stopped (last run, after every change): p50 74 ms, p95 82 ms, max 87 ms, 50 x exit 0, 0 bytes
+
+Gate 4 (reconnect2.mjs, own live HUD on 7786): see reconnect/log.txt and the five screenshots.

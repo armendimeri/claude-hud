@@ -8,12 +8,13 @@ last.
 | ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |
 |---|---|---|---|---|---|---|---|---|
 | P0 | Decisions | human | — | — | accepted | 2026-10-29 | — | D1–D13 confirmed as proposed |
-| P1 | Engine | `engine` | P0, agent-workflow/P1 | Opus 5.5 / high | handed-off | 2026-10-29 | [P1-engine](handoffs/P1-engine.md) | All 15 gate items met; gate 3–4 proven on the real settings file; hooks uninstalled |
-| P2 | HUD page and design system | `hud` | P1 | Opus 5.5 / xhigh | todo | | | |
+| P1 | Engine | `engine` | P0, agent-workflow/P1 | Opus 5.5 / high | accepted | 2026-10-29 | [P1-engine](handoffs/P1-engine.md) | All 15 gate items met; gate 3–4 proven on the real settings file; hooks uninstalled |
+| P2 | HUD page and design system | `hud` | P1 | Opus 5.5 / xhigh | handed-off | 2026-10-30 | [P2-hud](handoffs/P2-hud.md) | All 6 gate items met; 3 critique rounds; §6.7 checklist re-checked; hooks not installed |
 | P3 | Design review, verify, close | `review` | P2 | Opus 5.5 / high | todo | | | |
 
 States: `todo` → `in-progress` → `handed-off` → `accepted` (checked by the next agent). Also `bounced` (the next
-agent found the exit gate not met) and `blocked` (needs the user, see Questions).
+agent found the exit gate not met), `blocked` (needs the user, see Questions) and `partial` (stopped with part of
+the gate met; the handoff says what is left, and the same phase continues in a new session).
 
 ## Decisions (P0)
 
@@ -32,6 +33,7 @@ Tick each, or write the change next to it. Details in PLAN §3.
 - [x] **D11** Every agent has a `provider` (`anthropic` / `bedrock` / `unknown`), detected from the model id and the `CLAUDE_CODE_USE_BEDROCK` flag; model names normalised; a badge on each card.
 - [x] **D12** Bedrock usage from your own apps, **off by default**: `POST /usage` ingest (`HUD_ACCEPT_USAGE=1`) and a CloudWatch read through the `aws` CLI (`HUD_BEDROCK_REGION`, at most once a minute, may cost a very small AWS charge). The HUD never reads AWS credentials. Say here if you want either one switched on in P1, or neither. → **Neither** (both built, both off by default).
 - [x] **D13** Tokens per session and per subagent (cache reads shown separately), plus context fill (%); no money amounts. Account limits (5-hour / weekly) only if P1 finds a local source, and then only after asking you.
+- [x] **D14** ★ (added 2026-10-29 by the user, during P2) Motion: **full cinematic**, so the page looks alive at rest: ambient effects (reactor heartbeat, radar sweep, floating nodes, grid shimmer, parallax, drifting particles, holographic flicker, glitch transitions) on top of the data-driven motion and the alert motion. A small **EFFECTS** toggle in the top bar switches off every effect that is not driven by data; reduced motion switches them off too. This replaces PLAN §6.1 "at rest everything is calm and flat", the §6.4 / §6.5 calm rules and the §6.7 "nothing decorative" checklist item for the ambient layer (see PLAN §6.8).
 
 ## Protocol
 
@@ -109,6 +111,36 @@ Tick each, or write the change next to it. Details in PLAN §3.
   - Gate 4: hook events arrive in 6 ms. Two real prompts went `needs-you`: the user's WasteManagement2 question and this session's uninstall "ask".
   - Fixed: AskUserQuestion asked through a permission prompt read "Permission: AskUserQuestion", now "Question for you"; selftest 37 / 0.
   - Hooks are not installed now; the HUD is stopped.
+- 2026-10-29 · user + Claude · P1 · Bedrock fix, at the user's request, on a machine where Claude Code runs on Bedrock. Real Bedrock sessions had been labelled `anthropic`: the reply's `message.model` is the plain name, and the flag is in the process environment, not `settings.json`. The provider now comes from each agent's transcript: the `api-request` model id, then `msg_bdrk_` ids, then the settings flag. Verified live on this session and on a Haiku subagent; selftest 41 / 0. Handoff gate 8 updated; README Bedrock section updated. P1 stays `handed-off`.
+- 2026-10-29 · hud · P1 · Checked: selftest 41 / 0; `/api/health` 200, `Host: evil.test` 403 (port 7790); `/api/state` lists both live sessions with title, model, `bedrock`, context; `--demo` 5 sessions (needs-you, busy ×2, idle, ended; 1 Bedrock; 3 subagents; 3 external; 3 plans), `--demo=dense` 24. → `accepted`.
+- 2026-10-29 · user · P2 · D14 added: full cinematic motion, with an EFFECTS toggle that turns off every effect not driven by data.
+- 2026-10-29 · hud · P2 · Claimed, `in-progress`. The project `.claude/settings.local.json` from Q4 is no longer in the repo; `~/.claude/settings.json` baseline hash `41f8f984…` (no `hooks`).
+- 2026-10-29 · user · P2 · D14 refined: the background must stay quiet ("too much going on, can't see clearly anything", after a boot frame where the hex grid flashed at full brightness, a bug since fixed). The life goes into the network, the reactor and the alerts; background layers stay a faint texture.
+- 2026-10-29 · hud · P2 · `partial`, stopped at the user's request ([handoff](handoffs/P2-hud.md)).
+  - Built: the page and `/design` in `hud.mjs`; `docs/DESIGN.md` except §8.
+  - Two critique rounds done and fixed; round 2 used a measurement harness and an independent critic.
+  - Proven: a real subagent in the live network (appears, flows, grows 64 → 68 px, return pulse); the needs-you banner, the reactor alert, 4 notifications, voice and sound (headless, muted).
+  - Idle CPU 0.57% / 1.11% of the machine (effects off / on), main thread 0.2–0.3%; 119 fps.
+  - Left: the reconnect test, round 3, final screenshots and the README hero image, DESIGN.md §8.
+  - `settings.json` unchanged (`41f8f984…`), no hooks, no servers running.
+- 2026-10-29 · hud · P2 · Resumed from `partial`, `in-progress`. Tooling in `%TEMP%\hud-p2` intact; `~/.claude/settings.json` still `41f8f984…`, no `hooks`; no HUD server running.
+- 2026-10-30 · hud · P2 · `handed-off` ([handoff](handoffs/P2-hud.md)).
+  - Gate 4 proven on real sessions: live update without reload; reconnecting, then down, then recovered in 2.1 s. Fixed a `down` state that flickered.
+  - Round 3 done on the final build: the harness plus an independent critic, 14 findings, fixed or recorded. The main ones:
+    - a "more below" bar where a panel hides sessions;
+    - subagent trees that stay next to their parent;
+    - titles in the crowded network;
+    - LAST DONE from the state;
+    - hover and pin cards that keep clear of needs-you nodes.
+  - Measured:
+    - no page overflow at 3 sizes;
+    - contrast passes (only `--ink-3` labels at 3.69);
+    - idle live page 0.3% of the main thread with effects on or off (0.73% / 0.67% of the machine);
+    - 119 fps;
+    - reduced motion clean;
+    - spacing and type audit clean.
+  - DESIGN.md §8 written. README has the hero and a usage section. 12 final images in `docs/screenshots/` (demo host now `STARK-01`, so no machine name).
+  - `settings.json` unchanged (`41f8f984…`), no hooks; forwarder p95 82 ms, exit 0, no output; no servers running.
 
 ## Kickoff
 

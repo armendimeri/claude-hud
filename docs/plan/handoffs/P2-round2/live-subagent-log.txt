@@ -1,0 +1,7 @@
+2.9s start {"nodes":9,"flows":2}
+2.9s subagent appeared {"s":"running","label":"Subagent general-purpose: Network test four. Running. haiku 4.5 on Bedrock. 13.5k tokens. ","size":64}
+6.9s running {"size":64,"flows":2}
+26.0s grew {"from":64,"to":66,"flows":2}
+64.5s return pulse {"pulses":1,"state":"done"}
+64.6s done {"s":"done","label":"Subagent general-purpose: Network test four. Done. haiku 4.5 on Bedrock. 48.8k tokens. Con","size":68}
+66.3s end {"appear":true,"run1":true,"run2":true,"pulse":true,"done":true}
