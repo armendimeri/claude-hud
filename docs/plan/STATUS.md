@@ -28,12 +28,13 @@ Tick each, or write the change next to it. Details in PLAN §3.
 - [x] **D6** Browser notifications for "needs you" and plan phases blocked / bounced / handed off.
 - [x] **D7** Memory only: last 500 events, ended sessions kept 2 hours.
 - [x] **D8** Autostart at logon through Task Scheduler, no visible window.
-- [x] **D9** Localhost only, no phone access.
+- [x] **D9** Localhost only, no phone access. → Superseded by D15.
 - [x] **D10** Own repo `claude-hud`, branch `main`, no remote added by agents, no licence file unless asked.
 - [x] **D11** Every agent has a `provider` (`anthropic` / `bedrock` / `unknown`), detected from the model id and the `CLAUDE_CODE_USE_BEDROCK` flag; model names normalised; a badge on each card.
 - [x] **D12** Bedrock usage from your own apps, **off by default**: `POST /usage` ingest (`HUD_ACCEPT_USAGE=1`) and a CloudWatch read through the `aws` CLI (`HUD_BEDROCK_REGION`, at most once a minute, may cost a very small AWS charge). The HUD never reads AWS credentials. Say here if you want either one switched on in P1, or neither. → **Neither** (both built, both off by default).
 - [x] **D13** Tokens per session and per subagent (cache reads shown separately), plus context fill (%); no money amounts. Account limits (5-hour / weekly) only if P1 finds a local source, and then only after asking you.
 - [x] **D14** ★ (added 2026-10-29 by the user, during P2) Motion: **full cinematic**, so the page looks alive at rest: ambient effects (reactor heartbeat, radar sweep, floating nodes, grid shimmer, parallax, drifting particles, holographic flicker, glitch transitions) on top of the data-driven motion and the alert motion. A small **EFFECTS** toggle in the top bar switches off every effect that is not driven by data; reduced motion switches them off too. This replaces PLAN §6.1 "at rest everything is calm and flat", the §6.4 / §6.5 calm rules and the §6.7 "nothing decorative" checklist item for the ambient layer (see PLAN §6.8).
+- [ ] **D15** ★ (added 2026-10-30 by the user, after P2) Network access, **opt-in**: `node hud.mjs --lan` (or `HUD_LAN=1`) lets other devices on the network open the page, view only (`POST /event` and `/usage` stay loopback-only). Default stays localhost. No password; tick this, or say if you want a token. Details in PLAN §3.
 
 ## Protocol
 
@@ -141,6 +142,11 @@ Tick each, or write the change next to it. Details in PLAN §3.
     - spacing and type audit clean.
   - DESIGN.md §8 written. README has the hero and a usage section. 12 final images in `docs/screenshots/` (demo host now `STARK-01`, so no machine name).
   - `settings.json` unchanged (`41f8f984…`), no hooks; forwarder p95 82 ms, exit 0, no output; no servers running.
+- 2026-10-30 · user + Claude · — · D15 added at the user's request: `--lan` / `HUD_LAN=1` opens the HUD to the local network, view only. Outside the phase board (P2 stays `handed-off`, P3 `todo`).
+  - Code: `hostAllowed` and `isLoopback` in `hud.mjs`, startup prints the addresses, `autostart on --lan`; selftest +6 checks, all pass.
+  - Tested on scratch ports 7791 / 7792: a LAN address answers 200 with `--lan` and refuses the connection without it; `Host: evil.test` 403; `POST /event` from a non-loopback peer 403, from loopback 204; the hook forwarder still delivers to a `--lan` server.
+  - The running HUD (autostart task) was re-registered with `--lan` and restarted at the user's request; it answers 200 on `192.168.68.73:7777` from this PC.
+  - Not tested: a request from another device, so the Windows Firewall rule is unproven; no TV or phone browser opened the page.
 
 ## Kickoff
 

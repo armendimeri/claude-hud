@@ -35,7 +35,9 @@ const CONTEXT_WINDOWS = {
 const VERSION = '0.1.0';
 const HOSTNAME = os.hostname();          // labels the hub of the network view
 const PORT = portFrom(process.env.HUD_PORT) ?? 7777;
-const HOST = '127.0.0.1';
+const LAN = process.argv.includes('--lan') || process.env.HUD_LAN === '1';   // D15, off by default
+const LOOPBACK = '127.0.0.1';            // where the hook forwarder connects
+const HOST = LAN ? '0.0.0.0' : LOOPBACK; // what the server listens on
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
 
@@ -269,8 +271,8 @@ function runHook() {
     let body;
     try { body = JSON.stringify(slimHookPayload(JSON.parse(Buffer.concat(chunks).toString('utf8')), at)); } catch { process.exit(0); }
     const req = http.request({
-      host: HOST, port: PORT, path: '/event', method: 'POST', agent: false,
-      headers: { host: `${HOST}:${PORT}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+      host: LOOPBACK, port: PORT, path: '/event', method: 'POST', agent: false,
+      headers: { host: `${LOOPBACK}:${PORT}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
     }, res => { res.resume(); res.on('end', () => process.exit(0)); res.on('error', () => process.exit(0)); });
     req.on('error', () => process.exit(0));
     req.end(body);
@@ -1531,7 +1533,11 @@ function snapshot() {
   const today = dayKey(now);
   const tokensToday = zero();
   for (const t of tails.values()) { const d = t.info.byDay.get(today); if (d) addTokens(tokensToday, d); }
-  const planList = [...plans.values()].map(v => v.plan).sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
+  // A plan is being worked on when a busy session runs in its project; plans also carry when their board last changed.
+  const busyBy = new Map();
+  for (const s of list) if (s.status === 'busy' || s.status === 'needs-you') busyBy.set(s.project, (busyBy.get(s.project) || 0) + 1);
+  const planList = [...plans.values()].map(v => ({ ...v.plan, working: busyBy.get(v.plan.project) || 0, touchedAt: Math.round(v.mtime) }))
+    .sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
   return {
     now, uptime: now - hudStartedAt, demo: false, version: VERSION, host: HOSTNAME, hooksInstalled,
     sessions: list,
@@ -1595,9 +1601,21 @@ function readBody(req, res, max, done) {
   req.on('end', () => { if (!over) done(Buffer.concat(chunks).toString('utf8')); });
 }
 
+// DNS-rebinding guard. In LAN mode (D15) the page is also reached by this PC's IP address or name. A rebinding page
+// can only make the browser send its own domain name as Host, so any other name stays refused.
+function hostAllowed(host, lan = LAN) {
+  if (ALLOWED_HOSTS.has(host)) return true;
+  if (!lan) return false;
+  const m = /^(\[[0-9a-f:.]+\]|[^\s:/[\]]+)(?::(\d{1,5}))?$/i.exec(host);
+  if (!m || Number(m[2] ?? 80) !== PORT) return false;
+  const name = m[1].toLowerCase(), self = HOSTNAME.toLowerCase();
+  return name === self || name === `${self}.local` || name.startsWith('[') || /^\d{1,3}(\.\d{1,3}){3}$/.test(name);
+}
+const isLoopback = addr => typeof addr === 'string' && /^(::1|(::ffff:)?127\.\d+\.\d+\.\d+)$/i.test(addr);
+
 function handle(req, res) {
   try {
-    if (!ALLOWED_HOSTS.has(req.headers.host || '')) return send(res, 403, 'Forbidden\n');   // DNS-rebinding guard
+    if (!hostAllowed(req.headers.host || '')) return send(res, 403, 'Forbidden\n');
     const p = new URL(req.url, 'http://h').pathname;
     if (req.method === 'GET' || req.method === 'HEAD') {
       if (p === '/') return send(res, 200, pageHtml(), PAGE_HEADERS);
@@ -1610,6 +1628,8 @@ function handle(req, res) {
       if (p === '/api/stream') return openStream(req, res);
     }
     if (req.method === 'POST' && (p === '/event' || (p === '/usage' && ACCEPT_USAGE))) {
+      // Other devices only look (D15): a payload names a transcript file to read, so only this PC may report.
+      if (!isLoopback(req.socket.remoteAddress)) return send(res, 403, 'Forbidden\n');
       // Browsers can't send application/json across origins without a preflight, which gets no CORS answer.
       const origin = req.headers.origin;
       if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'Forbidden\n');
@@ -3668,16 +3688,18 @@ function hudClient() {
   function planCard() {
     const proj = h('span', { class: 'plan-p label trunc' });
     const need = h('span', { class: 'chip', style: 'color:var(--alert);border-color:rgba(255,77,94,.5)', hidden: true }, icon('alert'), 'Needs you');
+    const live = h('span', { class: 'chip', style: 'color:var(--arc);border-color:rgba(41,230,255,.5)', hidden: true }, 'Working');
     const stChip = h('span', { class: 'chip', hidden: true }), count = h('span', { class: 'plan-c' });
     const title = h('h3', { class: 'plan-t trunc', 'data-tip-if': 'trunc' });
     const graph = planGraph(), needs = h('div'), runs = h('div', { class: 'plan-runs', hidden: true }), log = h('p', { class: 'plan-log', hidden: true });
-    const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj, need, stChip, count), title, graph.el, needs, runs, log);
+    const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj, live, need, stChip, count), title, graph.el, needs, runs, log);
     return {
       el,
       update(p) {
         const all = [...(p.phases || [])];
         txt(proj, p.project || ''); setData(proj, 'tip', p.path ? 'From ' + p.path : null);
         txt(title, p.title || p.slug); title.dataset.tip = p.title || p.slug;
+        show(live, (p.working || 0) > 0); setData(live, 'tip', p.working ? `${p.working} session${p.working > 1 ? 's' : ''} running in ${p.project}` : null);
         show(stChip, !!p.state); txt(stChip, p.state ? p.state + (p.stateDate ? ' ' + p.stateDate : '') : '');
         const done = all.filter(n => DONE_STATES.has(n.state)).length;
         txt(count, `${done}/${all.length}`); setData(count, 'tip', `${done} of ${all.length} done, handed off or accepted`);
@@ -3845,6 +3867,8 @@ function hudClient() {
     function pick() {
       if (chosen || !synth) return chosen;
       const vs = synth.getVoices();
+      // Neural voices ("Online (Natural)" in Edge, "Google UK English" in Chrome) sound far less robotic than the local ones.
+      for (const re of [/Natural.*(Ryan|Sonia|Thomas|Libby|Guy|Davis|Brian|Andrew|Jenny|Aria)/i, /Natural/i, /Online/i]) { const v = vs.find(v => re.test(v.name) && /^en/i.test(v.lang)); if (v) return chosen = v; }
       for (const re of [/Ryan/i, /George/i, /Daniel/i, /UK English Male/i, /Thomas/i, /Brian/i, /Arthur/i]) { const v = vs.find(v => re.test(v.name) && /^en/i.test(v.lang)); if (v) return chosen = v; }
       return chosen = vs.find(v => /en-GB/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang)) || null;
     }
@@ -3854,7 +3878,7 @@ function hudClient() {
       if (wait || synth.speaking) { timer = setTimeout(() => { timer = 0; pump(); }, Math.max(wait, 300)); return; }
       const u = new SpeechSynthesisUtterance(q.shift()), v = pick();
       if (v) { u.voice = v; u.lang = v.lang; }
-      u.rate = 1.02; u.pitch = 0.92; u.volume = 0.9; u.onend = () => pump();
+      u.rate = 1; u.pitch = 1; u.volume = 0.9; u.onend = () => pump();
       last = Date.now(); synth.speak(u);
     }
     if (synth && synth.addEventListener) synth.addEventListener('voiceschanged', () => { chosen = null; });
@@ -4150,7 +4174,8 @@ function hudClient() {
         const plans = (st.plans || []).slice();
         const needs = p => (p.needsYou && p.needsYou.length) || (p.phases || []).some(n => n.state === 'blocked' || n.state === 'bounced');
         const active = p => (p.phases || []).some(n => n.state === 'in-progress');
-        plans.sort((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
+        // needs you, then a session is working in its project, then a phase in progress, then the board changed most recently
+        plans.sort((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || ((b.working || 0) > 0 ? 1 : 0) - ((a.working || 0) > 0 ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || (b.touchedAt || 0) - (a.touchedAt || 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
         show(plansEmpty, plans.length === 0);
         txt(plSum, plans.length ? [`${plans.length}`, st.totals?.plansInProgress ? `${st.totals.plansInProgress} in progress` : null].filter(Boolean).join(' · ') : '');
         reconcile(plansBox, planMap, plans, p => p.project + '|' + p.slug, () => planCard(), (c, p) => c.update(p), booted);
@@ -4705,7 +4730,13 @@ function serve(demoMode) {
   });
   process.on('uncaughtException', e => console.error('error:', e));
   process.on('unhandledRejection', e => console.error('error:', e));
-  server.listen(PORT, HOST, () => console.log(`Claude HUD ${VERSION} on http://${HOST}:${PORT}${demoMode ? ` (demo${demoMode === 'dense' ? ', dense' : ''})` : ''}`));
+  server.listen(PORT, HOST, () => {
+    console.log(`Claude HUD ${VERSION} on http://${LAN ? 'localhost' : HOST}:${PORT}${demoMode ? ` (demo${demoMode === 'dense' ? ', dense' : ''})` : ''}`);
+    if (!LAN) return;
+    const urls = Object.values(os.networkInterfaces()).flat()
+      .filter(a => a && a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')).map(a => `http://${a.address}:${PORT}`);
+    console.log(`Open on this network (view only): ${urls.join('  ') || 'no network address found'}`);
+  });
   setInterval(() => { for (const c of clients) c.write(': keep-alive\n\n'); }, KEEPALIVE_MS);
   if (demoMode) { demo = makeDemo(demoMode); return; }
 
@@ -4855,11 +4886,11 @@ function autostart(arg) {
   if (arg === 'on') {
     script = `$ErrorActionPreference = 'Stop'
 $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\\conhost.exe') -Argument ${q(`--headless "${process.execPath}" "${SCRIPT}"`)} -WorkingDirectory ${q(path.dirname(SCRIPT))}
+$action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\\conhost.exe') -Argument ${q(`--headless "${process.execPath}" "${SCRIPT}"${LAN ? ' --lan' : ''}`)} -WorkingDirectory ${q(path.dirname(SCRIPT))}
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName ${q(task)} -Description 'Starts the Claude HUD dashboard (http://127.0.0.1:${PORT}) at logon, without a window.' -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+Register-ScheduledTask -TaskName ${q(task)} -Description 'Starts the Claude HUD dashboard (port ${PORT}${LAN ? ', open to the local network' : ', this PC only'}) at logon, without a window.' -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
 'Autostart is on: the task "${task}" starts the HUD at logon. Start it now with: schtasks /run /tn "${task}"'`;
   } else if (arg === 'off') {
     script = `if (Get-ScheduledTask -TaskName ${q(task)} -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName ${q(task)} -Confirm:$false; 'Autostart is off: the task "${task}" was removed. A HUD that is running keeps running.' } else { 'Autostart was already off.' }`;
@@ -5141,6 +5172,15 @@ function selftest() {
   check('provider: model switched, new request not answered yet', agentFrom(reply('claude-opus-5-5', 'msg_bdrk_01abc'), req('us.anthropic.claude-sonnet-5-5')),
     { raw: 'claude-opus-5-5', model: 'claude-opus-5-5', provider: 'bedrock' });
 
+  // D15: which Host headers and which peers are allowed, with LAN mode off and on.
+  const hostOk = hostAllowed;
+  check('host: localhost, LAN off', [hostOk(`127.0.0.1:${PORT}`, false), hostOk(`localhost:${PORT}`, false)], [true, true]);
+  check('host: IP address and PC name refused with LAN off', [hostOk(`192.168.1.20:${PORT}`, false), hostOk(`${HOSTNAME}:${PORT}`, false)], [false, false]);
+  check('host: IPv4 address, PC name and name.local with LAN on', [hostOk(`192.168.1.20:${PORT}`, true), hostOk(`${HOSTNAME}:${PORT}`, true), hostOk(`${HOSTNAME.toUpperCase()}.local:${PORT}`, true)], [true, true, true]);
+  check('host: IPv6 address with LAN on', hostOk(`[fe80::1]:${PORT}`, true), true);
+  check('host: rebinding names and wrong ports refused with LAN on', [hostOk(`evil.test:${PORT}`, true), hostOk(`192.168.1.20.evil.test:${PORT}`, true), hostOk(`192.168.1.20:${PORT + 1}`, true), hostOk('', true)], [false, false, false, false]);
+  check('peer: only this PC may report', [isLoopback('127.0.0.1'), isLoopback('::1'), isLoopback('::ffff:127.0.0.1'), isLoopback('192.168.1.20'), isLoopback('::ffff:192.168.1.20'), isLoopback(undefined)], [true, true, true, false, false, false]);
+
   check('notification: permission for Bash', notificationReason('permission_prompt', 'Claude needs your permission to use Bash'), { kind: 'permission', text: 'Permission: Bash' });
   check('notification: AskUserQuestion via a permission prompt', notificationReason('permission_prompt', 'Claude needs your permission to use AskUserQuestion'), { kind: 'question', text: 'Question for you' });
   check('notification: idle', notificationReason('idle_prompt', 'Claude is waiting for your input'), { kind: 'input', text: 'Waiting for your input' });
@@ -5279,23 +5319,26 @@ ${BOARD_HEADER}
 const HELP = `Claude HUD ${VERSION}: a live dashboard of every Claude Code session on this PC.
 
   node hud.mjs                 serve on http://127.0.0.1:${PORT} (HUD_PORT picks another port)
+  node hud.mjs --lan           also open it to other devices on the network, view only (or set HUD_LAN=1)
   node hud.mjs --demo          serve simulated sessions, subagents, plans and events
   node hud.mjs --demo=dense    the same with 24 sessions
   node hud.mjs install         add the HUD's hooks to ~/.claude/settings.json (backup first; safe to repeat)
   node hud.mjs uninstall       remove only the HUD's hooks from ~/.claude/settings.json
   node hud.mjs autostart on|off  start the HUD at logon (Task Scheduler, no window), or stop doing so
+                               (add --lan to autostart on to start it open to the network)
   node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard
   node hud.mjs selftest        check the model normaliser, redaction and plan parser
   node hud.mjs hook            the hook forwarder (Claude Code runs this; it prints nothing)`;
 
-const [cmd, arg] = process.argv.slice(2);
+const ARGS = process.argv.slice(2).filter(a => a !== '--lan');
+const [cmd, arg] = ARGS;
 if (cmd === 'hook') runHook();
 else if (!cmd) serve(null);
 else if (cmd === '--demo' || cmd === '--demo=dense') serve(cmd === '--demo=dense' ? 'dense' : 'demo');
 else if (cmd === 'install') install();
 else if (cmd === 'uninstall') uninstall();
 else if (cmd === 'autostart') autostart(arg);
-else if (cmd === 'lint') lint(process.argv.slice(3));
+else if (cmd === 'lint') lint(ARGS.slice(1));
 else if (cmd === 'selftest') selftest();
 else if (cmd === 'help' || cmd === '--help' || cmd === '-h') console.log(HELP);
 else { console.error(`Unknown command: ${cmd}\n\n${HELP}`); process.exit(1); }

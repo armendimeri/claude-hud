@@ -61,11 +61,12 @@ Confirmed in STATUS.md (P0) before P1 starts. ★ = changes what the user sees.
 | D6 ★ | Desktop notifications | Browser notifications when the tab is hidden, for: a session needs you, a plan phase is `blocked` / `bounced` / `handed-off`. Asked for on first click of the bell. |
 | D7 | Retention | In memory only: the last 500 events, sessions that ended less than 2 hours ago. Restarting the HUD rebuilds sessions from the registry and transcripts. |
 | D8 | Autostart | `node hud.mjs autostart on\|off`: a Task Scheduler task at logon, with no visible console window. |
-| D9 | Phone access | Off. Listening beyond localhost is out of scope. |
+| D9 | Phone access | Off. Listening beyond localhost is out of scope. **Superseded by D15** (opt-in, 2026-10-30). |
 | D10 | Repository | `claude-hud` with `main` as the default branch. Files: `hud.mjs`, `README.md` (hero screenshot), `docs/DESIGN.md` (permanent design reference), `docs/screenshots/`, `.gitignore`, and `docs/plan/` until P3 deletes it. No licence file unless the user asks. Agents commit only if the user asks, and never add a remote. |
 | D11 ★ | Providers | Every session and subagent carries a `provider`: `anthropic`, `bedrock` or `unknown`. Detected from the model id (Bedrock id shapes in §2) and, as a second signal, from the `env` block of `~/.claude/settings.json` (only the `CLAUDE_CODE_USE_BEDROCK` flag is read; no other key of that block, and never AWS credentials). Model ids are normalised for display (`us.anthropic.claude-opus-5-5-…` → `claude-opus-5-5`); the raw id stays in the tooltip. The card shows a small `ANTHROPIC` / `BEDROCK` badge. |
 | D12 ★ | Bedrock outside Claude Code | Two optional sources, both **off by default**. (a) **Ingest:** `POST /usage` accepts `{ app, provider, model, input, output, cacheRead, cacheWrite, at }` from the user's own apps; the README gives a 10-line snippet to call it after a Bedrock response. (b) **CloudWatch:** with `HUD_BEDROCK_REGION` set, the HUD runs `aws cloudwatch get-metric-data` (child process, at most once a minute) for `AWS/Bedrock` token counts per model, using the user's own AWS CLI profile. It shows per-model totals and a "delayed" label, not per app. The HUD never reads AWS credential files or environment keys and never stores them. CloudWatch API calls can carry a very small AWS charge; this is the only thing in the project that can cost money, and it is off unless the user turns it on. |
 | D13 ★ | Usage meters | Per session and per subagent: tokens (input / output / cache read / cache write) and **context fill**: the last turn's input + cache tokens as a share of the model's context window, from a small table in `hud.mjs` (unknown model → shown as "—", never guessed). Headline token numbers are input + output + cache write; **cache read is shown separately**, because it re-counts the same context on every turn and would otherwise dwarf everything else. No money amounts in v1 (prices differ between Anthropic and Bedrock and change). **Account-level usage** (the 5-hour and weekly limits of a subscription) is not in transcripts: P1 checks whether Claude Code exposes it anywhere local without an API call (for example the JSON a status line command receives). If it does, P1 adds it as a question for the user (it would mean adding a status line entry); if not, it stays out of scope and the README says so. |
+| D15 ★ | Network access | Added by the user 2026-10-30. **Off by default.** `--lan` (or `HUD_LAN=1`) listens on `0.0.0.0` so a phone or TV browser on the same network can open the page. Other devices are **view only**: `POST /event` and `/usage` need a loopback peer, because a payload names a transcript file to read. The `Host` guard also accepts IP addresses and this PC's name. No password (a TV remote makes one awkward); the README says so. `autostart on --lan` carries the flag into the logon task. |
 
 ## 4. Contract
 
@@ -105,7 +106,8 @@ node hud.mjs autostart on|off
 | `GET /api/health` | `{ ok, uptime, sessions, version }` |
 
 Every request: refuse unless the `Host` header is `127.0.0.1:<port>` or `localhost:<port>` (DNS-rebinding guard). No
-CORS headers.
+CORS headers. With `--lan` (D15) an IPv4 or IPv6 address, this PC's name or `<name>.local` is accepted too, on the same
+port; a domain name never is. `POST /event` and `POST /usage` answer 403 unless the peer address is loopback.
 
 ### 4.4 State (sent to the page)
 

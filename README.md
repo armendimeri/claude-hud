@@ -9,7 +9,8 @@ every project:
 - your account's 5-hour and weekly usage, as Claude Code itself last cached it.
 
 It's one file, `hud.mjs`, using Node 22 built-ins only: there's no `npm install` and no build step. It makes no model
-or API calls, so it costs no Claude usage. It listens on 127.0.0.1 only.
+or API calls, so it costs no Claude usage. It listens on 127.0.0.1 only, unless you start it with `--lan` (see
+[Viewing it from another device](#viewing-it-from-another-device)).
 
 ![Claude HUD: the network view. A coordinator session has started subagents three levels deep; two sessions are waiting for you; plan boards on the right, the live feed below.](docs/screenshots/hero-network.png)
 
@@ -20,18 +21,35 @@ sessions need you (red).*
 
 ```
 node hud.mjs                     serve on http://127.0.0.1:7777 (HUD_PORT picks another port)
+node hud.mjs --lan               also open it to other devices on the network, view only (or set HUD_LAN=1)
 node hud.mjs --demo              serve simulated sessions, subagents, plans and events
 node hud.mjs --demo=dense        the same with 24 sessions
 node hud.mjs install             add the HUD's hooks to ~/.claude/settings.json (backup first; safe to repeat)
 node hud.mjs uninstall           remove only the HUD's hooks from ~/.claude/settings.json
 node hud.mjs autostart on|off    start the HUD at logon (Task Scheduler, no window), or stop doing so
+                                 (`autostart on --lan` starts it open to the network)
 node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard (workflow/STANDARD.md)
 node hud.mjs selftest            check the model normaliser, redaction and plan parser
 ```
 
 Routes: `/` (the page), `/design` (the component gallery), `/api/state` (the full state as JSON), `/api/stream`
 (server-sent events), `/api/health`, and `POST /event`, which the hooks use. Requests whose `Host` header is not
-`127.0.0.1:<port>` or `localhost:<port>` are refused.
+`127.0.0.1:<port>` or `localhost:<port>` are refused (with `--lan`, an IP address or this PC's name is accepted too).
+
+## Viewing it from another device
+
+Start the HUD with `node hud.mjs --lan` (or `HUD_LAN=1`; `node hud.mjs autostart on --lan` makes the logon task do
+it). It then listens on all network interfaces and prints the addresses to open, for example
+`http://192.168.68.73:7777` in a phone, tablet or TV browser on the same network.
+
+- **View only.** `POST /event` and `/usage` are accepted from this PC alone, so another device can look but cannot
+  report sessions to the HUD. The hooks keep working, because they run on this PC.
+- **No password.** Anyone on the network who can reach the port sees the page: project names, folder paths, session
+  titles and redacted tool summaries. Use it on a network you trust, and leave `--lan` off otherwise.
+- **Firewall.** Windows must allow inbound TCP on the port (7777, or `HUD_PORT`) for your network profile. If the
+  address does not load from the other device, check that first.
+- **Wrong name.** Opening it by a domain name, or by an IP address with a different port, answers 403.
+- **Fonts.** The page loads its fonts from Google Fonts; a device without internet falls back to system fonts.
 
 ## Setting it up
 
