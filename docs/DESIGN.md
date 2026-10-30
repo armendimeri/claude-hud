@@ -143,7 +143,7 @@ As built. Each entry says what the component shows, its states, and which motion
 
 - **Left:** the wordmark with a small reactor glyph that turns (layer 1), then "Claude · *host*".
 - **Centre:** the clock (tabular), the date, the uptime.
-- **Chips:** DEMO, and HOOKS OFF when the hooks are not installed.
+- **Chips:** DEMO, and HOOKS OFF when the hooks are missing in any watched Claude Code folder.
 - **Stream light:** Live (cyan, steady), Reconnecting (amber, blinking 1 s), Down (red), Connecting.
 - **Toggles:** EFFECTS, voice, sound and notifications. Each is a 32 px round icon button with a label and a
   tooltip; pressed shows a filled cyan ring.

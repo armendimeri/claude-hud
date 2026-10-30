@@ -24,8 +24,8 @@ node hud.mjs                     serve on http://127.0.0.1:7777 (HUD_PORT picks 
 node hud.mjs --lan               also open it to other devices on the network, view only (or set HUD_LAN=1)
 node hud.mjs --demo              serve simulated sessions, subagents, plans and events
 node hud.mjs --demo=dense        the same with 24 sessions
-node hud.mjs install             add the HUD's hooks to ~/.claude/settings.json (backup first; safe to repeat)
-node hud.mjs uninstall           remove only the HUD's hooks from ~/.claude/settings.json
+node hud.mjs install             add the HUD's hooks to every watched folder's settings.json (backup first; safe to repeat)
+node hud.mjs uninstall           remove only the HUD's hooks from those files
 node hud.mjs autostart on|off    start the HUD at logon (Task Scheduler, no window), or stop doing so
                                  (`autostart on --lan` starts it open to the network)
 node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard (workflow/STANDARD.md)
@@ -54,7 +54,10 @@ it). It then listens on all network interfaces and prints the addresses to open,
 ## Setting it up
 
 1. `node hud.mjs` (or `node hud.mjs autostart on` to have it start at every logon).
-2. `node hud.mjs install`. Open sessions pick the hooks up by themselves.
+
+That's all: each time it starts, the HUD installs its hooks into every Claude Code folder it watches (`~/.claude` and
+any `~/.claude-*`), so there's nothing else to run. Open sessions pick the hooks up by themselves. Set
+`HUD_NO_AUTOINSTALL=1` to make it leave `settings.json` alone; `node hud.mjs install` does the same by hand.
 
 Without the hooks the HUD still works: it reads the session list and the transcripts, so you see sessions, titles,
 models, tokens and subagents. The hooks add the live parts: the tool running right now, "needs you", and
@@ -102,7 +105,7 @@ collapses it.
 | `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
 | Hook events (`POST /event`) | What the hooks send: event name, tool name and the few input fields a short summary needs. |
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
-| `~/.claude/settings.json` | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. |
+| `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |
 
 It never reads `~/.claude/.credentials.json`, the session `*.key` files, `~/.aws/` or any `AWS_*` environment
@@ -115,7 +118,7 @@ key are replaced with `•••`.
 
 ## The hooks
 
-`install` adds one entry for each of these events: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse,
+`install` (and the HUD at start) adds one entry for each of these events: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse,
 PostToolUse, PostToolUseFailure, Notification, Stop, SubagentStart, SubagentStop and PreCompact. Each runs
 `node "<path>/hud.mjs" hook`. That command reads the event, posts it to the HUD, and:
 - **prints nothing**, so nothing is added to Claude's context;
@@ -123,9 +126,11 @@ PostToolUse, PostToolUseFailure, Notification, Stop, SubagentStart, SubagentStop
 - gives up after 400 ms, so a HUD that isn't running costs about 70 ms a call;
 - runs `async` (except SessionEnd), so Claude Code doesn't wait for it.
 
-`install` writes a backup (`settings.json.hud-backup-<date>`) first and leaves every other setting and hook as it
-was. Running it twice changes nothing. `uninstall` removes only the HUD's entries; when the result matches a backup,
-it restores that backup's exact bytes.
+It writes a backup (`settings.json.hud-backup-<date>`) first and leaves every other setting and hook as it was. When
+the hooks are already there it changes nothing, so no backup piles up. It also repairs them if `hud.mjs` moved. A
+`settings.json` that isn't valid JSON is left alone, with a message. `uninstall` removes only the HUD's entries from
+every watched folder; when the result matches a backup, it restores that backup's exact bytes. Because the HUD adds
+the hooks at every start, set `HUD_NO_AUTOINSTALL=1` (and `autostart off`) if you want them to stay removed.
 
 ## Bedrock
 
@@ -160,9 +165,10 @@ Bedrock usage from your own apps (outside Claude Code) can be added. Both ways a
 
 ## Removing it completely
 
-1. `node hud.mjs uninstall` (removes the hooks from `~/.claude/settings.json`).
-2. `node hud.mjs autostart off` (removes the Task Scheduler task, if you turned it on).
-3. Stop the HUD if it's running, then delete this folder.
-4. Optionally delete the backups `install` and `uninstall` left in `~/.claude/`: `settings.json.hud-backup-*`.
+1. Stop the HUD if it's running, and `node hud.mjs autostart off` (removes the Task Scheduler task, if you turned it on),
+   so nothing puts the hooks back.
+2. `node hud.mjs uninstall` (removes the hooks from every watched folder's `settings.json`).
+3. Delete this folder.
+4. Optionally delete the backups the HUD left next to each `settings.json`: `settings.json.hud-backup-*`.
 
 The HUD keeps everything else in memory only, so nothing else is left behind.

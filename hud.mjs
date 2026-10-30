@@ -54,7 +54,7 @@ const CLAUDE_JSON = path.join(CONFIG_DIR ?? HOME, '.claude.json');   // only its
 /**
  * Every Claude Code folder the HUD watches: the one above, then each in HUD_CLAUDE_DIRS (separated like PATH), then
  * every `~/.claude-*` that holds `sessions` or `projects` (a second install run with its own CLAUDE_CONFIG_DIR, e.g.
- * `~/.claude-bedrock`). Found once at start. The first folder is the one `install` and `uninstall` change.
+ * `~/.claude-bedrock`). Found once at start. `install`, `uninstall` and the HUD's start-up hook check cover all of them.
  */
 const ROOTS = (() => {
   const found = new Map();
@@ -4083,7 +4083,7 @@ function hudClient() {
     const mini = reactor({ size: 36, mini: true }), miniN = odo();
     const clockT = h('span', { class: 'clock-t mono' }), clockD = h('span', { class: 'clock-d label' }), clockU = h('span', { class: 'clock-u label' });
     const demo = h('span', { class: 'chip demo', hidden: true, 'data-tip': 'Simulated sessions (node hud.mjs --demo)' }, 'Demo');
-    const hooks = h('span', { class: 'chip warn', hidden: true, 'data-tip': 'Hooks are not installed: tool calls arrive late from transcripts, and “needs you” cannot be seen. Run node hud.mjs install.' }, 'Hooks off');
+    const hooks = h('span', { class: 'chip warn', hidden: true, 'data-tip': 'Hooks are missing in a watched Claude Code folder: tool calls arrive late from transcripts, and “needs you” cannot be seen. Restart the HUD, or run node hud.mjs install.' }, 'Hooks off');
     const streamW = h('span', { class: 'label' }), stream = h('div', { class: 'stream', 'data-s': 'connecting', role: 'status' }, h('span', { class: 'stream-dot' }), streamW);
     const fx = toggle('effects', 'Effects', motion.fx, (v, set) => { motion.setFx(v); set(v); });
     const vo = toggle('voice', 'Voice', prefs.get('voice', false), (v, set) => { prefs.set('voice', v); set(v); if (v) voice.say('Voice announcements on'); });
@@ -4792,6 +4792,7 @@ function serve(demoMode) {
   setInterval(() => { for (const c of clients) c.write(': keep-alive\n\n'); }, KEEPALIVE_MS);
   if (demoMode) { demo = makeDemo(demoMode); return; }
 
+  autoInstall();
   readSettingsFlags();
   readAccount();
   const watch = (dir, opts, fn) => { try { fs.watch(dir, opts, fn).on('error', () => {}); } catch {} };
@@ -4810,7 +4811,8 @@ function serve(demoMode) {
 }
 
 // =====================================================================================================================
-// install / uninstall (PLAN §4.2): ~/.claude/settings.json is changed only here.
+// install / uninstall (PLAN §4.2): a watched folder's settings.json is changed only here (by the commands, and by
+// autoInstall when the HUD starts).
 
 function isOurHook(h) { return isObj(h) && h.type === 'command' && typeof h.command === 'string' && (h.command === HOOK_COMMAND || OUR_HOOK_RE.test(h.command)); }
 function ourGroup(event) {
@@ -4830,14 +4832,15 @@ function removeOurs(groups) {
 }
 function countOurs(groups) { return groups.reduce((n, g) => n + (Array.isArray(g?.hooks) ? g.hooks.filter(isOurHook).length : 0), 0); }
 function fail(msg) { console.error(msg); process.exit(1); }
-function readSettingsText() {
-  try { return fs.readFileSync(SETTINGS_FILE, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+class SettingsError extends Error {}   // a settings.json the HUD will not touch; the message says why
+function readSettingsText(file) {
+  try { return fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
 }
-function parseSettings(raw) {
+function parseSettings(raw, file) {
   let obj;
-  try { obj = raw == null ? {} : JSON.parse(raw.replace(/^\uFEFF/, '')); } catch { fail(`${SETTINGS_FILE} is not valid JSON. Nothing was changed.`); }
-  if (!isObj(obj)) fail(`${SETTINGS_FILE} does not hold a JSON object. Nothing was changed.`);
-  if (obj.hooks !== undefined && !isObj(obj.hooks)) fail('"hooks" in settings.json is not an object. Nothing was changed.');
+  try { obj = raw == null ? {} : JSON.parse(raw.replace(/^﻿/, '')); } catch { throw new SettingsError(`${file} is not valid JSON. Nothing was changed.`); }
+  if (!isObj(obj)) throw new SettingsError(`${file} does not hold a JSON object. Nothing was changed.`);
+  if (obj.hooks !== undefined && !isObj(obj.hooks)) throw new SettingsError(`"hooks" in ${file} is not an object. Nothing was changed.`);
   return obj;
 }
 function formatLike(raw, obj) {
@@ -4845,57 +4848,85 @@ function formatLike(raw, obj) {
   let out = JSON.stringify(obj, null, indent);
   if (raw == null || /\n$/.test(raw)) out += '\n';
   if (raw?.includes('\r\n')) out = out.replace(/\n/g, '\r\n');
-  if (raw?.startsWith('\uFEFF')) out = '\uFEFF' + out;
+  if (raw?.startsWith('﻿')) out = '﻿' + out;
   return out;
 }
 function stamp() {
   const d = new Date();
   return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
 }
-function backupSettings(raw) {
-  const base = `${SETTINGS_FILE}.hud-backup-${stamp()}`;
+function backupSettings(raw, file) {
+  const base = `${file}.hud-backup-${stamp()}`;
   for (let n = 1; ; n++) {
-    const file = n === 1 ? base : `${base}-${n}`;
-    try { fs.writeFileSync(file, raw, { flag: 'wx' }); return file; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    const backup = n === 1 ? base : `${base}-${n}`;
+    try { fs.writeFileSync(backup, raw, { flag: 'wx' }); return backup; } catch (e) { if (e.code !== 'EEXIST') throw e; }
   }
 }
-function writeSettings(text) {
-  const tmp = `${SETTINGS_FILE}.hud-tmp`;
+function writeSettings(text, file) {
+  const tmp = `${file}.hud-tmp`;
   fs.writeFileSync(tmp, text);
   for (let i = 0; ; i++) {
-    try { fs.renameSync(tmp, SETTINGS_FILE); return; } catch (e) {
-      if (i >= 10) { fs.writeFileSync(SETTINGS_FILE, text); fs.rmSync(tmp, { force: true }); return; }
+    try { fs.renameSync(tmp, file); return; } catch (e) {
+      if (i >= 10) { fs.writeFileSync(file, text); fs.rmSync(tmp, { force: true }); return; }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);   // the file can be briefly locked by a reader
     }
   }
 }
 
-function install() {
-  const raw = readSettingsText();
-  const obj = parseSettings(raw);
+/** Puts the HUD's hooks into one settings.json (backup first). Returns { changed, backup }; throws SettingsError. */
+function installInto(file) {
+  const raw = readSettingsText(file);
+  const obj = parseSettings(raw, file);
   const next = structuredClone(obj);
   next.hooks = next.hooks ? next.hooks : {};
   for (const ev of HOOK_EVENTS) {
     const want = ourGroup(ev);
     const groups = next.hooks[ev] ?? [];
-    if (!Array.isArray(groups)) fail(`"hooks.${ev}" in settings.json is not a list. Nothing was changed.`);
+    if (!Array.isArray(groups)) throw new SettingsError(`"hooks.${ev}" in ${file} is not a list. Nothing was changed.`);
     const ok = countOurs(groups) === 1 && groups.some(g => isDeepStrictEqual(g, want));
     next.hooks[ev] = ok ? groups : [...removeOurs(groups), want];
   }
-  if (isDeepStrictEqual(next, obj)) { console.log('Claude HUD hooks are already installed. settings.json was not changed.'); return; }
-  const backup = raw == null ? null : backupSettings(raw);
-  writeSettings(formatLike(raw, next));
-  console.log(`Installed Claude HUD hooks for ${HOOK_EVENTS.length} events in ${SETTINGS_FILE}`);
-  if (backup) console.log(`Backup of the previous file: ${backup}`);
-  console.log(`Hook command: ${HOOK_COMMAND}`);
-  console.log('Open sessions pick the change up by themselves. Remove the hooks with: node hud.mjs uninstall');
+  if (isDeepStrictEqual(next, obj)) return { changed: false, backup: null };
+  const backup = raw == null ? null : backupSettings(raw, file);
+  writeSettings(formatLike(raw, next), file);
+  return { changed: true, backup };
 }
 
-function uninstall() {
-  const raw = readSettingsText();
-  if (raw == null) { console.log('No settings.json: nothing to remove.'); return; }
-  const obj = parseSettings(raw);
-  if (!obj.hooks) { console.log('No hooks in settings.json: nothing to remove.'); return; }
+/** `node hud.mjs install`: every folder the HUD watches, so the page never says "Hooks off" for one of them. */
+function install() {
+  let bad = 0;
+  for (const root of ROOTS) {
+    try {
+      const { changed, backup } = installInto(root.settings);
+      if (!changed) { console.log(`Claude HUD hooks are already installed in ${root.settings}. It was not changed.`); continue; }
+      console.log(`Installed Claude HUD hooks for ${HOOK_EVENTS.length} events in ${root.settings}`);
+      if (backup) console.log(`Backup of the previous file: ${backup}`);
+    } catch (e) { bad++; console.error(e instanceof SettingsError ? e.message : `${root.settings}: ${e.message}`); }
+  }
+  console.log(`Hook command: ${HOOK_COMMAND}`);
+  console.log('Open sessions pick the change up by themselves. Remove the hooks with: node hud.mjs uninstall');
+  if (bad) process.exit(1);
+}
+
+/**
+ * Run when the HUD starts, so the hooks need no command: a folder without them (a new `~/.claude-*`, or a moved
+ * hud.mjs) gets them now. Only at start, so `uninstall` on a running HUD sticks. HUD_NO_AUTOINSTALL=1 turns it off.
+ */
+function autoInstall() {
+  if (process.env.HUD_NO_AUTOINSTALL === '1') return;
+  for (const root of ROOTS) {
+    try {
+      const { changed, backup } = installInto(root.settings);
+      if (changed) console.log(`Installed the HUD's hooks in ${root.settings}${backup ? ` (backup: ${backup})` : ''}`);
+    } catch (e) { console.error(`Could not install the HUD's hooks in ${root.settings}: ${e.message}`); }
+  }
+}
+
+function uninstallFrom(file) {
+  const raw = readSettingsText(file);
+  if (raw == null) return { removed: 0, note: `No ${file}: nothing to remove.` };
+  const obj = parseSettings(raw, file);
+  if (!obj.hooks) return { removed: 0, note: `No hooks in ${file}: nothing to remove.` };
   const next = structuredClone(obj);
   let removed = 0;
   for (const ev of Object.keys(next.hooks)) {
@@ -4907,25 +4938,39 @@ function uninstall() {
     const kept = removeOurs(groups);
     if (kept.length) next.hooks[ev] = kept; else delete next.hooks[ev];
   }
-  if (!removed) { console.log('No Claude HUD hooks found. settings.json was not changed.'); return; }
+  if (!removed) return { removed: 0, note: `No Claude HUD hooks found in ${file}. It was not changed.` };
   const emptied = Object.keys(next.hooks).length === 0;
   const withoutKey = structuredClone(next);
   if (emptied) delete withoutKey.hooks;
   // Restore the exact bytes of a backup when it holds this same content (keeps the file byte-identical).
   let text = null, from = null;
-  const dir = path.dirname(SETTINGS_FILE);
-  const backups = fs.readdirSync(dir).filter(f => f.startsWith('settings.json.hud-backup-')).sort().reverse();
+  const dir = path.dirname(file), name = path.basename(file);
+  const backups = fs.readdirSync(dir).filter(f => f.startsWith(`${name}.hud-backup-`)).sort().reverse();
   for (const f of backups) {
     const b = readSettingsTextAt(path.join(dir, f));
     let parsed;
-    try { parsed = JSON.parse(b.replace(/^\uFEFF/, '')); } catch { continue; }
+    try { parsed = JSON.parse(b.replace(/^﻿/, '')); } catch { continue; }
     if (isDeepStrictEqual(parsed, withoutKey) || (emptied && isDeepStrictEqual(parsed, next))) { text = b; from = f; break; }
   }
-  const backup = backupSettings(raw);
-  writeSettings(text ?? formatLike(raw, withoutKey));
-  console.log(`Removed ${removed} Claude HUD hook entr${removed === 1 ? 'y' : 'ies'} from ${SETTINGS_FILE}`);
-  if (from) console.log(`The file now matches ${from} byte for byte.`);
-  console.log(`Backup of the previous file: ${backup}`);
+  const backup = backupSettings(raw, file);
+  writeSettings(text ?? formatLike(raw, withoutKey), file);
+  return { removed, from, backup };
+}
+
+/** `node hud.mjs uninstall`: every watched folder. A running HUD does not put the hooks back (it only does at start). */
+function uninstall() {
+  let bad = 0;
+  for (const root of ROOTS) {
+    try {
+      const r = uninstallFrom(root.settings);
+      if (r.note) { console.log(r.note); continue; }
+      console.log(`Removed ${r.removed} Claude HUD hook entr${r.removed === 1 ? 'y' : 'ies'} from ${root.settings}`);
+      if (r.from) console.log(`The file now matches ${r.from} byte for byte.`);
+      console.log(`Backup of the previous file: ${r.backup}`);
+    } catch (e) { bad++; console.error(e instanceof SettingsError ? e.message : `${root.settings}: ${e.message}`); }
+  }
+  console.log('The HUD puts the hooks back each time it starts. Turn that off with HUD_NO_AUTOINSTALL=1, and remove autostart: node hud.mjs autostart off');
+  if (bad) process.exit(1);
 }
 function readSettingsTextAt(file) { try { return fs.readFileSync(file, 'utf8'); } catch { return ''; } }
 
@@ -5376,8 +5421,9 @@ const HELP = `Claude HUD ${VERSION}: a live dashboard of every Claude Code sessi
   node hud.mjs --lan           also open it to other devices on the network, view only (or set HUD_LAN=1)
   node hud.mjs --demo          serve simulated sessions, subagents, plans and events
   node hud.mjs --demo=dense    the same with 24 sessions
-  node hud.mjs install         add the HUD's hooks to ~/.claude/settings.json (backup first; safe to repeat)
-  node hud.mjs uninstall       remove only the HUD's hooks from ~/.claude/settings.json
+  node hud.mjs install         add the HUD's hooks to every watched Claude Code folder's settings.json (backup first;
+                               safe to repeat; the HUD also does this by itself each time it starts)
+  node hud.mjs uninstall       remove only the HUD's hooks from those files (HUD_NO_AUTOINSTALL=1 stops the re-adding)
   node hud.mjs autostart on|off  start the HUD at logon (Task Scheduler, no window), or stop doing so
                                (add --lan to autostart on to start it open to the network)
   node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard
