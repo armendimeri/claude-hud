@@ -51,6 +51,33 @@ const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 const SETTINGS_FILE = path.join(CLAUDE_DIR, 'settings.json');
 const CLAUDE_JSON = path.join(CONFIG_DIR ?? HOME, '.claude.json');   // only its `cachedUsageUtilization` key is kept
 
+/**
+ * Every Claude Code folder the HUD watches: the one above, then each in HUD_CLAUDE_DIRS (separated like PATH), then
+ * every `~/.claude-*` that holds `sessions` or `projects` (a second install run with its own CLAUDE_CONFIG_DIR, e.g.
+ * `~/.claude-bedrock`). Found once at start. The first folder is the one `install` and `uninstall` change.
+ */
+const ROOTS = (() => {
+  const found = new Map();
+  const add = (dir, json) => {
+    const d = path.resolve(dir);
+    if (!found.has(d.toLowerCase())) {
+      found.set(d.toLowerCase(), { dir: d, sessions: path.join(d, 'sessions'), projects: path.join(d, 'projects'),
+        settings: path.join(d, 'settings.json'), json: json ?? path.join(d, '.claude.json'), bedrock: false, hooks: false });
+    }
+  };
+  add(CLAUDE_DIR, CLAUDE_JSON);
+  for (const d of (process.env.HUD_CLAUDE_DIRS ?? '').split(path.delimiter)) if (d.trim()) add(d.trim());
+  try {
+    for (const e of fs.readdirSync(HOME, { withFileTypes: true })) {
+      if (!e.isDirectory() || !/^\.claude-[\w.-]+$/.test(e.name)) continue;
+      const d = path.join(HOME, e.name);
+      if (fs.existsSync(path.join(d, 'sessions')) || fs.existsSync(path.join(d, 'projects'))) add(d);
+    }
+  } catch {}
+  return [...found.values()];
+})();
+const rootOf = file => { const k = file.toLowerCase(); return ROOTS.find(r => k.startsWith(r.projects.toLowerCase() + path.sep)) ?? null; };
+
 const HOOK_BUDGET_MS = 400;              // the forwarder gives up after this (PLAN §4.2)
 const HOOK_STDIN_MAX = 32 << 20;
 const EVENT_BODY_MAX = 256 << 10;
@@ -169,11 +196,13 @@ function normalizeModel(raw) {
   return { model: raw, provider: 'unknown' };
 }
 
-let bedrockFlag = false;   // `env.CLAUDE_CODE_USE_BEDROCK` in ~/.claude/settings.json, the only key of that block read
-/** Provider for one agent: its model id, then what its transcript shows (`info.bedrock`), then the settings flag. */
+/**
+ * Provider for one agent: its model id, then what its transcript shows (`info.bedrock`), then the flag of the Claude
+ * Code folder it lives in (`info.rootBedrock`: `env.CLAUDE_CODE_USE_BEDROCK` in that folder's settings.json, the only key of that block read).
+ */
 function modelInfo(raw, info) {
   const m = normalizeModel(raw);
-  if (m.provider === 'anthropic' && (info?.bedrock || bedrockFlag)) m.provider = 'bedrock';
+  if (m.provider === 'anthropic' && (info?.bedrock || info?.rootBedrock)) m.provider = 'bedrock';
   return m;
 }
 /**
@@ -292,7 +321,7 @@ const roots = new Map();        // project root (lower-cased) -> { root, project
 const rootCache = new Map();    // cwd (lower-cased) -> { root, mainRoot, project }
 const external = new Map();     // D12 rows
 let externalError = null;
-let account = null;             // 5-hour and weekly usage from Claude Code's own cache in ~/.claude.json
+let account = null;             // 5-hour and weekly usage from Claude Code's own cache in ~/.claude.json (of the first folder that has one)
 let hooksInstalled = false;
 let demo = null;
 
@@ -304,7 +333,7 @@ function newSession(id) {
     needsYou: null, currentTool: null, hookTools: new Set(), doneTools: new Set(),
     startedAt: null, ended: false, endedAt: null, endReason: null,
     startedBy: null, chainChecked: false,
-    tail: null, transcriptPath: null, lastFind: 0,
+    tail: null, transcriptPath: null, lastFind: 0, root: null,
     subs: new Set(), byToolUse: new Map(), byAgent: new Map(),
   };
 }
@@ -368,7 +397,7 @@ function setCwd(s, cwd) {
 
 function newInfo() {
   return {
-    title: null, customTitle: null, modelRaw: null, requestModel: null, bedrock: false,
+    title: null, customTitle: null, modelRaw: null, requestModel: null, bedrock: false, rootBedrock: false,
     effort: null, branch: null, cwd: null, sessionId: null, agentId: null,
     tokens: zero(), byDay: new Map(), msgs: new Map(), lastUsed: 0, firstTs: 0, lastTs: 0,
     toolIds: new Set(), openTools: new Map(), agentCalls: new Map(),
@@ -378,6 +407,7 @@ function getTail(file) {
   const key = file.toLowerCase();
   let t = tails.get(key);
   if (!t) { t = { file, offset: 0, rest: Buffer.alloc(0), reading: false, again: false, info: newInfo(), owner: null }; tails.set(key, t); }
+  t.info.rootBedrock = !!rootOf(file)?.bedrock;   // read again each time: the flag can change while the HUD runs
   return t;
 }
 
@@ -664,16 +694,20 @@ function ensureSubTail(s, agentId, file) {
 function slugFor(cwd) { return cwd.replace(/[^A-Za-z0-9]/g, '-'); }
 function findTranscript(s) {
   if (s.cwd) {
-    const f = path.join(PROJECTS_DIR, slugFor(s.cwd), `${s.id}.jsonl`);
-    if (fs.existsSync(f)) return f;
+    for (const r of s.root ? [s.root, ...ROOTS.filter(x => x !== s.root)] : ROOTS) {
+      const f = path.join(r.projects, slugFor(s.cwd), `${s.id}.jsonl`);
+      if (fs.existsSync(f)) return f;
+    }
   }
   if (Date.now() - s.lastFind < 10_000) return null;
   s.lastFind = Date.now();
-  let dirs = [];
-  try { dirs = fs.readdirSync(PROJECTS_DIR); } catch {}
-  for (const d of dirs) {
-    const f = path.join(PROJECTS_DIR, d, `${s.id}.jsonl`);
-    if (fs.existsSync(f)) return f;
+  for (const r of ROOTS) {
+    let dirs = [];
+    try { dirs = fs.readdirSync(r.projects); } catch {}
+    for (const d of dirs) {
+      const f = path.join(r.projects, d, `${s.id}.jsonl`);
+      if (fs.existsSync(f)) return f;
+    }
   }
   return null;
 }
@@ -713,18 +747,23 @@ async function scanRegistry() {
   if (registryScanning) return;
   registryScanning = true;
   try {
-    let names = [];
-    try { names = await fsp.readdir(SESSIONS_DIR); registryReadable = true; } catch {}
     const seen = new Set();
-    for (const n of names) {
+    const entries = [];
+    for (const root of ROOTS) {
+      try { for (const n of await fsp.readdir(root.sessions)) entries.push([root, n]); registryReadable = true; } catch {}
+    }
+    for (const [root, n] of entries) {
       if (!/^\d+\.json$/.test(n)) continue;              // <pid>.json only, never *.key
-      const j = await readJson(path.join(SESSIONS_DIR, n));
+      const j = await readJson(path.join(root.sessions, n));
       if (!isObj(j) || typeof j.sessionId !== 'string') continue;
       const pid = Number.isInteger(j.pid) ? j.pid : Number(n.slice(0, -5));
       seen.add(j.sessionId);
       const s = getSession(j.sessionId);
       const isNew = !s.inRegistry;
       s.inRegistry = true;
+      s.root = root;
+      // The same session id under a new process (resumed, or the editor window reloaded): it is running again.
+      const relaunched = s.ended && s.pid !== pid && pidAlive(pid);
       s.pid = pid;
       if (typeof j.cwd === 'string') setCwd(s, j.cwd);
       if (typeof j.name === 'string' && j.name) s.name = j.name;
@@ -735,6 +774,12 @@ async function scanRegistry() {
       if (j.status === 'busy' || j.status === 'idle') {
         const at = num(j.statusUpdatedAt) || num(j.updatedAt) || Date.now();
         if (at >= s.regStatusAt) { s.regStatus = j.status; s.regStatusAt = at; }
+      }
+      if (relaunched) {
+        reopenSession(s);
+        s.chainChecked = false;
+        queueChain(s);
+        pushFeed(s, 'session', 'Session resumed', Date.now(), `resume:${s.id}:${pid}`);
       }
       if (!pidAlive(pid)) endSession(s, Date.now(), 'process gone');
       if (isNew) {
@@ -927,11 +972,11 @@ function onHook(p) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Watching ~/.claude/projects (transcripts, subagent files) and the periodic poll
 
-function onProjectsChange(rel) {
+function onProjectsChange(root, rel) {
   if (!rel) return;
   const parts = String(rel).split(/[\\/]/);
   const base = parts[parts.length - 1];
-  const file = path.join(PROJECTS_DIR, ...parts);
+  const file = path.join(root.projects, ...parts);
   if (parts.length === 2 && base.endsWith('.jsonl')) {
     const s = sessions.get(base.slice(0, -6));
     if (s?.tail) readTail(s.tail);
@@ -953,11 +998,13 @@ function onProjectsChange(rel) {
 // (sessions that ended recently are shown as ended).
 async function scanRecentTranscripts() {
   const since = Math.min(startOfDay(), Date.now() - ENDED_KEEP_MS);
-  let dirs = [];
-  try { dirs = await fsp.readdir(PROJECTS_DIR, { withFileTypes: true }); } catch { return; }
-  for (const d of dirs) {
+  const dirs = [];
+  for (const r of ROOTS) {
+    try { for (const d of await fsp.readdir(r.projects, { withFileTypes: true })) dirs.push([r, d]); } catch {}
+  }
+  for (const [root, d] of dirs) {
     if (!d.isDirectory()) continue;
-    const dir = path.join(PROJECTS_DIR, d.name);
+    const dir = path.join(root.projects, d.name);
     let ents = [];
     try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
     for (const e of ents) {
@@ -1327,25 +1374,29 @@ function diffPlan(a, b) {
 // =====================================================================================================================
 // Account usage (5-hour and weekly limits): Claude Code caches it in ~/.claude.json. Only that key is used.
 
-function readAccount() {
-  fs.readFile(CLAUDE_JSON, 'utf8', (err, txt) => {
-    if (err) { account = null; scheduleState(); return; }
-    let u;
-    try { u = JSON.parse(txt.replace(/^\uFEFF/, ''))?.cachedUsageUtilization; } catch { return; }   // half-written: keep the last value
-    const win = w => {
-      if (!isObj(w) || !Number.isFinite(w.utilization)) return null;
-      const resetsAt = Date.parse(w.resets_at) || null;
-      return { pct: resetsAt && resetsAt < Date.now() ? null : Math.round(w.utilization * 10) / 10, resetsAt };
-    };
-    account = isObj(u) ? { fiveHour: win(u.utilization?.five_hour), sevenDay: win(u.utilization?.seven_day), fetchedAt: num(u.fetchedAtMs) || null } : null;
-    scheduleState();
-  });
+async function readAccount() {
+  let u = null, halfWritten = false;
+  for (const root of ROOTS) {      // a Bedrock folder has no subscription usage; the first folder that has it is the account
+    try { u = JSON.parse((await fsp.readFile(root.json, 'utf8')).replace(/^\uFEFF/, ''))?.cachedUsageUtilization; } catch (e) { if (e instanceof SyntaxError) halfWritten = true; }
+    if (isObj(u)) break;
+  }
+  if (!isObj(u) && halfWritten) return;   // keep the last value
+  const win = w => {
+    if (!isObj(w) || !Number.isFinite(w.utilization)) return null;
+    const resetsAt = Date.parse(w.resets_at) || null;
+    return { pct: resetsAt && resetsAt < Date.now() ? null : Math.round(w.utilization * 10) / 10, resetsAt };
+  };
+  account = isObj(u) ? { fiveHour: win(u.utilization?.five_hour), sevenDay: win(u.utilization?.seven_day), fetchedAt: num(u.fetchedAtMs) || null } : null;
+  scheduleState();
 }
 function readSettingsFlags() {
-  const j = readJsonSync(SETTINGS_FILE);
-  const v = j?.env?.CLAUDE_CODE_USE_BEDROCK;
-  bedrockFlag = v === true || v === 1 || /^(1|true|yes)$/i.test(String(v ?? ''));
-  hooksInstalled = isObj(j?.hooks) && Object.values(j.hooks).some(arr => Array.isArray(arr) && arr.some(g => Array.isArray(g?.hooks) && g.hooks.some(isOurHook)));
+  for (const root of ROOTS) {
+    const j = readJsonSync(root.settings);
+    const v = j?.env?.CLAUDE_CODE_USE_BEDROCK;
+    root.bedrock = v === true || v === 1 || /^(1|true|yes)$/i.test(String(v ?? ''));
+    root.hooks = isObj(j?.hooks) && Object.values(j.hooks).some(arr => Array.isArray(arr) && arr.some(g => Array.isArray(g?.hooks) && g.hooks.some(isOurHook)));
+  }
+  hooksInstalled = ROOTS.every(r => r.hooks);   // one folder without the hooks is enough to show "Hooks off"
   scheduleState();
 }
 
@@ -4732,6 +4783,7 @@ function serve(demoMode) {
   process.on('unhandledRejection', e => console.error('error:', e));
   server.listen(PORT, HOST, () => {
     console.log(`Claude HUD ${VERSION} on http://${LAN ? 'localhost' : HOST}:${PORT}${demoMode ? ` (demo${demoMode === 'dense' ? ', dense' : ''})` : ''}`);
+    if (!demoMode) console.log(`Watching Claude Code in: ${ROOTS.map(r => r.dir).join('  ')}`);
     if (!LAN) return;
     const urls = Object.values(os.networkInterfaces()).flat()
       .filter(a => a && a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')).map(a => `http://${a.address}:${PORT}`);
@@ -4742,11 +4794,13 @@ function serve(demoMode) {
 
   readSettingsFlags();
   readAccount();
-  fs.watchFile(SETTINGS_FILE, { interval: 5000 }, readSettingsFlags);
-  fs.watchFile(CLAUDE_JSON, { interval: 10_000 }, readAccount);
   const watch = (dir, opts, fn) => { try { fs.watch(dir, opts, fn).on('error', () => {}); } catch {} };
-  watch(SESSIONS_DIR, {}, (e, f) => { if (!f || /^\d+\.json$/.test(f)) scanRegistry(); });
-  watch(PROJECTS_DIR, { recursive: true }, (e, f) => onProjectsChange(f));
+  for (const root of ROOTS) {
+    fs.watchFile(root.settings, { interval: 5000 }, readSettingsFlags);
+    fs.watchFile(root.json, { interval: 10_000 }, readAccount);
+    watch(root.sessions, {}, (e, f) => { if (!f || /^\d+\.json$/.test(f)) scanRegistry(); });
+    watch(root.projects, { recursive: true }, (e, f) => onProjectsChange(root, f));
+  }
   scanRegistry().then(scanRecentTranscripts);
   setInterval(poll, POLL_MS);
   if (BEDROCK_REGION) {
