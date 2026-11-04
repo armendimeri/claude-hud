@@ -5,6 +5,10 @@ same CSS and components inside `hud.mjs` (`HUD_CSS`, `hudClient()`), so `/design
 each component looks in each state. If this file and `/design` disagree, `/design` shows what was built: fix this
 file.
 
+The HUD also displays Codex sessions. Cards identify the agent, and network details retain the agent and model in
+accessible labels even when dense layouts shorten visible text. Provider badges are A (Anthropic), B (Bedrock),
+and O (OpenAI). The account quota panel is labeled **Claude account limits** because it uses Claude's cache.
+
 ## 1. Direction
 
 A **holographic tactical display**: translucent glass panels over deep space navy, lit by arc-reactor cyan. It is

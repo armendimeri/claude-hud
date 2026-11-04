@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Claude HUD: one live dashboard for every Claude Code session on this PC.
+// Claude HUD: one live dashboard for Claude Code and Codex sessions on this PC.
 // One file, Node 22 built-ins only, no build step. `node hud.mjs help` lists the commands; README.md has the rest.
 
 import http from 'node:http';
@@ -32,7 +32,7 @@ const CONTEXT_WINDOWS = {
   'claude-haiku-4-5': 200_000,
 };
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const HOSTNAME = os.hostname();          // labels the hub of the network view
 const PORT = portFrom(process.env.HUD_PORT) ?? 7777;
 const LAN = process.argv.includes('--lan') || process.env.HUD_LAN === '1';   // D15, off by default
@@ -43,6 +43,8 @@ const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:$
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const HOME = os.homedir();
+const CODEX_ROOTS = [...new Set([process.env.CODEX_HOME || path.join(HOME, '.codex'),
+  ...(process.env.HUD_CODEX_DIRS || '').split(path.delimiter).filter(d => d.trim())].map(d => path.resolve(d.trim())))];
 // CLAUDE_CONFIG_DIR moves Claude Code's folder (and its .claude.json) elsewhere; the HUD follows it.
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR ? path.resolve(process.env.CLAUDE_CONFIG_DIR) : null;
 const CLAUDE_DIR = CONFIG_DIR ?? path.join(HOME, '.claude');
@@ -202,6 +204,7 @@ function normalizeModel(raw) {
  */
 function modelInfo(raw, info) {
   const m = normalizeModel(raw);
+  if (info?.codexProvider) m.provider = info.codexProvider;
   if (m.provider === 'anthropic' && (info?.bedrock || info?.rootBedrock)) m.provider = 'bedrock';
   return m;
 }
@@ -215,8 +218,8 @@ function rawModel(info) {
   if (!got) return req;
   return req && normalizeModel(req).model === normalizeModel(got).model ? req : got;
 }
-function contextFor(model, used) {
-  const window = CONTEXT_WINDOWS[model];
+function contextFor(model, used, reportedWindow) {
+  const window = num(reportedWindow) || CONTEXT_WINDOWS[model];
   if (!window || !used) return null;
   return { used, window, pct: Math.round(used / window * 1000) / 10 };
 }
@@ -240,6 +243,13 @@ function summarizeTool(name, input, cwd) {
   if (!isObj(input)) return '';
   let out = '';
   switch (name) {
+    case 'exec_command': out = str(input.cmd); break;
+    case 'shell': case 'shell_command': out = Array.isArray(input.command) ? input.command.join(' ') : str(input.command); break;
+    case 'read_file': out = shortPath(str(input.path), cwd); break;
+    case 'spawn_agent': out = str(input.task_name) || str(input.agent_type); break;
+    case 'request_user_input': case 'request_user_input_async': out = 'Question for you'; break;
+    case 'apply_patch': out = 'Apply file changes'; break;
+    case 'exec': out = 'Run tools'; break;
     case 'Bash': case 'PowerShell': out = str(input.command); break;
     case 'Read': case 'Write': case 'Edit': case 'MultiEdit': case 'NotebookEdit': case 'NotebookRead':
       out = shortPath(str(input.file_path) || str(input.notebook_path), cwd); break;
@@ -327,7 +337,7 @@ let demo = null;
 
 function newSession(id) {
   return {
-    id, pid: null, cwd: null, project: null, name: null, entrypoint: null, version: null, kind: null,
+    id, agent: 'claude', pid: null, cwd: null, project: null, name: null, entrypoint: null, version: null, kind: null,
     inRegistry: false, regStatus: null, regStatusAt: 0,
     hookStatus: null, hookStatusAt: 0, lastHookAt: 0, hookModel: null,
     needsYou: null, currentTool: null, hookTools: new Set(), doneTools: new Set(),
@@ -424,7 +434,13 @@ async function readTail(t) {
       t.again = false;
       let st;
       try { st = await fsp.stat(t.file); } catch { break; }
-      if (st.size < t.offset) { t.offset = 0; t.rest = Buffer.alloc(0); t.info = newInfo(); }   // replaced or truncated
+      if (st.size < t.offset) {
+        t.offset = 0; t.rest = Buffer.alloc(0); t.info = newInfo();
+        if (t.format === 'codex' && t.owner) {
+          const s = t.owner.session;
+          s.hookStatus = null; s.hookStatusAt = 0; s.needsYou = null;
+        }
+      }   // replaced or truncated
       if (st.size === t.offset) continue;
       const fh = await fsp.open(t.file, 'r');
       try {
@@ -454,6 +470,7 @@ function consume(t, chunk) {
 }
 
 function processLine(t, line) {
+  if (t.format === 'codex') { processCodexLine(t, line); return; }
   if (line.startsWith(API_REQUEST_PREFIX)) { onApiRequestLine(t, line); return; }
   for (const p of SKIP_LINE_PREFIXES) if (line.startsWith(p)) return;
   let j;
@@ -532,6 +549,165 @@ function onUserLine(t, j, ts) {
     t.info.openTools.delete(b.tool_use_id);
     if (t.info.agentCalls.has(b.tool_use_id)) onAgentResult(t, b.tool_use_id, j.toolUseResult, b.is_error === true, ts);
   }
+}
+
+// =====================================================================================================================
+// Codex rollouts. Read session metadata and selected event fields only; never retain reasoning, tool output,
+// instructions, or full prompts. Both older token_count and newer token_usage_record use cumulative counters.
+
+const codexId = id => `codex:${id}`;
+let codexScanning = false, codexLastScan = 0;
+const codexMonitoring = { readable: false, error: null };
+
+function codexTokens(u) {
+  const cached = Math.min(num(u.cached_input_tokens), num(u.input_tokens));
+  const written = Math.min(num(u.cache_write_input_tokens), num(u.input_tokens) - cached);
+  return { input: num(u.input_tokens) - cached - written, output: num(u.output_tokens), cacheRead: cached, cacheWrite: written };
+}
+
+function codexUsage(info, usage, latest, window, ts) {
+  if (num(window)) info.contextWindow = window;
+  if (isObj(latest)) info.lastUsed = num(latest.total_tokens) || num(latest.input_tokens) + num(latest.output_tokens);
+  if (!isObj(usage)) return;
+  const tok = codexTokens(usage), delta = zero();
+  for (const k of Object.keys(delta)) delta[k] = Math.max(0, tok[k] - info.tokens[k]);
+  // Repeated cumulative records (including the paired token_count event) must never double count.
+  info.tokens = tok;
+  if (ts) addDay(info, dayKey(ts), delta, 1);
+}
+
+function codexToolName(name) { return str(name).replace(/^(?:functions|tools|collaboration)\./, ''); }
+
+function processCodexLine(t, line) {
+  let j;
+  try { j = JSON.parse(line); } catch { return; }
+  if (!isObj(j) || !isObj(j.payload)) return;
+  const p = j.payload, info = t.info;
+  const ts = Date.parse(j.timestamp) || 0;
+  if (j.type === 'session_meta') {
+    if (!str(p.id)) return;
+    const s = getSession(codexId(p.id));
+    s.agent = 'codex'; s.tail = t; s.transcriptPath = t.file;
+    t.owner = { session: s, agentId: null };
+    info.sessionId = s.id;
+    info.codexProvider = p.model_provider === 'openai' ? 'openai' : 'unknown';
+    if (str(p.cwd)) { info.cwd = p.cwd; setCwd(s, p.cwd); }
+    info.branch = str(p.git?.branch) || null;
+    s.entrypoint = str(p.source) || str(p.originator) || 'codex';
+    s.version = str(p.cli_version) || null;
+    s.startedAt = Date.parse(p.timestamp) || ts || null;
+    const spawn = p.source?.subagent?.thread_spawn;
+    s.codexParent = str(spawn?.parent_thread_id) ? codexId(spawn.parent_thread_id) : null;
+    s.codexInternal = !!p.source?.subagent?.other;
+    s.kind = str(spawn?.agent_role) || str(spawn?.agent_type) || 'Codex';
+    s.name = str(spawn?.agent_nickname) || null;
+  }
+  const s = t.owner?.session;
+  if (!s) return;
+  const advanced = ts > info.lastTs;
+  if (ts) { info.firstTs ||= ts; info.lastTs = Math.max(info.lastTs, ts); }
+  if (s.ended && advanced && ts > (s.endedAt || 0) && Date.now() - ts < SILENT_SESSION_MS) reopenSession(s);
+  if (j.type === 'turn_context') {
+    if (str(p.model)) info.modelRaw = p.model;
+    if (str(p.effort)) info.effort = p.effort;
+    if (str(p.cwd)) { info.cwd = p.cwd; setCwd(s, p.cwd); }
+  } else if (j.type === 'token_usage_record') {
+    codexUsage(info, p.thread_token_usage, p.usage, null, ts);
+  } else if (j.type === 'event_msg') {
+    switch (p.type) {
+      case 'token_count':
+        codexUsage(info, p.info?.total_token_usage, p.info?.last_token_usage, p.info?.model_context_window, ts);
+        break;
+      case 'task_started': case 'turn_started': case 'user_message':
+        setHookStatus(s, 'busy', ts); clearNeedsYou(s);
+        if (p.type === 'user_message' && !info.title) info.title = truncate(redact(oneLine(p.message)), 300) || null;
+        if (num(p.model_context_window)) info.contextWindow = p.model_context_window;
+        break;
+      case 'task_complete': case 'turn_complete': case 'turn_aborted':
+        setHookStatus(s, 'idle', ts); clearNeedsYou(s); info.openTools.clear();
+        if (ts >= hudStartedAt - 2000) pushFeed(s, p.type === 'turn_aborted' ? 'session' : 'done', p.type === 'turn_aborted' ? 'Codex turn interrupted' : 'Codex turn complete', ts, `codex-stop:${s.id}:${ts}`);
+        break;
+      case 'session_end': case 'shutdown_complete': endSession(s, ts, 'closed'); break;
+    }
+  } else if (j.type === 'response_item') {
+    const id = str(p.call_id);
+    if ((p.type === 'function_call' || p.type === 'custom_tool_call') && id && !info.toolIds.has(id)) {
+      const name = codexToolName(p.name);
+      let input = {};
+      try { input = JSON.parse(p.arguments || '{}'); } catch {}
+      const summary = summarizeTool(name, input, info.cwd);
+      info.toolIds.add(id);
+      info.openTools.set(id, { id, name, summary, since: ts });
+      if (info.openTools.size > 50) info.openTools.delete(info.openTools.keys().next().value);
+      setHookStatus(s, 'busy', ts);
+      if (/^request_user_input(?:_async)?$/.test(name)) setNeedsYou(s, 'Question for you', 'question', ts);
+      if (ts >= hudStartedAt - 2000) feedTool(s, null, id, name, summary, ts);
+    } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
+      const tool = info.openTools.get(id);
+      if (tool && /^request_user_input(?:_async)?$/.test(tool.name)) clearNeedsYou(s);
+      info.openTools.delete(id);
+    }
+  }
+}
+
+async function scanCodex(force = false) {
+  if (codexScanning || (!force && Date.now() - codexLastScan < 15_000)) return;
+  codexScanning = true; codexLastScan = Date.now();
+  const since = Math.min(startOfDay(), Date.now() - ENDED_KEEP_MS);
+  let readable = false, error = null;
+  const visit = async (dir, depth = 0) => {
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); if (!depth) readable = true; }
+    catch (e) { if (!depth && e.code !== 'ENOENT') error = `Codex sessions: ${e.code}`; return; }
+    for (const e of entries) {
+      const file = path.join(dir, e.name);
+      // Do not follow symlinks or inspect other CODEX_HOME files (notably auth.json).
+      if (e.isDirectory() && depth < 3 && /^\d+$/.test(e.name)) { await visit(file, depth + 1); continue; }
+      if (!e.isFile() || !/^rollout-.*\.jsonl$/.test(e.name)) continue;
+      let st;
+      try { st = await fsp.stat(file); } catch { continue; }
+      const existing = tails.get(file.toLowerCase());
+      if (!existing && st.mtimeMs < since) continue;
+      const t = existing || getTail(file);
+      t.format = 'codex';
+      await readTail(t);
+      const s = t.owner?.session;
+      if (s && !s.ended && t.info.lastTs && Date.now() - t.info.lastTs > SILENT_SESSION_MS) endSession(s, t.info.lastTs, 'no recent Codex activity');
+    }
+  };
+  try { for (const dir of CODEX_ROOTS) await visit(path.join(dir, 'sessions')); }
+  finally { codexScanning = false; codexMonitoring.readable = readable; codexMonitoring.error = error; scheduleState(); }
+}
+
+function onCodexChange(dir, rel) {
+  if (!rel || !/^rollout-.*\.jsonl$/.test(path.basename(String(rel)))) return;
+  const file = path.resolve(dir, String(rel));
+  if (!file.startsWith(path.resolve(dir) + path.sep)) return;
+  const t = tails.get(file.toLowerCase());
+  if (t?.format === 'codex') readTail(t);
+  else scanCodex(true);
+}
+
+function codexTree(list) {
+  const byId = new Map(list.map(s => [s.id, s]));
+  const hidden = new Set();
+  for (const child of list) {
+    const source = sessions.get(child.id);
+    if (source?.codexInternal) { hidden.add(child.id); continue; }
+    let parentId = source?.codexParent, root = null, depth = 0;
+    const seen = new Set([child.id]);
+    while (parentId && byId.has(parentId) && !seen.has(parentId)) {
+      seen.add(parentId); root = byId.get(parentId); depth++;
+      parentId = sessions.get(parentId)?.codexParent;
+    }
+    if (!root || (parentId && seen.has(parentId))) continue;
+    root.subagents.push({ ...child, parentId: source.codexParent, depth, description: child.title || child.name,
+      type: source.kind || 'Codex', state: child.status === 'busy' || child.status === 'needs-you' ? 'running' : 'done',
+      endedAt: child.status === 'idle' ? child.lastActivityAt : child.endedAt, background: false });
+    addTokens(root.tokensTree, child.tokens);
+    hidden.add(child.id);
+  }
+  return list.filter(s => !hidden.has(s.id));
 }
 
 // =====================================================================================================================
@@ -712,6 +888,7 @@ function findTranscript(s) {
   return null;
 }
 function attachSessionTranscript(s, hint) {
+  if (s.agent === 'codex') return;
   if (s.tail) return;
   const file = hint && fs.existsSync(hint) ? hint : findTranscript(s);
   if (!file) return;
@@ -1043,7 +1220,15 @@ async function scanRecentTranscripts() {
 function poll() {
   const now = Date.now();
   scanRegistry();
+  scanCodex();
   for (const s of sessions.values()) {
+    // Keep Codex tails attached across idle expiry so appending to an old rollout reopens its session.
+    if (s.agent === 'codex') {
+      if (s.tail) readTail(s.tail);
+      const last = lastActivity(s);
+      if (!s.ended && last && now - last > SILENT_SESSION_MS) endSession(s, last, 'no recent Codex activity');
+      continue;
+    }
     if (s.ended && now - s.endedAt > ENDED_KEEP_MS) { dropSession(s); continue; }
     if (!s.tail) attachSessionTranscript(s);
     if (s.ended) continue;
@@ -1515,7 +1700,7 @@ function subView(s, sub, now) {
     state: sub.state, background: sub.background,
     startedAt: sub.startedAt || info?.firstTs || null, endedAt: sub.endedAt,
     tokens: info ? { ...info.tokens } : zero(),
-    context: contextFor(mi.model, info?.lastUsed),
+    context: contextFor(mi.model, info?.lastUsed, info?.contextWindow),
     currentTool: toolView(tool),
   };
 }
@@ -1535,7 +1720,7 @@ function sessionView(s, now) {
   let tools = s.hookTools.size;
   if (info) { tools = info.toolIds.size; for (const id of s.hookTools) if (!info.toolIds.has(id)) tools++; }
   return {
-    id: s.id, pid: s.pid, project: s.project || (info?.cwd ? rootFor(info.cwd).project : null), cwd: s.cwd || info?.cwd || null,
+    id: s.id, agent: s.agent, pid: s.pid, project: s.project || (info?.cwd ? rootFor(info.cwd).project : null), cwd: s.cwd || info?.cwd || null,
     name: s.name, title: truncate(info?.customTitle || info?.title || s.name || null, 300) || null,
     entrypoint: s.entrypoint, version: s.version,
     status,
@@ -1546,7 +1731,7 @@ function sessionView(s, now) {
     tools,
     startedBy: s.startedBy,
     tokens, tokensTree,
-    context: contextFor(mi.model, info?.lastUsed),
+    context: contextFor(mi.model, info?.lastUsed, info?.contextWindow),
     subagents,
   };
 }
@@ -1577,10 +1762,10 @@ function projectsView() {
 function snapshot() {
   if (demo) return demo.snapshot();
   const now = Date.now();
-  const list = [...sessions.values()]
+  const list = codexTree([...sessions.values()]
     .filter(s => !(s.ended && now - s.endedAt > ENDED_KEEP_MS) && (s.inRegistry || s.tail || s.lastHookAt))
     .map(s => sessionView(s, now))
-    .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+    .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0)));
   const today = dayKey(now);
   const tokensToday = zero();
   for (const t of tails.values()) { const d = t.info.byDay.get(today); if (d) addTokens(tokensToday, d); }
@@ -1591,6 +1776,7 @@ function snapshot() {
     .sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
   return {
     now, uptime: now - hudStartedAt, demo: false, version: VERSION, host: HOSTNAME, hooksInstalled,
+    codex: { ...codexMonitoring, directories: CODEX_ROOTS },
     sessions: list,
     external: [...external.values()],
     externalError,
@@ -2477,11 +2663,13 @@ function hudClient() {
   }
   const TOOL_ICONS = { Bash: 'terminal', PowerShell: 'terminal', BashOutput: 'terminal', KillShell: 'terminal', Read: 'file', NotebookRead: 'file',
     Edit: 'edit', MultiEdit: 'edit', Write: 'edit', NotebookEdit: 'edit', Grep: 'search', Glob: 'search', LS: 'search', WebFetch: 'web', WebSearch: 'web',
-    Agent: 'agent', Task: 'agent', TodoWrite: 'plan', ExitPlanMode: 'plan', AskUserQuestion: 'bell' };
+    Agent: 'agent', Task: 'agent', TodoWrite: 'plan', ExitPlanMode: 'plan', AskUserQuestion: 'bell',
+    exec_command: 'terminal', shell_command: 'terminal', shell: 'terminal', read_file: 'file', apply_patch: 'edit',
+    spawn_agent: 'agent', update_plan: 'plan', request_user_input: 'bell', request_user_input_async: 'bell' };
   const toolIcon = n => TOOL_ICONS[n] || 'tool';
   const ctxLevel = p => p == null ? 'none' : p >= 90 ? 'hot' : p >= 70 ? 'warn' : 'ok';
-  const provName = p => p === 'bedrock' ? 'Bedrock' : p === 'anthropic' ? 'Anthropic' : 'Unknown';
-  const provLetter = p => p === 'bedrock' ? 'B' : p === 'anthropic' ? 'A' : '?';
+  const provName = p => p === 'openai' ? 'OpenAI' : p === 'bedrock' ? 'Bedrock' : p === 'anthropic' ? 'Anthropic' : 'Unknown';
+  const provLetter = p => p === 'openai' ? 'O' : p === 'bedrock' ? 'B' : p === 'anthropic' ? 'A' : '?';
   // The needs-you reason where room is short: "Allow Bash", "Question".
   function shortReason(r) {
     const m = /^Permission:\s*(.+)$/i.exec(r || '');
@@ -2886,7 +3074,7 @@ function hudClient() {
         tag.set(x.status);
         const t = x.title || x.name || 'Untitled session';
         txt(title, t); title.dataset.tip = t;
-        txt(mChip, [shortModel(x.model) || 'model unknown', x.effort].filter(Boolean).join(' · '));
+        txt(mChip, [x.agent === 'codex' ? 'Codex' : 'Claude Code', shortModel(x.model) || 'model unknown', x.effort].filter(Boolean).join(' · '));
         setData(mChip, 'tip', x.modelRaw ? 'Model id: ' + x.modelRaw : null);
         show(bChip, !!x.branch); txt(bName, x.branch || ''); setData(bChip, 'tip', x.branch ? 'Branch ' + x.branch : null);
         prov.set(x.provider, x.modelRaw);
@@ -2923,7 +3111,7 @@ function hudClient() {
         tag.set(x.status);
         txt(p, x.project || '—'); setData(p, 'tip', x.project);
         const title = x.title || x.name || 'Untitled session'; txt(t, title); t.dataset.tip = title;
-        txt(m, shortModel(x.model)); setData(m, 'tip', x.modelRaw);
+        txt(m, (x.agent === 'codex' ? 'Codex · ' : '') + shortModel(x.model)); setData(m, 'tip', x.modelRaw);
         txt(v, provLetter(x.provider)); setData(v, 'p', x.provider); setData(v, 'tip', 'Runs on ' + provName(x.provider));
         let ic = 'clock', w = '';
         since(wTm, null); age(wTm, null);
@@ -3022,7 +3210,7 @@ function hudClient() {
     const S = mk('Sessions'), A = mk('Subagents'), T = mk('Tokens today', true), N = mk('Need you'), P = mk('Plans');
     const sub2 = h('div', { class: 'vital-s', 'data-tip-if': 'trunc' }); T.el.append(sub2);
     const acctRows = h('div', { class: 'acct' });
-    const acct = h('div', { class: 'vital wide acct-v', hidden: true }, h('div', { class: 'vital-l label', text: 'Account limits' }), acctRows);
+    const acct = h('div', { class: 'vital wide acct-v', hidden: true }, h('div', { class: 'vital-l label', text: 'Claude account limits' }), acctRows);
     const meter = label => {
       const f = h('span', { class: 'bar-f' }), v = h('span', { class: 'mv mono' }), note = h('span', { class: 'mn mono' });
       const row = [h('span', { class: 'ml label', text: label }), h('span', { class: 'bar bar-acct' }, f), v, note];
@@ -3103,7 +3291,7 @@ function hudClient() {
     const empty = h('div', { class: 'net-empty', hidden: true }, h('span', { class: 'label', text: 'No active sessions' }), h('span', { text: ' · systems nominal' }));
     const legend = h('div', { class: 'net-legend label', 'aria-hidden': 'true', hidden: true },
       h('span', {}, h('i', { class: 'dash' }), 'Running'), h('span', {}, h('i', { class: 'dbl' }), 'Launched by'),
-      h('span', { text: 'Size = tokens' }), h('span', { text: 'Ring = context' }), h('span', { text: 'A / B = Anthropic / Bedrock' }));
+      h('span', { text: 'Size = tokens' }), h('span', { text: 'Ring = context' }), h('span', { text: 'A / B / O = Anthropic / Bedrock / OpenAI' }));
     const readout = h('div', { class: 'net-readout', hidden: true }), readBox = h('div', { class: 'tip-b cutbox' });
     readout.append(readBox);
     const pinBox = h('div', { class: 'net-pin', hidden: true });
@@ -3227,7 +3415,7 @@ function hudClient() {
       if (mode === 'min') return ['', pct];
       const name = i.kind === 'session' ? (x.title || x.name || 'Untitled') : (x.type || 'agent');
       if (mode === 'short') return [name.length > 18 ? name.slice(0, 17).trimEnd() + '…' : name, `${pct} · ${tok}`];
-      const meta = `${shortModel(x.model) || 'model ?'} · ${pct} · ${tok}`;
+      const meta = `${x.agent === 'codex' ? 'Codex · ' : ''}${shortModel(x.model) || 'model ?'} · ${pct} · ${tok}`;
       if (mode === 'meta') return ['', meta];
       return [name, meta];
     }
@@ -3339,7 +3527,7 @@ function hudClient() {
       const x = i.x;
       if (i.kind === 'sat') return `${plural(i.count, 'finished subagent', 'finished subagents')}, folded. Enter expands them.`;
       const who = i.kind === 'session' ? `Session in ${x.project || 'an unknown project'}: ${x.title || x.name || 'untitled'}` : `Subagent ${x.type || ''}: ${x.description || ''}`;
-      return `${who}. ${(STATUS[i.state] || STATUS.unknown)[1]}. ${shortModel(x.model) || 'Model unknown'} on ${provName(x.provider)}. ${fmtTok(headline(x.tokens))} tokens. Context ${x.context ? fmtPct(x.context.pct) : 'unknown'}.`;
+      return `${who}. ${x.agent === 'codex' ? 'Codex' : 'Claude Code'}. ${(STATUS[i.state] || STATUS.unknown)[1]}. ${shortModel(x.model) || 'Model unknown'} on ${provName(x.provider)}. ${fmtTok(headline(x.tokens))} tokens. Context ${x.context ? fmtPct(x.context.pct) : 'unknown'}.`;
     }
     function nodeCard(i) {
       const x = i.x;
@@ -3350,7 +3538,7 @@ function hudClient() {
         h('div', { class: 'tc-h' }, tag.el, h('span', { class: 'label c-ink2 trunc', text: i.kind === 'session' ? (x.project || '') : `Subagent · level ${i.depth}` })),
         h('div', { class: 'tc-t', text: i.kind === 'session' ? (x.title || x.name || 'Untitled session') : `${x.type || 'agent'}: ${x.description || ''}` }),
         h('div', { class: 'tc-r' }, h('b', { text: shortModel(x.model) || 'model unknown' }), x.effort ? h('span', { text: x.effort }) : null,
-          h('span', { text: '· ' + provName(x.provider) }), h('span', { text: '· ' + (end ? 'ran ' + fmtAge(end - (x.startedAt || end)) : 'running ' + fmtAge(now() - (x.startedAt || now()))) })),
+          h('span', { text: '· ' + (x.agent === 'codex' ? 'Codex / ' : '') + provName(x.provider) }), h('span', { text: '· ' + (end ? 'ran ' + fmtAge(end - (x.startedAt || end)) : 'running ' + fmtAge(now() - (x.startedAt || now()))) })),
         x.needsYou ? h('div', { class: 'tc-r c-alert' }, icon('alert'), h('span', { text: x.needsYou.reason })) : null,
         tool ? h('div', { class: 'tc-r' }, icon(toolIcon(tool.name)), h('b', { text: tool.name }), h('span', { class: 'trunc', style: 'max-width:240px', text: tool.summary || '' })) : null,
         h('div', { class: 'tc-r' }, h('span', { text: 'Tokens' }), h('b', { text: fmtTok(headline(t)) }), h('span', { text: `in ${fmtTok(t.input)} · out ${fmtTok(t.output)} · write ${fmtTok(t.cacheWrite)}` })),
@@ -4106,7 +4294,7 @@ function hudClient() {
       el,
       tick() { const t = now(); txt(clockT, fmtClock(t)); txt(clockD, fmtDate(t)); if (started) txt(clockU, 'up ' + fmtAge(t - started)); },
       update(st) {
-        txt(sub, 'Claude · ' + (st.host || 'this PC')); started = st.now - st.uptime;
+        txt(sub, 'Claude + Codex · ' + (st.host || 'this PC')); started = st.now - st.uptime;
         show(demo, !!st.demo); show(hooks, !st.demo && st.hooksInstalled === false);
         mini.update(st.sessions || [], st.totals || {}); miniN.set(String(st.totals?.agentsRunning || 0));
         this.tick();
@@ -4482,12 +4670,13 @@ function designMain(H) {
   const nodeSpec = (label, x) => netSpec(label, [x], 220)[0];
   const runSess = sess({ project: 'Demo', title: 'Parent', subagents: [sub({ type: 'Explore', tokens: tok(30000, 80000), context: ctx(50) })] });
   const doneSess = sess({ project: 'Demo', status: 'idle', currentTool: null, title: 'Parent', subagents: [sub({ type: 'Explore', state: 'done', currentTool: null, endedAt: t - 5e3, tokens: tok(30000, 80000), context: ctx(50) })] });
-  section('Network: who started whom', 'Hub = this PC. Sessions on the inner ring, grouped by project; subagents outwards, one ring per level. Size = tokens (square root, 3× range), outer ring = context, A / B = provider, double line = launched by.',
+  section('Network: who started whom', 'Hub = this PC. Sessions on the inner ring, grouped by project; subagents outwards, one ring per level. Size = tokens (square root, 3× range), outer ring = context, A / B / O = provider, double line = launched by.',
     n1, n2, n3,
     nodeSpec('Node: running subagent', runSess), nodeSpec('Node: finished subagent', doneSess), nodeSpec('Node: needs you', sess({ project: 'Demo', status: 'needs-you', needsYou: { since: t - 20e3, reason: 'Question for you', kind: 'question' }, title: 'Asks a question' })),
     nodeSpec('Node: context 50%', sess({ project: 'Demo', status: 'idle', currentTool: null, context: ctx(50), title: 'Half full' })), nodeSpec('Node: context 80%', sess({ project: 'Demo', status: 'idle', currentTool: null, context: ctx(80), title: 'Filling up' })),
     nodeSpec('Node: context 95%', sess({ project: 'Demo', status: 'idle', currentTool: null, context: ctx(95), title: 'Nearly full' })),
     nodeSpec('Node: Anthropic', sess({ project: 'Demo', provider: 'anthropic', title: 'Anthropic API' })), nodeSpec('Node: Bedrock', sess({ project: 'Demo', provider: 'bedrock', modelRaw: 'us.anthropic.claude-opus-5-5', title: 'Amazon Bedrock' })),
+    nodeSpec('Node: Codex', sess({ project: 'Demo', agent: 'codex', provider: 'openai', model: 'gpt-6-astra', modelRaw: 'gpt-6-astra', title: 'Codex session' })),
     netSpec('Empty', [], 220)[0],
     netSpec('Hover: the path to the hub lights up, the card docks away from it', [nested({ project: 'Demo' })], 360, null, (n, list) => n.hoverDemo(list[0].subagents[1].id))[0],
     netSpec('Pinned: the card stays, with “Show in cards”', [nested({ project: 'Demo' })], 420, null, (n, list) => n.pin(list[0].subagents[0].id))[0],
@@ -4608,10 +4797,10 @@ function makeDemo(mode) {
     const model = o.modelRaw || 'claude-opus-5-5';
     const mi = normalizeModel(model);
     const s = {
-      id: randomUUID(), pid: rnd(2000, 60000), project: o.project, cwd: repo(o.project), name: `${o.project.toLowerCase()}-${rnd(16, 255).toString(16)}`,
+      id: randomUUID(), agent: o.agent || 'claude', pid: rnd(2000, 60000), project: o.project, cwd: repo(o.project), name: `${o.project.toLowerCase()}-${rnd(16, 255).toString(16)}`,
       title: o.title, entrypoint: 'claude-vscode', version: '2.1.312', status: o.status,
       needsYou: o.needsYou ? { since: t0 - (o.needsFor || 60) * 1000, reason: o.needsYou, kind: o.needsKind || 'permission' } : null,
-      provider: mi.provider, model: mi.model, modelRaw: model, effort: o.effort || 'high', branch: o.branch || 'main',
+      provider: o.agent === 'codex' ? 'openai' : mi.provider, model: mi.model, modelRaw: model, effort: o.effort || 'high', branch: o.branch || 'main',
       startedAt: t0 - (o.age || 1800) * 1000, lastActivityAt: t0 - (o.quiet || 2) * 1000, endedAt: o.status === 'ended' ? t0 - (o.endedAgo || 180) * 1000 : null,
       currentTool: null, tools: rnd(6, 180), startedBy: null, tokens: tok(o.scale || 1), tokensTree: null, context: null, subagents: [],
       _ctx: o.ctx ?? rnd(6, 48),
@@ -4640,7 +4829,7 @@ function makeDemo(mode) {
     const explore = sub(coordinator, coordinator.id, 1, AGENT_JOBS[0], { age: 120 });
     sub(coordinator, explore.id, 2, AGENT_JOBS[1], { age: 50, modelRaw: 'claude-haiku-5-5' });
     cycler = sub(coordinator, coordinator.id, 1, AGENT_JOBS[2], { age: 10, modelRaw: 'claude-haiku-5-5' });
-    session({ project: 'FidiaCRM', title: 'Clients: contact length limits (P3-06)', status: 'idle', branch: 'clients/P3-06', quiet: 900, effort: 'medium', modelRaw: 'claude-sonnet-5-5' });
+    session({ project: 'FidiaCRM', agent: 'codex', title: 'Clients: contact length limits (P3-06)', status: 'idle', branch: 'clients/P3-06', quiet: 900, effort: 'medium', modelRaw: 'gpt-6-astra' });
     const ended = session({ project: 'WasteManagement2', title: 'Say hi', status: 'ended', endedAgo: 180, age: 240, effort: 'low', modelRaw: 'claude-haiku-5-5', scale: 0.1 });
     ended.startedBy = coordinator.id;
     flipper = session({ project: 'ImPOS-Maui', title: 'Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners', status: 'busy', branch: 'phone-app', modelRaw: 'us.anthropic.claude-sonnet-5-5-v1:0', scale: 2 });
@@ -4783,7 +4972,10 @@ function serve(demoMode) {
   process.on('unhandledRejection', e => console.error('error:', e));
   server.listen(PORT, HOST, () => {
     console.log(`Claude HUD ${VERSION} on http://${LAN ? 'localhost' : HOST}:${PORT}${demoMode ? ` (demo${demoMode === 'dense' ? ', dense' : ''})` : ''}`);
-    if (!demoMode) console.log(`Watching Claude Code in: ${ROOTS.map(r => r.dir).join('  ')}`);
+    if (!demoMode) {
+      console.log(`Watching Claude Code in: ${ROOTS.map(r => r.dir).join('  ')}`);
+      console.log(`Watching Codex in: ${CODEX_ROOTS.join('  ')}`);
+    }
     if (!LAN) return;
     const urls = Object.values(os.networkInterfaces()).flat()
       .filter(a => a && a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')).map(a => `http://${a.address}:${PORT}`);
@@ -4803,6 +4995,11 @@ function serve(demoMode) {
     watch(root.projects, { recursive: true }, (e, f) => onProjectsChange(root, f));
   }
   scanRegistry().then(scanRecentTranscripts);
+  for (const dir of CODEX_ROOTS) {
+    const sessionDir = path.join(dir, 'sessions');
+    watch(sessionDir, { recursive: true }, (e, f) => onCodexChange(sessionDir, f));
+  }
+  scanCodex(true);
   setInterval(poll, POLL_MS);
   if (BEDROCK_REGION) {
     if (/^[a-z]{2}(-[a-z]+)+-\d+$/.test(BEDROCK_REGION)) { pollCloudWatch(); setInterval(pollCloudWatch, CLOUDWATCH_EVERY_MS); }
@@ -5415,7 +5612,7 @@ ${BOARD_HEADER}
 // =====================================================================================================================
 // Command line
 
-const HELP = `Claude HUD ${VERSION}: a live dashboard of every Claude Code session on this PC.
+const HELP = `Claude HUD ${VERSION}: a live dashboard of Claude Code and Codex sessions on this PC.
 
   node hud.mjs                 serve on http://127.0.0.1:${PORT} (HUD_PORT picks another port)
   node hud.mjs --lan           also open it to other devices on the network, view only (or set HUD_LAN=1)

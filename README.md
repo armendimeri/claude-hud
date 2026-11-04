@@ -1,6 +1,6 @@
 # Claude HUD
 
-One local web page, `http://127.0.0.1:7777`, that shows every Claude Code session running on this PC, live, in
+One local web page, `http://127.0.0.1:7777`, that shows Claude Code and local Codex sessions on this PC, live, in
 every project:
 - what each session is doing, and which subagents it has started (and which subagent started which);
 - tokens per session and per subagent, and how full each one's context window is;
@@ -30,6 +30,7 @@ node hud.mjs autostart on|off    start the HUD at logon (Task Scheduler, no wind
                                  (`autostart on --lan` starts it open to the network)
 node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard (workflow/STANDARD.md)
 node hud.mjs selftest            check the model normaliser, redaction and plan parser
+node --test tests/codex.test.mjs  run isolated Claude/Codex integration tests
 ```
 
 Routes: `/` (the page), `/design` (the component gallery), `/api/state` (the full state as JSON), `/api/stream`
@@ -63,6 +64,32 @@ Without the hooks the HUD still works: it reads the session list and the transcr
 models, tokens and subagents. The hooks add the live parts: the tool running right now, "needs you", and
 instant updates.
 
+### Codex
+
+Codex monitoring starts automatically. The HUD follows rollout logs in `~/.codex/sessions` (or
+`CODEX_HOME/sessions` when set). Set `HUD_CODEX_DIRS` to additional Codex home directories, separated by `;` on
+Windows or `:` elsewhere. Local CLI, IDE and desktop sessions that write these logs appear together with Claude
+Code sessions. No API key, model call, Codex hook installation, or Codex configuration change is needed.
+
+Cards and network details identify **Codex**, with an **O / OpenAI** provider badge when reported by the session.
+The HUD shows project, title, model, effort, branch, tool activity, tokens, reported context capacity, and subagents
+whose metadata identifies their parent. Internal helper sessions without a parent link are hidden. Their usage
+still contributes to tokens today. The account usage panel remains Claude-specific.
+
+Existing recent logs load at startup; file watching and a three-second tail poll track updates. A discovery scan
+every fifteen seconds also finds resumed older sessions and sessions created after startup. Completed turns show
+as idle. Because Codex has no Claude-style process registry, sessions without activity for ten minutes show as ended;
+fresh log activity reopens them. This is an activity estimate, not proof that a Codex process exited.
+
+Questions appear as “needs you” when a logged `request_user_input` call is available. Permission dialogs and tools
+wrapped inside opaque execution code may not be visible in rollout logs. Context is unknown until Codex reports
+its capacity. Cached input is counted separately from uncached input, and reasoning output is already part of output.
+
+The parser supports `session_meta`, `turn_context`, `response_item`, `event_msg` and `token_usage_record` records,
+verified against the local Codex 0.162.0-alpha.17.2 format. Rollouts are an internal format that can change; unknown
+records are ignored. Official [Codex hooks](https://learn.chatgpt.com/docs/hooks) require trust review and are not
+installed by this integration.
+
 ## Using the page
 
 Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
@@ -75,7 +102,7 @@ Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
 `?view=network` or `?view=cards` in the address picks one).
 - **Network:** each session hangs off the hub (this PC), and each subagent off whoever started it.
   - Node size is tokens, and the ring around a node is how full its context is. `A` / `B` marks Anthropic or
-    Bedrock.
+    Bedrock; `O` marks OpenAI for Codex.
   - A double line means "launched from that session's shell". A dashed `+n` node holds finished subagents (click to
     show them).
   - Hover a node for its details, or click to pin its card. With the keyboard: arrow keys move between nodes, Enter
@@ -107,9 +134,11 @@ collapses it.
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
 | `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |
+| `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` | Session metadata, short redacted title, model, effort, branch, cumulative tokens, reported context, tool names and short summaries, turn status, and subagent parent IDs. Read incrementally; reasoning, instructions and tool output are discarded. |
 
 It never reads `~/.claude/.credentials.json`, the session `*.key` files, `~/.aws/` or any `AWS_*` environment
 variable. If `CLAUDE_CONFIG_DIR` is set, the HUD looks there instead of `~/.claude`, as Claude Code does.
+Codex monitoring never reads `auth.json`, credentials, or `config.toml`, and never writes to Codex's folders.
 
 **Text shown is short and redacted.** Titles, models, tool names, and a summary of each tool call (a file path, the
 first 80 characters of a command) are shown. Full prompts, tool output and file contents never are. Before anything
