@@ -1,7 +1,7 @@
 // Windows browser check: node tests/browser-smoke.mjs
 // Starts its own `--demo` HUD on a free port (over temp folders, tests/helpers.mjs), opens /?view=network,
 // /?view=cards and /design at 1440x900, 1024x768 and 390x844 in headless Edge with an isolated profile, and fails on
-// a runtime exception or a horizontal page scroll. It also exercises Plans and warnings, with captures in .hud-tmp/.
+// a runtime exception or a horizontal page scroll. It also exercises Plans, warnings and page extras, with captures in .hud-tmp/.
 // HUD_TEST_BROWSER picks another Chromium-based browser. Node built-ins only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -253,6 +253,163 @@ try {
     assert.deepEqual(result, { plotted: true, turn: 'Last turn 1:02', padded: true, aged: true });
     console.log('pass activity view pads missing minutes and ages out output without a state push');
   }
+
+  async function openHud(route) {
+    const previous = await evaluate('performance.timeOrigin');
+    await call('Page.navigate', { url: hud.base + route });
+    await until(`performance.timeOrigin !== ${previous} && document.querySelector('.stream[data-s="live"]') &&
+      document.querySelector('.p-plans .plan')`, `${route} renders the live HUD`);
+  }
+  async function checkProjectFocus() {
+    const expression = `(() => {
+      const projects = selector => [...new Set([...document.querySelectorAll(selector)].map(el => el.dataset.project))].sort();
+      return { sessions: projects('.p-sess .card[data-project], .p-sess .crow[data-project]'),
+        plans: projects('.p-plans .plan[data-project]'), feed: projects('.p-tick .tk[data-project]') };
+    })()`;
+    const focused = { sessions: ['TourCMS'], plans: ['TourCMS'], feed: ['TourCMS'] };
+    const clear = () => evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+    const dismiss = '.p-sess .focus-clear';
+    await openHud('/?view=cards&project=TourCMS');
+    assert.deepEqual(await evaluate(expression), focused, 'the URL focuses sessions, plans and feed');
+    assert.equal(await evaluate("document.querySelector('.p-sess .ps').textContent"), '1 open', 'session totals are scoped');
+    assert.equal(await evaluate("document.querySelector('.p-plans .ps').textContent"), '3', 'plan totals include the focused project’s quiet boards');
+    assert.match(await evaluate("document.querySelector('.tk-last').textContent"), /TourCMS · Turn finished/);
+    await capture('project-focus', 1440, 900);
+    await clear();
+    const restored = await evaluate(expression);
+    for (const projects of Object.values(restored)) assert.ok(projects.length > 1, 'Escape restores the other projects in each panel');
+    assert.equal(await evaluate("new URLSearchParams(location.search).has('project')"), false);
+
+    await click(tour + ' button.plan-p');
+    assert.deepEqual(await evaluate(expression), focused, 'a plan label focuses all three panels');
+    await click(tour + ' button.plan-p');
+    assert.deepEqual(await evaluate(expression), restored, 'the same project label clears focus');
+    await click('.p-tick .tk button[data-project="TourCMS"]');
+    assert.deepEqual(await evaluate(expression), focused, 'a feed label focuses all three panels');
+    await click(dismiss);
+
+    await openHud('/?view=network');
+    const arc = '.net .g-lbl[role="button"]';
+    await until(`document.querySelector('${arc}')`, 'the demo draws an interactive network group label');
+    const arcProject = await evaluate(`document.querySelector('${arc}').dataset.project`);
+    await evaluate(`{
+      const label = document.querySelector('${arc}');
+      label.focus(); label.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }`);
+    const networkProjects = "[...new Set([...document.querySelectorAll('.net .na[data-project]:not([inert])')].map(el => el.dataset.project))]";
+    assert.deepEqual(await evaluate(networkProjects), [arcProject], 'network project focus filters before drawing');
+    assert.equal(await evaluate('document.activeElement.matches(".focus-clear")'), true, 'focus follows a group label removed by the filter');
+    await click('.net .hub-label button');
+    assert.ok((await evaluate(networkProjects)).length > 1, 'the focused network hub label clears focus');
+    for (const [width, height] of SIZES.slice(1)) {
+      await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+      await openHud('/?view=cards&project=TourCMS');
+      assert.deepEqual(await evaluate(expression), focused, `all three panels stay focused at ${width}x${height}`);
+      assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'), 'project focus adds no page overflow');
+      if (width === 390) {
+        await evaluate("document.querySelector('.p-sess').scrollIntoView()");
+        await capture('project-focus', width, height);
+        await evaluate("document.querySelector('.p-tick').scrollIntoView()");
+        await capture('project-feed', width, height);
+      }
+    }
+    await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    console.log('pass URL, plan, feed and network project focus, scoped counts and Escape restore');
+  }
+
+  async function checkWindowLinks() {
+    await openHud('/?view=cards&project=FidiaCRM');
+    const state = await hud.state();
+    const ide = state.sessions.find(s => s.entrypoint === 'claude-vscode' && s.project === 'FidiaCRM');
+    const cli = state.sessions.find(s => s.entrypoint === 'cli');
+    const href = 'vscode://file/C:/Users/demo/source/repos/Fidia%20CRM';
+    function link(session) { return `.card[data-id="${session.id}"] .window-link`; }
+    assert.equal(await evaluate(`document.querySelector('${link(ide)}:not([hidden])').getAttribute('href')`), href);
+    assert.equal(await evaluate(`document.querySelector('${link(cli)}').hasAttribute('href')`), false);
+    await click('.p-sess .seg button:last-child');
+    const ideNode = '.net button[aria-label*="R14 quotation screens"]';
+    await until(`document.querySelector('${ideNode}')`, 'the network lays out the VS Code session');
+    await click(ideNode);
+    assert.equal(await evaluate("document.querySelector('.net-pin .window-link:not([hidden])').getAttribute('href')"), href,
+      'the pinned network card exposes the same link');
+    console.log('pass local VS Code window link encodes a Windows space, including on the pinned card; CLI has no link');
+  }
+
+  async function recordAwayFetch() {
+    await evaluate(`{
+      const realFetch = window.fetch;
+      window.awayFetches = [];
+      window.awayRequests = 0;
+      window.fetch = async (url, ...args) => {
+        if (url === '/api/state') window.awayRequests++;
+        const res = await realFetch(url, ...args);
+        if (url === '/api/state' && res.ok) window.awayFetches.push(await res.clone().json());
+        return res;
+      };
+    }`);
+  }
+  const summary = '.away-summary:not([hidden])';
+  async function checkAwayCounts(since) {
+    await until(`document.querySelector('${summary}') && window.awayFetches.length === 1`, 'a fresh snapshot produces one visible summary');
+    const actual = await evaluate(`(() => {
+      const el = document.querySelector('${summary}');
+      return { counts: Object.fromEntries([...el.querySelectorAll('[data-action]')].map(n => [n.dataset.action, Number(n.textContent)])),
+        needs: [...el.querySelectorAll('.away-needs li')].map(n => n.textContent), cards: document.querySelectorAll('.app .away-summary').length };
+    })()`);
+    const snapshotFeed = await evaluate('window.awayFetches[0].feed');
+    assert.ok(snapshotFeed.some(f => f.at < since && f.action === 'turn-finished'), 'the snapshot includes a completion before the absence');
+    const feed = snapshotFeed.filter(f => f.at >= since);
+    const counts = {
+      'turn-finished': feed.filter(f => f.kind === 'done' && /^(Turn finished|Codex turn complete)$/.test(f.text)).length,
+      'agent-done': feed.filter(f => f.kind === 'done' && f.text.startsWith('Agent done')).length,
+      'item-changed': feed.filter(f => f.kind === 'plan' && (f.text.includes(' → ') || f.text.includes(' claimed by '))).length,
+      'needs-you': feed.filter(f => f.kind === 'needs-you').length,
+    };
+    const needs = feed.filter(f => f.kind === 'needs-you').map(f => (f.project ? f.project + ' · ' : '') + f.text);
+    assert.ok(Object.values(counts).every(n => n > 0) && feed.some(f => f.kind === 'plan' && !f.action),
+      'the demo includes all four categories and a drift mark outside the counts');
+    assert.deepEqual(actual, { counts, needs, cards: 1 }, 'the summary counts only the matching demo feed events');
+    return counts;
+  }
+  async function checkAwaySummary() {
+    await openHud('/?view=cards');
+    await recordAwayFetch();
+    const state = await hud.state(), since = state.now - state.uptime - 1000;
+    const fetchedBeforeReturn = await evaluate(`(() => {
+      const realNow = Date.now;
+      const visibility = hidden => {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: hidden });
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+      visibility(true); visibility(false);   // a short absence makes no request
+      const short = window.awayRequests;
+      try {
+        Date.now = () => ${since}; visibility(true);
+        Date.now = () => ${since} + 300001; visibility(false);
+      } finally { Date.now = realNow; delete document.hidden; }
+      return short;
+    })()`);
+    assert.equal(fetchedBeforeReturn, 0);
+    const counts = await checkAwayCounts(since);
+    await capture('away-summary', 1440, 900);
+    await click(summary + ' button');
+    await pause(1250);
+    assert.equal(await evaluate(`document.querySelector('${summary}') === null`), true, 'dismissal persists across a live push');
+    console.log('pass hidden-tab away summary and dismissal', counts);
+
+    await openHud('/?view=cards');
+    await recordAwayFetch();
+    await evaluate(`{ window.realNow = Date.now; Date.now = () => window.realNow() - 301000; }`);
+    await hud.stop();
+    await until("document.querySelector('.stream[data-s=reconnecting]')", 'the isolated HUD disconnects');
+    await evaluate('Date.now = window.realNow');
+    const outageSince = Date.now() - 301_000;
+    await hud.restart();
+    const reconnected = await checkAwayCounts(outageSince);
+    assert.ok(await evaluate("document.querySelector('.stream[data-s=live]')"));
+    console.log('pass SSE reconnect fetches and summarizes the new snapshot', reconnected);
+  }
+
   await call('Runtime.enable'); await call('Page.enable');
   await call('Page.bringToFront');
   await call('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -324,6 +481,9 @@ try {
         assert.deepEqual(specimens.warnings, ['context', 'context', 'tool', 'subagent', 'usage', 'usage'], `${where} shows every warning`);
         const [empty, steady, burst] = specimens.lines;
         assert.ok(empty === 0 && steady >= 29 && burst === 1, `${where} shows empty, steady and burst activity specimens`);
+        assert.ok(await evaluate(`document.querySelector('.gal-sec .away-summary:not([hidden]) .away-needs li') &&
+          document.querySelector('.gal-sec .focus-clear[aria-pressed=true]') &&
+          document.querySelector('.gal-sec .window-link[href$="Customer%20Tools"]')`), `${where} shows all page extras`);
       }
       const overflow = await evaluate('document.documentElement.scrollWidth - innerWidth');
       assert.ok(overflow <= 0, `${where} has no horizontal page scroll (scrollWidth exceeds the window by ${overflow}px)`);
@@ -345,10 +505,16 @@ try {
         await capture('design-queue', width, height);
         await evaluate("document.querySelector('.gal-sec .warning').closest('.gal-sec').scrollIntoView()");
         await capture('design-warnings', width, height);
+        await evaluate("document.querySelector('.gal-sec .away-summary').closest('.gal-sec').scrollIntoView()");
+        await capture('design-page-extras', width, height);
       }
       console.log(`pass ${where}: no runtime exception, no horizontal page scroll`);
     }
   }
+  await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await checkProjectFocus();
+  await checkWindowLinks();
+  await checkAwaySummary();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log(`pass browser runtime; ${shots.length} screenshots:\n${shots.map(f => '  ' + f).join('\n')}`);
   await call('Browser.close').catch(() => {});

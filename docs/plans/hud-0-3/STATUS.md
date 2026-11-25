@@ -15,7 +15,7 @@ Every agent reads this file first and updates it last.
 | P4 | Board following: the engine | `tracker` | P3 | Opus 5.5 / xhigh | accepted | 2026-11-25 | [P4](handoffs/P4-tracker.md) | 33 tests passed, all demo marks and lists verified |
 | P5 | Board following: the page | `tracker-ui` | P4 | Opus 5.5 / high | accepted | 2026-11-25 | [P5](handoffs/P5-tracker-ui.md) | Selftest, 33 tests and nine browser views rechecked |
 | P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6](handoffs/P6-alerts.md) | Selftest, 39 tests and nine browser views rechecked |
-| P7 | Page extras | `page` | P6 | Opus 5.5 / high | todo | | | |
+| P7 | Page extras | `page` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7](handoffs/P7-page.md) | Selftest, 39 Node tests and all Edge smoke checks rechecked |
 | P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | todo | | | |
 | P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | todo | | | |
 | P10 | Verify and close | `review` | P9 | Opus 5.5 / high | todo | | — | |
@@ -105,6 +105,10 @@ This plan's own rules, on top of the standard.
 - 2026-11-25 · alerts · P6 · Handed off amber warnings, 30-minute activity lines and turn duration. Selftest, all
   39 tests and nine browser views passed, including warning dismissal across a live update and the gallery.
 - 2026-11-26 · page · P6 · Accepted after selftest, 39 Node tests and nine browser views covering warning dismissal and the activity line.
+- 2026-11-26 · page · P7 · Handed off the away summary, project focus and local VS Code links. Selftest, 39 Node
+  tests and Edge smoke passed, including both return paths, all three focus panel sizes and Windows URL encoding.
+- 2026-11-26 · away · P7 · Accepted after selftest, 39 Node tests and Edge smoke covering focus, local VS Code links
+  and both away summary triggers.
 
 ## Kickoff
 

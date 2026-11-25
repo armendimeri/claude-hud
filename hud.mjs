@@ -427,9 +427,10 @@ function askResume(s, at) {
   settle(s);
 }
 
-function pushFeed(s, kind, text, at = Date.now(), dedupeKey = null) {
+function pushFeed(s, kind, text, at = Date.now(), dedupeKey = null, action = null) {
   if (dedupeKey) { if (feedSeen.has(dedupeKey)) return; feedSeen.add(dedupeKey); capSet(feedSeen, 5000); }
   const line = { at: Math.min(at, Date.now()), sessionId: s?.id ?? null, project: s?.project ?? null, kind, text: truncate(oneLine(text), 200) };
+  if (action) line.action = action;
   feed.push(line);
   if (feed.length > FEED_MAX) feed.splice(0, feed.length - FEED_MAX);
   broadcast('event', redactDeep(line));
@@ -756,7 +757,11 @@ function processCodexLine(t, line) {
       case 'task_complete': case 'turn_complete': case 'turn_aborted':
         setHookStatus(s, 'idle', ts); clearNeedsYou(s); info.openTools.clear();
         finishTurn(s, ts, p.type !== 'turn_aborted');
-        if (ts >= hudStartedAt - 2000) pushFeed(s, p.type === 'turn_aborted' ? 'session' : 'done', p.type === 'turn_aborted' ? 'Codex turn interrupted' : 'Codex turn complete', ts, `codex-stop:${s.id}:${ts}`);
+        if (ts >= hudStartedAt - 2000) {
+          const aborted = p.type === 'turn_aborted';
+          pushFeed(s, aborted ? 'session' : 'done', aborted ? 'Codex turn interrupted' : 'Codex turn complete', ts,
+            `codex-stop:${s.id}:${ts}`, aborted ? null : 'turn-finished');
+        }
         break;
       case 'session_end': case 'shutdown_complete': endSession(s, ts, 'closed'); break;
     }
@@ -958,7 +963,8 @@ function closeSub(s, sub, at = Date.now()) {
   sub.endedAt = at;
   sub.currentTool = null;
   if (at >= hudStartedAt - 2000 && !isPlaceholder(sub)) {
-    pushFeed(s, 'done', `Agent done · ${[sub.type, sub.description].filter(Boolean).join(': ')}`, at, `done:${sub.toolUseId || sub.agentId}`);
+    pushFeed(s, 'done', `Agent done · ${[sub.type, sub.description].filter(Boolean).join(': ')}`, at,
+      `done:${sub.toolUseId || sub.agentId}`, 'agent-done');
   }
 }
 
@@ -1287,7 +1293,7 @@ function onHook(p) {
       s.currentTool = null;
       setHookStatus(s, 'idle', at);
       finishTurn(s, at);
-      pushFeed(s, 'done', 'Turn finished', at);
+      pushFeed(s, 'done', 'Turn finished', at, null, 'turn-finished');
       break;
     case 'SubagentStart':
       if (sub) {
@@ -1746,7 +1752,8 @@ function diffPlan(a, b, now = Date.now()) {
     const itemKey = `${key}#${n.id}`;
     boardTrack.set(itemKey, { ...newTrack(), ...boardTrack.get(itemKey), changedAt: now });
     const who = by && n.state === 'in-progress' ? agentLabel(by) : null;
-    pushFeed({ id: null, project: b.project }, 'plan', who ? `${b.title}: ${n.id} claimed by ${truncate(oneLine(who), 80)}` : `${b.title}: ${n.id} ${was} → ${n.state}`);
+    pushFeed({ id: null, project: b.project }, 'plan', who ? `${b.title}: ${n.id} claimed by ${truncate(oneLine(who), 80)}` : `${b.title}: ${n.id} ${was} → ${n.state}`,
+      now, null, 'item-changed');
   }
   const asked = new Set(a.needsYou.map(x => `${x.kind}:${x.id}:${x.text}`));
   for (const x of b.needsYou) {
@@ -2799,6 +2806,8 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .g-arc { fill: none; stroke: rgba(41, 230, 255, .2); stroke-width: 1.5; stroke-linecap: round; }
 .g-tick { stroke: rgba(41, 230, 255, .45); stroke-width: 1.5; }
 .g-lbl { fill: var(--ink-2); font: 600 11px var(--f-label); letter-spacing: .2em; text-transform: uppercase; }
+.g-lbl[role=button] { pointer-events: bounding-box; cursor: pointer; }
+.g-lbl[role=button]:hover, .g-lbl[role=button]:focus-visible { fill: var(--arc); }
 .e { fill: none; stroke-linecap: round; transition: opacity .3s var(--ease), stroke .3s; }
 .e-spoke { stroke: rgba(41, 230, 255, .16); stroke-width: 1; }
 .e-spoke[data-s=needs-you] { stroke: rgba(255, 77, 94, .45); }
@@ -2822,6 +2831,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .hub-core { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; transform: rotate(45deg); border: 1px solid var(--arc); background: rgba(41, 230, 255, .12); box-shadow: 0 0 16px rgba(41, 230, 255, .35); }
 .hub-ring { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 1px dashed var(--arc-35); }
 .hub-label { position: absolute; left: -80px; width: 160px; top: 28px; text-align: center; color: var(--ink-2); }
+.hub-label button { pointer-events: auto; }
 .net-sweep { position: absolute; left: 0; top: 0; border-radius: 50%; overflow: hidden; pointer-events: none; display: none; -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%); mask-image: radial-gradient(closest-side, #000 55%, transparent 100%); }
 .net-sweep i { position: absolute; border-radius: 50%; background: conic-gradient(from 0deg, transparent 0deg 285deg, rgba(41, 230, 255, .015) 305deg, rgba(41, 230, 255, .05) 345deg, rgba(41, 230, 255, .14) 359.4deg, transparent 360deg); }
 .n-ring { fill: none; stroke: rgba(41, 230, 255, .08); stroke-width: 1; stroke-dasharray: 2 6; }
@@ -3013,6 +3023,20 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .warning-text { flex: 1; min-width: 0; color: var(--amber); text-align: left; overflow-wrap: anywhere; }
 button.warning-text:hover { text-decoration: underline; }
 .warning .ban-x:hover { background: rgba(255, 190, 83, .15); }
+.away-summary { display: grid; gap: 6px; padding: 8px 8px 8px 12px; border-left: 3px solid var(--arc); background: var(--deep); }
+.away-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; }
+.away-head h2 { color: var(--arc); }
+.away-head .ban-x { margin-left: auto; }
+.away-counts { display: flex; flex-wrap: wrap; gap: 0 16px; color: var(--ink-2); }
+.away-counts b { color: var(--ink); }
+.away-needs { max-height: min(16vh, 96px); overflow: auto; overflow-wrap: anywhere; color: var(--ink-2); }
+.project-button:hover, .project-button[aria-pressed=true] { color: var(--arc); text-decoration: underline; text-underline-offset: 3px; }
+.focus-clear { flex: 0 1 auto; color: var(--arc); border-color: var(--arc-35); }
+.focus-clear .ic, .window-link .ic { flex: none; }
+.window-link { text-decoration: none; color: var(--arc); border-color: var(--arc-35); }
+.window-link:hover { background: var(--arc-15); }
+.cr-title-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cr-title-line .window-link { padding: 0 3px; }
 .conn { position: fixed; z-index: 45; top: 56px; left: 0; right: 0; height: 28px; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(40, 26, 6, .92); border-bottom: 1px solid rgba(255, 181, 71, .5); color: var(--amber); }
 .conn[data-s=down] { background: rgba(40, 8, 14, .92); border-color: rgba(255, 77, 94, .5); color: var(--alert); }
 .conn .mono { color: var(--ink-2); font-size: 11px; }
@@ -3061,6 +3085,8 @@ button.warning-text:hover { text-decoration: underline; }
 .tk-tag[data-k=tool] { color: var(--arc); } .tk-tag[data-k=agent] { color: var(--agent); } .tk-tag[data-k=needs-you] { color: var(--alert); background: rgba(255, 77, 94, .12); }
 .tk-tag[data-k=done] { color: var(--ok); } .tk-tag[data-k=plan] { color: var(--ink); } .tk-tag[data-k=session] { color: var(--ink-2); }
 .tk-proj { color: var(--ink); }
+.tk-project { display: flex; align-items: baseline; min-width: 0; }
+.tk-new .tk-proj { flex: 0 1 auto; max-width: 32%; }
 .tk-text { color: var(--ink-2); }
 .tk.type .tk-text { color: var(--arc); letter-spacing: .3em; }
 .tk.enter { animation: tkin .3s var(--ease); }
@@ -3109,8 +3135,11 @@ button.warning-text:hover { text-decoration: underline; }
   .clock-t { font-size: 15px; }
   .pb { padding: 16px; }
   .p-sess .net { min-height: 380px; }
-  .tk { grid-template-columns: 8ch 10ch minmax(0, 1fr); gap: 8px; }
-  .tk-proj { display: none; }
+  .tk { grid-template-columns: 8ch minmax(0, .8fr) minmax(0, 1.4fr); gap: 0 8px; height: 40px; }
+  .tk-list { height: 120px; }
+  .tk .tk-tag { grid-column: 2; justify-self: start; font-size: 10px; padding: 0 2px; }
+  .tk .tk-project { grid-column: 3; }
+  .tk .tk-text { grid-column: 2 / -1; line-height: 16px; }
   .ban { gap: 12px; padding-left: 16px; }
   .ban-t { display: none; }
   .ban-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3387,6 +3416,7 @@ function hudClient() {
     tool: [['path', { d: 'M14.7 6.3a4 4 0 0 0-5.4 5.1L4 16.7 7.3 20l5.3-5.3a4 4 0 0 0 5.1-5.4l-2.4 2.4-2.6-.7-.7-2.6z' }]],
     network: [['circle', { cx: 12, cy: 12, r: 2.5 }], ['circle', { cx: 5, cy: 5, r: 1.8 }], ['circle', { cx: 19, cy: 5, r: 1.8 }], ['circle', { cx: 5, cy: 19, r: 1.8 }], ['circle', { cx: 19, cy: 19, r: 1.8 }], ['path', { d: 'M10.2 10.2L6.3 6.3M13.8 10.2l3.9-3.9M10.2 13.8l-3.9 3.9M13.8 13.8l3.9 3.9' }]],
     cards: [['rect', { x: 4, y: 4.5, width: 16, height: 6, rx: 1 }], ['rect', { x: 4, y: 13.5, width: 16, height: 6, rx: 1 }]],
+    window: [['path', { d: 'M11 5H5v14h14v-6M13 5h6v6M19 5l-8 8' }]],
     branch: [['circle', { cx: 7, cy: 6, r: 2 }], ['circle', { cx: 7, cy: 18, r: 2 }], ['circle', { cx: 17, cy: 8, r: 2 }], ['path', { d: 'M7 8v8M17 10a5 5 0 0 1-5 5H9' }]],
     check: [['path', { d: 'M5 12.5l4.5 4.5L19 7.5' }]],
     alert: [['path', { d: 'M12 4l9 15.5H3z' }], ['path', { d: 'M12 10v4.5M12 17.3v.2' }]],
@@ -3755,8 +3785,38 @@ function hudClient() {
   }
 
   // ---- session card (comfortable) and compact row (dense) -------------------------------------------------------------
+  function projectLabel(api, cls, fallback = '—') {
+    const el = api.project ? h('button', { class: cls + ' project-button', type: 'button' }) : h('span', { class: cls });
+    if (api.project) el.addEventListener('click', e => { e.stopPropagation(); api.project(el.dataset.project); });
+    return { el, set(name) {
+      txt(el, name || fallback);
+      setData(el, 'project', name);
+      setData(el, 'tip', name);
+      if (api.project) {
+        el.disabled = !name;
+        setAttr(el, 'aria-pressed', String(!!name && api.focused?.() === name));
+      }
+    } };
+  }
+  function windowLink(compact = false) {
+    const label = 'Open in VS Code';
+    const el = h('a', { class: 'window-link chip', hidden: true, 'aria-label': label, 'data-tip': label },
+      icon('window'), compact ? null : label);
+    el.addEventListener('click', e => e.stopPropagation());
+    return { el, set(session) {
+      let href = null;
+      if (['localhost', '127.0.0.1'].includes(location.hostname) && /vscode/i.test(session.entrypoint || '') && session.cwd) {
+        const path = session.cwd.replace(/\\/g, '/');
+        const parts = path.split('/');
+        const encoded = parts.map((part, i) => i === 0 && /^[a-z]:$/i.test(part) ? part : encodeURIComponent(part)).join('/');
+        href = 'vscode://file' + (path.startsWith('/') ? '' : '/') + encoded;
+      }
+      setAttr(el, 'href', href);
+      show(el, !!href);
+    } };
+  }
   function sessionCard(api = {}) {
-    const projName = h('span'), projLbl = h('span', { class: 'label trunc', 'data-tip-if': 'trunc' }, projName), tag = statusTag();
+    const proj = projectLabel(api, 'label trunc', 'Unknown project'), tag = statusTag(), openWindow = windowLink();
     const title = h('h3', { class: 'card-title trunc', 'data-tip-if': 'trunc' });
     const mChip = h('span', { class: 'chip' });
     const bName = h('span', { class: 'trunc' }), bChip = h('span', { class: 'card-br mono', 'data-tip-if': 'trunc' }, icon('branch'), bName);
@@ -3768,8 +3828,8 @@ function hudClient() {
     const sumEl = h('div', { class: 'card-sum' }), work = workLabel('card-work'), activity = activityLine();
     const el = h('article', { class: 'card cutbox', tabindex: '-1' },
       h('div', { class: 'card-scan', 'aria-hidden': 'true' }), h('div', { class: 'card-glow', 'aria-hidden': 'true' }),
-      h('header', { class: 'card-h' }, h('div', { class: 'card-proj' }, projLbl, bChip), h('span', { class: 'card-meta mono' }, ageEl, ' · ', toolsEl), tag.el),
-      h('div', { class: 'card-tr' }, title, h('div', { class: 'card-chips' }, mChip, prov.el, sby)),
+      h('header', { class: 'card-h' }, h('div', { class: 'card-proj' }, proj.el, bChip), h('span', { class: 'card-meta mono' }, ageEl, ' · ', toolsEl), tag.el),
+      h('div', { class: 'card-tr' }, title, h('div', { class: 'card-chips' }, mChip, prov.el, sby, openWindow.el)),
       sumEl, work.el, nowRow.el, h('div', { class: 'meters' }, tok.el, cr.el, ctx.el), activity.el, subs.el);
     let st = null, sbyId = null;
     sby.addEventListener('click', e => { e.stopPropagation(); if (sbyId) api.jump?.(sbyId); });
@@ -3779,7 +3839,8 @@ function hudClient() {
         const vs = viewStatus(x);
         if (st && st !== vs) glitch(el);
         st = vs; setData(el, 's', st); setData(el, 'id', x.id);
-        txt(projName, x.project || 'Unknown project'); projLbl.dataset.tip = x.project || 'Unknown project';
+        proj.set(x.project); setData(el, 'project', x.project);
+        openWindow.set(x);
         tag.set(vs);
         const t = x.title || x.name || 'Untitled session';
         txt(title, t); title.dataset.tip = t;
@@ -3807,12 +3868,15 @@ function hudClient() {
   }
   function compactRow(api = {}) {
     const tag = statusTag();
-    const p = h('span', { class: 'cr-p label trunc', 'data-tip-if': 'trunc' }), t = h('span', { class: 'cr-t trunc', 'data-tip-if': 'trunc' });
+    const p = projectLabel(api, 'cr-p label trunc'), t = h('span', { class: 'cr-t trunc', 'data-tip-if': 'trunc' });
+    const openWindow = windowLink(true);
     const m = h('span', { class: 'cr-m trunc' }), v = h('span', { class: 'cr-v' });
     const wIc = h('span', { style: 'display:flex' }), wT = h('span', { class: 'trunc', 'data-tip-if': 'trunc' }), wTm = h('span', { class: 'mono' });
     const k = h('span', { class: 'cr-k' }), c = h('span', { class: 'cr-c' }), n = h('span', { class: 'cr-n' });
     const work = workLabel();
-    const el = h('div', { class: 'crow', tabindex: '-1' }, tag.el, p, h('span', { class: 'cr-title' }, t, work.el), m, v, h('span', { class: 'cr-w' }, wIc, wT, wTm), k, c, n);
+    const el = h('div', { class: 'crow', tabindex: '-1' }, tag.el, p.el,
+      h('span', { class: 'cr-title' }, h('span', { class: 'cr-title-line' }, openWindow.el, t), work.el),
+      m, v, h('span', { class: 'cr-w' }, wIc, wT, wTm), k, c, n);
     let icName = null, st = null;
     el.addEventListener('click', () => api.open?.(el.dataset.id));
     return {
@@ -3822,7 +3886,8 @@ function hudClient() {
         if (st && st !== vs) glitch(el);
         st = vs; setData(el, 's', vs); setData(el, 'id', x.id);
         tag.set(vs);
-        txt(p, x.project || '—'); setData(p, 'tip', x.project);
+        p.set(x.project); setData(el, 'project', x.project);
+        openWindow.set(x);
         const title = x.title || x.name || 'Untitled session'; txt(t, title); t.dataset.tip = title;
         setData(el, 'work', work.set(x.work, cxt.plans) ? '1' : null);
         txt(m, (x.agent === 'codex' ? 'Codex · ' : '') + shortModel(x.model)); setData(m, 'tip', x.modelRaw);
@@ -3998,10 +4063,12 @@ function hudClient() {
   function network(api = {}) {
     const uid = 'net' + (++netSeq);
     const sweepIn = h('i'), sweep = h('div', { class: 'net-sweep', 'aria-hidden': 'true' }, sweepIn);
-    const gR = s('g', { class: 'net-rings' }), gG = s('g'), gE = s('g'), gP = s('g');
-    const svg = s('svg', { class: 'net-svg', 'aria-hidden': 'true' }, gR, gG, gE, gP);
-    const hubLabel = h('span', { class: 'hub-label label' });
-    const hub = h('div', { class: 'net-hub', 'aria-hidden': 'true' }, h('span', { class: 'hub-ring' }), h('span', { class: 'hub-core' }), hubLabel);
+    const gR = s('g', { class: 'net-rings', 'aria-hidden': 'true' }), gG = s('g');
+    const gE = s('g', { 'aria-hidden': 'true' }), gP = s('g', { 'aria-hidden': 'true' });
+    const svg = s('svg', { class: 'net-svg', 'aria-hidden': api.project ? null : 'true' }, gR, gG, gE, gP);
+    const hubProject = projectLabel(api, '', ''), hubHost = h('span');
+    const hubLabel = h('span', { class: 'hub-label label trunc' }, hubHost, hubProject.el);
+    const hub = h('div', { class: 'net-hub' }, h('span', { class: 'hub-ring' }), h('span', { class: 'hub-core' }), hubLabel);
     const layer = h('div', { class: 'net-nodes', role: 'group', 'aria-label': 'Agent network: who started whom. Arrow keys move between agents, Enter pins one, Escape unpins.' });
     const empty = h('div', { class: 'net-empty', hidden: true }, h('span', { class: 'label', text: 'No active sessions' }), h('span', { text: ' · systems nominal' }));
     const legend = h('div', { class: 'net-legend label', 'aria-hidden': 'true', hidden: true },
@@ -4368,7 +4435,18 @@ function hudClient() {
         const b0 = mid - deg / 2 - 2, b1 = mid + deg / 2 + 2;
         const m = ((mid % 360) + 360) % 360, lower = m > 90 && m < 270, id = `${uid}-g${gi}`;
         out.push(s('path', { id, d: lower ? ellArc(hubXY.x, hubXY.y, lrx, lry, b1, b0, true) : ellArc(hubXY.x, hubXY.y, lrx, lry, b0, b1), fill: 'none' }));
-        out.push(s('text', { class: 'g-lbl', dy: lower ? 10 : -2 }, s('textPath', { href: '#' + id, startOffset: '50%', 'text-anchor': 'middle' }, g.name)));
+        const label = s('text', { class: 'g-lbl', dy: lower ? 10 : -2 }, s('textPath', { href: '#' + id, startOffset: '50%', 'text-anchor': 'middle' }, g.name));
+        if (api.project) {
+          setAttr(label, 'role', 'button');
+          setAttr(label, 'tabindex', '0');
+          setAttr(label, 'aria-label', g.name);
+          setData(label, 'project', g.name);
+          label.addEventListener('click', () => api.project(g.name));
+          label.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.project(g.name); }
+          });
+        }
+        out.push(label);
       });
       gG.replaceChildren(...out);
     }
@@ -4493,7 +4571,9 @@ function hudClient() {
     function render() {
       if (!data || !W || !H) return;
       const items = graph(data), L = layout(items);
-      txt(hubLabel, L.G.length === 1 ? `${cx.host || 'This PC'} · ${L.G[0].name}` : cx.host || 'This PC');
+      const singleProject = L.G.length === 1 ? L.G[0].name : null;
+      txt(hubHost, (cx.host || 'This PC') + (singleProject ? ' · ' : ''));
+      hubProject.set(singleProject); show(hubProject.el, !!singleProject);
       show(empty, items.length === 0); show(legend, items.length > 0 && W >= 560 && !pinnedId);
       hub.style.transform = `translate(${hubXY.x.toFixed(1)}px, ${hubXY.y.toFixed(1)}px)`;
       empty.style.top = Math.round(hubXY.y + 52) + 'px';
@@ -4512,12 +4592,16 @@ function hudClient() {
           if (drawn && !motion.rm) r.btn.animate([{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'none' }], { duration: 450, easing: EASE });
         }
         if (r.state === 'running' && i.state === 'done') r.pulse = true;
-        r.state = i.state; setData(r.el, 's', i.state);
+        r.state = i.state; setData(r.el, 's', i.state); setData(r.el, 'project', i.project || cx.byId?.get(i.session)?.project);
         drawFace(r, i); setSpinner(r, i); setLabel(r, i);
         const ts = toolSig(i); if (!fresh && ts && ts !== r.toolSig) spark(r); r.toolSig = ts;
         setAttr(r.btn, 'aria-label', nodeLabel(i));
       }
-      for (const [id, r] of nodes) if (!seen.has(id)) { nodes.delete(id); r.pingAnim?.cancel(); r.el.style.opacity = '0'; setTimeout(() => r.el.remove(), 300); }
+      for (const [id, r] of nodes) if (!seen.has(id)) {
+        nodes.delete(id); r.pingAnim?.cancel();
+        if (cx.project) r.el.remove();
+        else { r.el.inert = true; r.el.style.opacity = '0'; setTimeout(() => r.el.remove(), 300); }
+      }
       syncEdges(items);
       moveAll();
       if (!drawn) retime(true);
@@ -4695,7 +4779,7 @@ function hudClient() {
     };
   }
   function planCard(api = {}) {
-    const proj = h('span', { class: 'plan-p label trunc' });
+    const proj = projectLabel(api, 'plan-p label trunc', '');
     const need = h('span', { class: 'chip', style: 'color:var(--alert);border-color:rgba(255,77,94,.5)', hidden: true }, icon('alert'), 'Needs you');
     const live = h('span', { class: 'chip', style: 'color:var(--arc);border-color:rgba(41,230,255,.5)', hidden: true }, 'Working');
     const stChip = h('span', { class: 'chip plan-state', hidden: true }), count = h('span', { class: 'plan-c' });
@@ -4707,7 +4791,7 @@ function hudClient() {
     const detail = h('div', { id: detailId, class: 'plan-detail', tabindex: '-1', hidden: true }, close, detailBody);
     const graph = planGraph(detailId, select, id => planNodeCard(nodes.get(id), infoFor(id)));
     const needs = h('div'), runs = h('div', { class: 'plan-runs', hidden: true }), log = h('p', { class: 'plan-log', hidden: true });
-    const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj, live, need, stChip, count), title, graph.el, needs, runs, detail, log);
+    const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj.el, live, need, stChip, count), title, graph.el, needs, runs, detail, log);
     let needSig = null, runSig = null;   // the need rows and run chips are rebuilt only when their text changed
     let plan, items = {}, labelOf = () => 'Agent', nodes = new Map(), selected = null, detailSig = '';
     function infoFor(id) {
@@ -4756,7 +4840,7 @@ function hudClient() {
         const all = p.phases || [], key = boardPlanKey(p), working = board.plans?.[key]?.active || 0;
         nodes = new Map([...all, ...(p.runs || [])].map(n => [n.id, n]));
         if (!nodes.has(selected)) selected = null;
-        txt(proj, p.project || ''); setData(proj, 'tip', p.path ? 'From ' + p.path : null);
+        proj.set(p.project); setData(proj.el, 'tip', p.path ? 'From ' + p.path : null);
         txt(title, p.title || p.slug); title.dataset.tip = p.title || p.slug;
         show(live, working > 0); txt(live, 'Working ' + working);
         setData(live, 'tip', working ? plural(working, 'active agent', 'active agents') + ' linked to this board' : null);
@@ -4915,15 +4999,15 @@ function hudClient() {
   }
 
   // ---- needs-you banners ------------------------------------------------------------------------------------------------------
-  function banners(api = {}) {
+  function banners(api = {}, summary = null) {
     const list = h('div', { style: 'display:contents' });
     const more = h('button', { class: 'ban-more label', type: 'button', hidden: true });
     const warnings = h('div', { class: 'warnings', role: 'group', 'aria-label': 'Warnings', hidden: true });
-    const el = h('div', { class: 'banners', role: 'region', 'aria-label': 'HUD alerts', 'aria-live': 'polite', hidden: true }, list, more, warnings);
+    const el = h('div', { class: 'banners', role: 'region', 'aria-label': 'HUD alerts', 'aria-live': 'polite', hidden: true }, list, more, warnings, summary);
     const rows = new Map(), dismissed = new Set();
     const warningRows = new Map(), dismissedWarnings = new Set();
     let expanded = false, last = [], latestWarnings = [], hasWaiting = false;
-    const visibility = () => show(el, hasWaiting || !warnings.hidden);
+    const visibility = () => show(el, hasWaiting || !warnings.hidden || (summary && !summary.hidden));
     more.addEventListener('click', e => { e.stopPropagation(); expanded = !expanded; updateWaiting(last); });
     function row(x) {
       const rl = h('span', { class: 'ban-rl' }), rs = h('span', { class: 'ban-rs' });   // the reason, and its short form for narrow screens
@@ -4949,7 +5033,7 @@ function hudClient() {
       setAttr(more, 'aria-label', expanded ? 'Show only the longest-waiting session' : `Show all ${waiting.length} waiting sessions`);
       const first = list.firstElementChild;
       if (first && more.parentElement !== first) first.querySelector('.ban-tm').before(more);
-      if (!first && more.parentElement !== el) el.append(more);
+      if (!first && more.parentElement !== el) warnings.before(more);
     }
     function warningRow(alert) {
       let current = alert;
@@ -4980,12 +5064,38 @@ function hudClient() {
       show(warnings, visible.length > 0);
       visibility();
     }
-    return { el, update(sessions, alerts = []) { updateWaiting(sessions); updateWarnings(alerts); } };
+    return { el, visibility, update(sessions, alerts = []) { updateWaiting(sessions); updateWarnings(alerts); } };
+  }
+
+  function awaySummary(onChange = () => {}) {
+    const metrics = [['turn-finished', 'turn finished', 'turns finished'], ['agent-done', 'agent done', 'agents done'],
+      ['item-changed', 'item changed', 'items changed'], ['needs-you', 'needs-you event', 'needs-you events']];
+    const counts = h('ul', { class: 'away-counts' }), needs = h('ul', { class: 'away-needs', 'aria-label': 'Needs-you events while away' });
+    const title = h('h2', { class: 'label', text: 'While you were away' });
+    const close = h('button', { class: 'ban-x', type: 'button', 'aria-label': 'Dismiss away summary',
+      on: { click: () => { show(el, false); onChange(); } } }, icon('close'));
+    const el = h('section', { class: 'away-summary', hidden: true }, h('div', { class: 'away-head' }, title, close), counts, needs);
+    return { el, update(feed, since) {
+      const totals = new Map(metrics.map(([key]) => [key, 0])), waiting = [];
+      for (const f of feed) {
+        if (f.at < since) continue;
+        const key = f.kind === 'needs-you' ? f.kind : f.action;
+        if (totals.has(key)) totals.set(key, totals.get(key) + 1);
+        if (key === 'needs-you') waiting.push(h('li', {}, f.project ? h('b', { text: f.project + ' · ' }) : null, f.text));
+      }
+      counts.replaceChildren(...metrics.map(([key, one, many]) => {
+        const n = totals.get(key);
+        return h('li', {}, h('b', { 'data-action': key, text: n }), ' ' + (n === 1 ? one : many));
+      }));
+      needs.replaceChildren(...waiting);
+      show(needs, waiting.length > 0);
+      show(el, true); onChange();
+    } };
   }
 
   // ---- ticker -------------------------------------------------------------------------------------------------------------------
   const FEED_TAGS = { tool: 'Tool', agent: 'Agent', 'needs-you': 'Needs you', done: 'Done', plan: 'Plan', session: 'Session' };
-  function ticker(panelEl, header) {
+  function ticker(panelEl, header, api = {}) {
     const list = h('ol', { class: 'tk-list-in' });
     const clip = h('div', { class: 'tk-list', 'aria-live': 'polite', 'aria-relevant': 'additions' }, list);
     const newest = h('span', { class: 'tk-new trunc' }), paused = h('span', { class: 'chip warn', hidden: true });
@@ -4994,9 +5104,10 @@ function hudClient() {
     let doneAt = -1;
     const btn = h('button', { class: 'tgl tk-collapse', type: 'button', 'aria-expanded': 'true', 'aria-label': 'Collapse the feed', 'data-tip': 'Collapse the feed' }, icon('chevron'));
     header.append(newest, lastDone, paused, btn);
-    let hovered = false, queue = [];
-    const seen = new Set();
-    const key = f => f.at + '|' + (f.sessionId || '') + '|' + f.text;
+    let hovered = false, queue = [], project = null, lastFinish = null;
+    const history = new Map();
+    const key = f => JSON.stringify([f.at, f.sessionId, f.project, f.kind, f.text]);
+    const matches = f => f && (!project || f.project === project);
     let collapsed = prefs.get('tickerCollapsed', false);
     function setCollapsed(v) {
       collapsed = v; prefs.set('tickerCollapsed', v); panelEl.classList.toggle('collapsed', v);
@@ -5008,12 +5119,23 @@ function hudClient() {
     clip.addEventListener('pointerleave', () => { hovered = false; const q = queue; queue = []; show(paused, false); q.forEach(f => insert(f, false)); });
     function line(f) {
       const k = FEED_TAGS[f.kind] ? f.kind : 'session';
-      return h('li', { class: 'tk' }, h('span', { class: 'tk-time', text: fmtClock(f.at) }), h('span', { class: 'tk-tag', 'data-k': k, text: FEED_TAGS[k] }),
-        h('span', { class: 'tk-proj trunc', text: f.project || '—', 'data-tip': f.project || null, 'data-tip-if': 'trunc' }), h('span', { class: 'tk-text trunc', text: f.text, 'data-tip': f.text, 'data-tip-if': 'trunc' }));
+      const proj = projectLabel(api, 'tk-proj trunc');
+      proj.set(f.project);
+      const li = h('li', { class: 'tk', 'data-project': f.project }, h('span', { class: 'tk-time', text: fmtClock(f.at) }),
+        h('span', { class: 'tk-tag', 'data-k': k, text: FEED_TAGS[k] }), h('span', { class: 'tk-project' }, proj.el),
+        h('span', { class: 'tk-text trunc', text: f.text, 'data-tip': f.text, 'data-tip-if': 'trunc' }));
+      li._f = f;
+      return li;
     }
-    function setNewest(f) { newest.replaceChildren(h('span', { class: 'tk-tag', 'data-k': FEED_TAGS[f.kind] ? f.kind : 'session', style: 'padding:0 8px', text: FEED_TAGS[f.kind] || 'Session' }), h('span', { class: 'trunc', text: `${f.project || ''} · ${f.text}` })); }
+    function setNewest(f) {
+      if (!f) { txt(newest, 'No feed events'); return; }
+      const proj = projectLabel(api, 'tk-proj trunc');
+      proj.set(f.project); show(proj.el, !!f.project);
+      newest.replaceChildren(h('span', { class: 'tk-tag', 'data-k': FEED_TAGS[f.kind] ? f.kind : 'session', style: 'padding:0 8px', text: FEED_TAGS[f.kind] || 'Session' }),
+        proj.el, h('span', { class: 'trunc', text: f.text }));
+    }
     function noteDone(f) {   // the newest finish stays in the header, so "what just finished" survives a busy feed
-      if (!f || f.kind !== 'done' || f.at < doneAt) return;
+      if (!matches(f) || f.kind !== 'done' || f.at <= doneAt) return;
       doneAt = f.at;
       const t = `${f.project || ''} · ${f.text}`; txt(ldText, t); ldText.dataset.tip = t;
       age(ldAgo, f.at, '', ' ago');
@@ -5021,39 +5143,56 @@ function hudClient() {
     function insert(f, animate = true) {
       noteDone(f);
       const top = list.firstElementChild;
-      if (f.kind === 'tool' && top && top._f && top._f.kind === 'tool' && top._f.sessionId && top._f.sessionId === f.sessionId) {
+      if (f.kind === 'tool' && top?._f?.kind === 'tool' && top._f.sessionId && top._f.sessionId === f.sessionId && top._f.project === f.project) {
         top._n = (top._n || 1) + 1; top._f = f;   // the same session's next tool: update the line, count it
         top.querySelector('.tk-time').textContent = fmtClock(f.at);
         const tx = top.querySelector('.tk-text'); tx.textContent = f.text; tx.dataset.tip = f.text;
-        let n = top.querySelector('.tk-n'); if (!n) { n = h('span', { class: 'tk-n' }); top.querySelector('.tk-proj').append(n); }
+        let n = top.querySelector('.tk-n'); if (!n) { n = h('span', { class: 'tk-n' }); top.querySelector('.tk-project').append(n); }
         n.textContent = '×' + top._n;
         setNewest(f);
         return;
       }
-      const li = line(f); li._f = f;
+      const li = line(f);
       list.prepend(li);
       while (list.children.length > 40) list.lastElementChild.remove();
       setNewest(f);
       if (animate && !motion.rm && !collapsed) { list.animate([{ transform: 'translateY(-24px)' }, { transform: 'none' }], { duration: 300, easing: EASE }); li.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 }); }
     }
+    function redraw(feed = [...history.values()].reverse()) {
+      const visible = feed.filter(matches);
+      queue = []; show(paused, false); hovered = false;
+      list.replaceChildren(...visible.slice(0, 40).map(line));
+      setNewest(visible[0]);
+      doneAt = -1;
+      txt(ldText, 'Nothing has finished yet'); ldText.dataset.tip = ldText.textContent;
+      age(ldAgo, null);
+      noteDone(visible.find(f => f.kind === 'done'));
+      noteDone(lastFinish);
+    }
     return {
       el: clip,
+      focus(name) { if (project !== name) { project = name; redraw(); } },
       add(f) {
-        const k = key(f); if (seen.has(k)) return; seen.add(k); if (seen.size > 2000) seen.clear();
+        const k = key(f);
+        if (history.has(k)) return;
+        history.set(k, f);
+        if (history.size > 200) history.delete(history.keys().next().value);
+        if (!matches(f)) return;
         if (hovered) { queue.push(f); show(paused, true); txt(paused, `Paused · ${queue.length} new`); return; }
         insert(f);
       },
-      sync(feed) {   // a snapshot's feed, newest first: add what the stream did not deliver
-        const fresh = (feed || []).filter(f => !seen.has(key(f)));
-        if (!fresh.length) return;
-        if (fresh.length > 12 || !list.children.length) {
-          for (const f of feed) seen.add(key(f));
-          list.replaceChildren(...feed.slice(0, 40).map(f => { const li = line(f); li._f = f; return li; })); if (feed[0]) setNewest(feed[0]);
-          const d = feed.find(f => f.kind === 'done'); if (d) noteDone(d);
-        } else fresh.reverse().forEach(f => { seen.add(key(f)); insert(f, false); });
+      sync(feed) {   // merge the snapshot's history with events already delivered by the stream
+        if (!feed.some(f => !history.has(key(f)))) return;
+        const merged = new Map(feed.map(f => [key(f), f]));
+        for (const [k, f] of history) if (!merged.has(k)) merged.set(k, f);
+        const lines = [...merged.values()].sort((a, b) => b.at - a.at).slice(0, 200);
+        history.clear();
+        for (const f of lines.slice().reverse()) history.set(key(f), f);
+        redraw(lines);
       },
-      done: noteDone,   // a finish known from the state (a subagent that ended before this page or this HUD started)
+      done(f) { lastFinish = f; noteDone(f); },   // a completion known from the state, even after it leaves the feed
       type(text) {   // "SYSTEMS ONLINE" types into the ticker during boot
+        if (project) return;
         const tx = h('span', { class: 'tk-text' });
         const li = h('li', { class: 'tk type' }, h('span', { class: 'tk-time', text: fmtClock(now()) }), h('span', { class: 'tk-tag', 'data-k': 'session', text: 'HUD' }), h('span', { class: 'tk-proj', text: 'Claude HUD' }), tx);
         list.prepend(li);
@@ -5307,8 +5446,12 @@ function hudClient() {
   // ---- the whole page --------------------------------------------------------------------------------------------------------------
   function createHud(mount, opts = {}) {
     const bg = h('div', { class: 'bg', 'aria-hidden': 'true' }, h('div', { class: 'bg-grid' }), h('div', { class: 'bg-dots' }), h('div', { class: 'bg-dots d2' }), h('div', { class: 'bg-shim' }), h('div', { class: 'bg-vig' }));
-    const api = { jump: (id, agentId) => jump(id, agentId), showCard: id => { setView('cards', true); jump(id); }, open: id => jump(id) };
-    const top = topBar(api), ban = banners(api);
+    let project = opts.project || null;
+    const matches = item => !project || item?.project === project;
+    const api = { jump: (id, agentId) => jump(id, agentId), showCard: id => { setView('cards', true); jump(id); }, open: id => jump(id),
+      project: name => { if (name) setProject(project === name ? null : name); }, focused: () => project };
+    const away = awaySummary(() => ban.visibility());
+    const top = topBar(api), ban = banners(api, away.el);
     const conn = h('div', { class: 'conn', hidden: true, role: 'status' }, h('span', { class: 'label conn-w' }), h('span', { class: 'mono conn-m' }));
     const connRetry = h('button', { type: 'button', text: 'Retry now' }); conn.append(connRetry);
     connRetry.addEventListener('click', () => opts.reconnect && opts.reconnect());
@@ -5321,8 +5464,11 @@ function hudClient() {
 
     const se = panel('p-sess', 'Sessions');
     const seSum = h('span', { class: 'ps trunc' });
+    const focusName = h('span', { class: 'trunc' });
+    const clearFocus = h('button', { class: 'chip focus-clear', type: 'button', 'data-tip': 'Clear project focus (Escape)', hidden: true,
+      on: { click: () => setProject(null) } }, focusName, icon('close'));
     const vCards = h('button', { type: 'button', 'aria-pressed': 'true' }, icon('cards'), 'Cards'), vNet = h('button', { type: 'button', 'aria-pressed': 'false' }, icon('network'), 'Network');
-    se.head.append(seSum, h('div', { class: 'seg', role: 'group', 'aria-label': 'View' }, vCards, vNet));
+    se.head.append(seSum, clearFocus, h('div', { class: 'seg', role: 'group', 'aria-label': 'View' }, vCards, vNet));
     const cardsBox = h('div', { class: 'cards' }), cardsEmpty = h('div', { class: 'cards-empty', hidden: true }, h('span', { class: 'label', text: 'No active sessions' }), ' · systems nominal');
     const cardsWrap = h('div', {}, cardsEmpty, cardsBox);
     const net = network(api);
@@ -5338,7 +5484,7 @@ function hudClient() {
       const k = els.filter(e => e.dataset.need).length;
       return [k ? h('span', { class: 'c-alert', text: `${k} ${k === 1 ? 'needs' : 'need'} you` }) : null, h('span', { class: 'trunc', text: els.map(e => e.dataset.project).join(', ') })];
     });
-    const planApi = { jump: api.jump, layout: plMore.refresh };
+    const planApi = { ...api, layout: plMore.refresh };
     const queue = workQueue(planApi);
     let showQuiet = prefs.get('quietBoardsExpanded', false);
     const quiet = quietBoards(() => {
@@ -5352,7 +5498,7 @@ function hudClient() {
     let plSig = '';
 
     const tk = panel('p-tick', 'Feed', { label: 'Live feed' });
-    const tick = ticker(tk.el, tk.head);
+    const tick = ticker(tk.el, tk.head, api);
     tk.content.replaceWith(tick.el);
 
     const colL = h('div', { class: 'col-l' }, rx.el, ex.el);
@@ -5365,6 +5511,26 @@ function hudClient() {
     let state = null, booted = false, exHidden = null, syncedFeed = null;
     const announce = announcer();
 
+    function showFocus() {
+      tick.focus(project);
+      show(clearFocus, !!project);
+      txt(focusName, project);
+      setAttr(clearFocus, 'aria-label', project ? `Clear project focus: ${project}` : null);
+    }
+    function setProject(name) {
+      if (project === name) return;
+      const active = document.activeElement;
+      project = name;
+      tip.close();
+      showFocus();
+      if (state) { renderSessions(state, false); renderPlans(state, false); tick.done(lastFinish(state)); }
+      if ((active === clearFocus && !project) || (active && !active.isConnected)) {
+        (project ? clearFocus : view === 'network' ? vNet : vCards).focus({ preventScroll: true });
+      }
+      opts.onProject?.(project);
+    }
+    showFocus();
+
     function setView(v, remember) {
       view = v; if (remember) { prefs.set('view', v); urlView = null; }
       vCards.setAttribute('aria-pressed', String(v === 'cards')); vNet.setAttribute('aria-pressed', String(v === 'network'));
@@ -5375,15 +5541,17 @@ function hudClient() {
     vNet.addEventListener('click', () => setView('network', true));
     let urlView = new URLSearchParams(location.search).get('view');   // ?view=cards|network, until the switch is used
     if (!/^(cards|network)$/.test(urlView || '')) urlView = null;
-    function currentView(st) {
+    function currentView(sessions) {
       if (urlView) return urlView;
       if (prefs.get('view', null)) return prefs.get('view');
-      if (!autoNet && st.sessions.some(x => x.status !== 'ended' && (x.subagents || []).length)) autoNet = true;
-      const crowdedNarrow = innerWidth < 600 && st.sessions.filter(x => x.status !== 'ended').length > 8;   // too many nodes for a narrow window: rows read better
+      if (!autoNet && sessions.some(x => x.status !== 'ended' && (x.subagents || []).length)) autoNet = true;
+      const crowdedNarrow = innerWidth < 600 && sessions.filter(x => x.status !== 'ended').length > 8;   // too many nodes for a narrow window: rows read better
       return autoNet && !crowdedNarrow ? 'network' : 'cards';
     }
     function jump(id, agentId) {
       if (!state) return;
+      const targetSession = state.sessions.find(x => x.id === id);
+      if (targetSession && !matches(targetSession)) setProject(null);
       const behavior = motion.rm ? 'auto' : 'smooth';
       if (view === 'network') {
         if ((agentId && net.pin(agentId)) || net.pin(id)) net.el.scrollIntoView({ behavior, block: 'nearest' });
@@ -5395,36 +5563,36 @@ function hudClient() {
       target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 900);
       target.focus({ preventScroll: true });
     }
-    function ctxFor(st) {
-      const live = st.sessions.filter(x => x.status !== 'ended');
+    function ctxFor(st, live) {
       return {
         byId: new Map(st.sessions.map(x => [x.id, x])), plans: new Map((st.plans || []).map(p => [boardPlanKey(p), p])), host: st.host,
+        project,
         maxTok: Math.max(1, ...live.map(x => headline(x.tokens))), maxCache: Math.max(1, ...live.map(x => x.tokens?.cacheRead || 0)),
       };
     }
-    function renderSessions(st) {
+    function renderSessions(st, animate = booted) {
       se.guard(() => {
-        const live = st.sessions.filter(x => x.status !== 'ended');
-        const t = st.totals || {};
-        txt(seSum, [`${live.length} open`, t.busy ? `${t.busy} busy` : null, t.needsYou ? `${t.needsYou} need you` : null].filter(Boolean).join(' · '));
-        view = currentView(st);
+        const sessions = st.sessions.filter(matches), live = sessions.filter(x => x.status !== 'ended');
+        const busy = live.filter(x => x.status === 'busy').length, needs = live.filter(x => x.status === 'needs-you').length;
+        txt(seSum, [`${live.length} open`, busy ? `${busy} busy` : null, needs ? `${needs} need you` : null].filter(Boolean).join(' · '));
+        view = currentView(sessions);
         vCards.setAttribute('aria-pressed', String(view === 'cards')); vNet.setAttribute('aria-pressed', String(view === 'network'));
         show(cardsWrap, view === 'cards'); show(net.el, view === 'network');
-        const c = ctxFor(st);
-        if (view === 'network') { net.update(st.sessions, c); return; }
+        const c = ctxFor(st, live);
+        if (view === 'network') { net.update(sessions, c); seMore.refresh(); return; }
         show(cardsEmpty, live.length === 0);
         const compact = live.length > 8;
         if (compact !== compactMode) { compactMode = compact; cardsBox.classList.toggle('compact', compact); cardsBox.replaceChildren(); cards.clear(); rowsMap.clear(); }
         const rank = { 'needs-you': 0, busy: 1, idle: 2, ended: 3 };
-        const list = st.sessions.slice().sort((a, b) => rank[a.status] - rank[b.status] || (a.startedAt || 0) - (b.startedAt || 0));
-        if (compact) reconcile(cardsBox, rowsMap, list, x => x.id, () => compactRow(api), (r, x) => r.update(x, c), booted);
-        else reconcile(cardsBox, cards, list, x => x.id, () => sessionCard(api), (r, x) => r.update(x, c), booted);
+        const list = sessions.sort((a, b) => rank[a.status] - rank[b.status] || (a.startedAt || 0) - (b.startedAt || 0));
+        if (compact) reconcile(cardsBox, rowsMap, list, x => x.id, () => compactRow(api), (r, x) => r.update(x, c), animate);
+        else reconcile(cardsBox, cards, list, x => x.id, () => sessionCard(api), (r, x) => r.update(x, c), animate);
         seMore.refresh();
       }, () => renderSessions(st));
     }
-    function renderPlans(st) {
+    function renderPlans(st, animate = booted) {
       pl.guard(() => {
-        const plans = (st.plans || []).slice(), board = st.board || {};
+        const plans = (st.plans || []).filter(matches), board = st.board || {};
         const byPlan = new Map(plans.map(p => [boardPlanKey(p), p]));
         const sessions = new Map(st.sessions.map(x => [x.id, x]));
         const nameOf = ({ sessionId, agentId }) => {
@@ -5453,9 +5621,10 @@ function hudClient() {
         show(queue.el, plans.length > 0);
         show(plansEmpty, plans.length === 0);
         quiet.update(folded.length, showQuiet);
-        txt(plSum, plans.length ? [`${plans.length}`, st.totals?.plansInProgress ? `${st.totals.plansInProgress} in progress` : null].filter(Boolean).join(' · ') : '');
+        const inProgress = plans.filter(active).length;
+        txt(plSum, plans.length ? [`${plans.length}`, inProgress ? `${inProgress} in progress` : null].filter(Boolean).join(' · ') : '');
         const update = (c, p) => c.update(p, board, nameOf);
-        reconcile(plansBox, planMap, visible, boardPlanKey, () => planCard(planApi), update, booted);
+        reconcile(plansBox, planMap, visible, boardPlanKey, () => planCard(planApi), update, animate);
         reconcile(quiet.list, quietMap, showQuiet ? folded : [], boardPlanKey, () => planCard(planApi), update, false);
         const sig = visible.map(p => boardPlanKey(p) + (needs(p) ? '!' : '')).join();
         if (sig !== plSig) { plSig = sig; plMore.refresh(); }   // the hint only changes with the boards (scroll and resize repaint it too)
@@ -5465,7 +5634,7 @@ function hudClient() {
     // a finish arrives in the feed.
     function lastFinish(st) {
       let best = null;
-      for (const x of st.sessions || []) for (const a of x.subagents || []) {
+      for (const x of (st.sessions || []).filter(matches)) for (const a of x.subagents || []) {
         if (a.state === 'done' && a.endedAt && (!best || a.endedAt > best.at)) best = { kind: 'done', at: a.endedAt, project: x.project, text: `Agent done · ${[a.type, a.description].filter(Boolean).join(': ')}` };
       }
       return best;
@@ -5501,7 +5670,8 @@ function hudClient() {
     }
     setInterval(() => { top.tick(); tickTimers(); }, 1000);
     top.tick();
-    return { render, feed: f => tick.add(f), setConn, typeLine: t => tick.type(t), get state() { return state; } };
+    return { render, feed: f => tick.add(f), setConn, typeLine: t => tick.type(t),
+      showAway: away.update, clearProject: () => setProject(null), get state() { return state; } };
   }
 
   // ---- boot sequence (ambient: skipped with EFFECTS off or reduced motion) -------------------------------------------------
@@ -5519,7 +5689,7 @@ function hudClient() {
     h, s, txt, icon, glyph, ICONS, GLYPHS, STATUS, statusTag, provBadge, odo, tip, motion, prefs, now, syncClock, tickTimers,
     fmtTok, fmtPct, fmtDur, fmtAge, headline, shortModel, ctxLevel,
     contextMeter, tokenMeter, cacheMeter, activityLine, sessionCard, compactRow, subList, reactor, vitals, externals, network, planCard, planNodeCard, workQueue, quietBoards,
-    banners, ticker, panel, toggle, topBar, createHud, boot, audio, voice, happenings, needsPhrase, reconcile, moreBelow, stateCounts, FEED_TAGS,
+    banners, awaySummary, projectLabel, ticker, panel, toggle, topBar, createHud, boot, audio, voice, happenings, needsPhrase, reconcile, moreBelow, stateCounts, FEED_TAGS,
   };
 }
 
@@ -5532,15 +5702,54 @@ function pageMain(H) {
   // kept: the plans and feed of the last message that carried them.
   // last: the last state received, with the kept plans and feed put back.
   let es = null, lastAt = 0, lostAt = 0, retryTimer = 0, kept = null, last = null;
-  const hud = H.createHud(document.body, { reconnect: () => connect() });
+  const hud = H.createHud(document.body, {
+    reconnect: () => connect(),
+    project: new URLSearchParams(location.search).get('project'),
+    onProject(name) {
+      const url = new URL(location.href);
+      if (name) url.searchParams.set('project', name);
+      else url.searchParams.delete('project');
+      history.replaceState(history.state, '', url);
+    },
+  });
   H.boot(hud);
+  let hiddenAt = document.hidden ? Date.now() : null, pendingSince = null, summarizedAt = 0, fetching = false;
+  async function refreshAway() {
+    if (document.hidden || pendingSince === null || fetching) return;
+    fetching = true;
+    try {
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      if (!res.ok) return;
+      const st = await res.json(), receivedAt = Date.now();
+      if (document.hidden || !Array.isArray(st.feed)) return;
+      // Feed times come from the HUD host. Translate the browser's absence into that clock.
+      hud.showAway(st.feed, st.now - (receivedAt - pendingSince));
+      pendingSince = null;
+      summarizedAt = receivedAt;
+    } catch { /* Try again on the next visibility change or successful connection. */ }
+    finally { fetching = false; }
+  }
+  function returnFrom(since) {
+    if (since != null) {
+      const start = Math.max(since, summarizedAt);
+      if (Date.now() - start >= 5 * 60_000) pendingSince = Math.min(pendingSince ?? start, start);
+    }
+    void refreshAway();
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt ??= Date.now(); return; }
+    returnFrom(hiddenAt);
+    hiddenAt = null;
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hud.clearProject(); });
+
   const setConn = sv => hud.setConn(sv, { lastAt });
   const judge = () => { if (lostAt && es && es.readyState !== 1) setConn(Date.now() - lostAt > 10000 ? 'down' : lastAt ? 'reconnecting' : 'connecting'); };
   function connect() {
     if (es) es.close();
     clearTimeout(retryTimer);
     es = new EventSource('/api/stream');
-    es.onopen = () => { lostAt = 0; setConn('live'); };
+    es.onopen = () => { const since = lostAt; lostAt = 0; setConn('live'); returnFrom(since || null); };
     es.onerror = () => {
       if (!lostAt) lostAt = Date.now();
       judge();
@@ -5833,6 +6042,21 @@ function designMain(H) {
     activitySpec('Steady output', Array.from({ length: 30 }, (_, i) => 900 + (i % 4) * 130), 94_000),
     activitySpec('One burst', Array.from({ length: 30 }, (_, i) => i === 23 ? 2400 : 0), 14_000));
 
+  const away = H.awaySummary();
+  away.update([
+    { at: t, kind: 'needs-you', project: 'FidiaCRM', text: 'Permission: Bash' },
+    { at: t - 1000, action: 'agent-done' },
+    { at: t - 2000, action: 'turn-finished' },
+    { at: t - 3000, action: 'item-changed' },
+  ], t - 300_000);
+  let focused = 'TourCMS';
+  const focus = H.projectLabel({ project: name => { focused = focused ? null : name; focus.set(name); }, focused: () => focused },
+    'chip focus-clear', '');
+  focus.set('TourCMS');
+  const editorCard = H.sessionCard();
+  editorCard.update({ ...busy, cwd: 'C:\\Users\\demo\\source\\repos\\Customer Tools' }, cardCtx);
+  section('Page extras', null, wide('While you were away', away.el), spec('Project focus', focus.el), spec('VS Code window', editorCard.el));
+
   // ---- alerts, ticker, externals, states ----
   const b1 = H.banners({}), b4 = H.banners({});
   b1.update([needs]);
@@ -5919,7 +6143,13 @@ function makeDemo(mode) {
   const tok = scale => ({ input: Math.round(rnd(2, 40) * scale), output: Math.round(rnd(800, 9000) * scale), cacheRead: Math.round(rnd(40_000, 400_000) * scale), cacheWrite: Math.round(rnd(4_000, 40_000) * scale) });
   const sessionsList = [];
   const feedList = [];
-  const addFeed = (s, kind, text) => { const line = { at: Date.now(), sessionId: s?.id ?? null, project: s?.project ?? null, kind, text }; feedList.push(line); if (feedList.length > FEED_MAX) feedList.shift(); broadcast('event', line); };
+  const addFeed = (s, kind, text, action = null, at = Date.now()) => {
+    const line = { at, sessionId: s?.id ?? null, project: s?.project ?? null, kind, text };
+    if (action) line.action = action;
+    feedList.push(line);
+    if (feedList.length > FEED_MAX) feedList.shift();
+    broadcast('event', line);
+  };
   // Board following (hud-0-3 P4): each agent's made-up evidence beside its label and branch, the marks' clocks, and the
   // marks already announced. The demo's state goes through the same followBoards() as the real one.
   const evidence = new Map();   // session or subagent id -> { refs, touched }
@@ -5931,8 +6161,8 @@ function makeDemo(mode) {
     const model = o.modelRaw || 'claude-opus-5-5';
     const mi = normalizeModel(model);
     const s = {
-      id: randomUUID(), agent: o.agent || 'claude', pid: rnd(2000, 60000), project: o.project, cwd: repo(o.project), name: `${o.project.toLowerCase()}-${rnd(16, 255).toString(16)}`,
-      title: o.title, entrypoint: 'claude-vscode', version: '2.1.312', status: o.status,
+      id: randomUUID(), agent: o.agent || 'claude', pid: rnd(2000, 60000), project: o.project, cwd: repo(o.folder || o.project), name: `${o.project.toLowerCase()}-${rnd(16, 255).toString(16)}`,
+      title: o.title, entrypoint: o.entrypoint || 'claude-vscode', version: '2.1.312', status: o.status,
       needsYou: o.needsYou ? { since: t0 - (o.needsFor || 60) * 1000, reason: o.needsYou, kind: o.needsKind || 'permission' } : null,
       provider: o.agent === 'codex' ? 'openai' : mi.provider, model: mi.model, modelRaw: model, effort: o.effort || 'high', branch: o.branch || 'main',
       startedAt: t0 - (o.age || 1800) * 1000, lastActivityAt: t0 - (o.quiet || 2) * 1000, endedAt: o.status === 'ended' ? t0 - (o.endedAgo || 180) * 1000 : null,
@@ -5974,19 +6204,25 @@ function makeDemo(mode) {
   // its description (P4, worked on while todo: "board not updated").
   let coordinator, flipper, cycler = null, explore = null, codex = null, waiter = null;
   if (!dense) {
-    const needs = session({ project: 'FidiaCRM', title: 'R14 quotation screens: totals, VAT rows and the discount line', status: 'needs-you', needsYou: 'Permission: Bash', needsFor: 95, branch: 'ux/R14-quotation-wizard', scale: 2, ctx: 82 });
+    const needs = session({ project: 'FidiaCRM', folder: 'Fidia CRM', title: 'R14 quotation screens: totals, VAT rows and the discount line', status: 'needs-you', needsYou: 'Permission: Bash', needsFor: 95, branch: 'ux/R14-quotation-wizard', scale: 2, ctx: 82 });
     noteOutput(needs, t0 - 4 * MINUTE_MS, 2100, minuteOf(t0));
     coordinator = session({ project: 'WasteManagement2', title: 'Coordinator: customer history plan, phases P2 and P3', status: 'busy', branch: 'customer-history', scale: 4, ctx: 42, age: 5400,
       touched: [{ id: 'demo-edit-1', file: `wastemanagement2|docs/plans/${WM2_SLUG}/status.md`, write: true, at: t0 - 600_000 }] });
     explore = sub(coordinator, coordinator.id, 1, ['general-purpose', 'P2 history tab and header'], { age: 120, refs: [[`${WM2_SLUG}/P2`]] });
     sub(coordinator, explore.id, 2, AGENT_JOBS[1], { age: 50, modelRaw: 'claude-haiku-5-5' });
     cycler = sub(coordinator, coordinator.id, 1, AGENT_JOBS[2], { age: 10, modelRaw: 'claude-haiku-5-5' });
-    codex = session({ project: 'FidiaCRM', agent: 'codex', title: 'Clients: contact length limits (UX-12)', status: 'idle', branch: 'clients/UX-12', quiet: 900, effort: 'medium', modelRaw: 'gpt-6-astra' });
+    codex = session({ project: 'FidiaCRM', agent: 'codex', entrypoint: 'cli', title: 'Clients: contact length limits (UX-12)', status: 'idle', branch: 'clients/UX-12', quiet: 900, effort: 'medium', modelRaw: 'gpt-6-astra' });
     const ended = session({ project: 'WasteManagement2', title: 'Say hi', status: 'ended', endedAgo: 180, age: 240, effort: 'low', modelRaw: 'claude-haiku-5-5', scale: 0.1 });
     ended.startedBy = coordinator.id;
     waiter = session({ project: 'TourCMS', title: 'Booking changes: waiting on the review agent', status: 'idle', quiet: 40, branch: 'booking-changes/P4-price-check', modelRaw: 'claude-sonnet-5-5', effort: 'medium' });
     sub(waiter, waiter.id, 1, ['general-purpose', 'P4 price check for changed dates'], { age: 90, background: true });   // hud-0-3 D6: "Agents working"
     flipper = session({ project: 'ImPOS-Maui', title: 'Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners', status: 'busy', branch: 'phone-app', modelRaw: 'us.anthropic.claude-sonnet-5-5-v1:0', scale: 2 });
+    addFeed(undefined, 'done', 'Turn finished', 'turn-finished', t0 - 6 * MINUTE_MS);
+    addFeed(needs, 'needs-you', 'Permission: Bash');
+    addFeed(coordinator, 'done', 'Agent done · Explore: map the change history code', 'agent-done');
+    addFeed(codex, 'done', 'Codex turn complete', 'turn-finished');
+    addFeed(waiter, 'done', 'Turn finished', 'turn-finished');
+    addFeed(waiter, 'plan', 'Booking changes: P1 in-progress → handed-off', 'item-changed');
   } else {
     const projects = ['FidiaCRM', 'WasteManagement2', 'ImPOS-Maui', 'TourCMS', 'Aegis', 'fidiagraf.com'];
     const statuses = ['needs-you', 'busy', 'busy', 'idle', 'busy', 'idle', 'ended', 'busy'];
@@ -6087,12 +6323,16 @@ function makeDemo(mode) {
       for (const a of s.subagents) if (a.state === 'running') { grow(a, now); a.lastActivityAt = now; if (Math.random() < 0.15) { setTool(a); addFeed(s, 'tool', `${a.type} › ${a.currentTool.name} · ${a.currentTool.summary}`); } }
     }
     if (coordinator && coordinator.status === 'busy') {
+      if (now - coordinator.turn.startedAt >= 60_000) {
+        coordinator.turn = { startedAt: now, lastMs: now - coordinator.turn.startedAt };
+        addFeed(coordinator, 'done', 'Turn finished', 'turn-finished');
+      }
       coordinator._ctx += 0.6;
       if (coordinator._ctx > 91) { coordinator._ctx = 34; addFeed(coordinator, 'session', 'Compacting context (auto)'); }
     }
     if (cycler) {   // a subagent that finishes and is replaced, so arrivals and the "done" moment can be designed
       const age = (now - cycler.startedAt) / 1000;
-      if (cycler.state === 'running' && age > 16) { cycler.state = 'done'; cycler.endedAt = now; cycler.currentTool = null; addFeed(coordinator, 'done', `Agent done · ${cycler.type}: ${cycler.description}`); }
+      if (cycler.state === 'running' && age > 16) { cycler.state = 'done'; cycler.endedAt = now; cycler.currentTool = null; addFeed(coordinator, 'done', `Agent done · ${cycler.type}: ${cycler.description}`, 'agent-done'); }
       else if (cycler.state === 'done' && (now - cycler.endedAt) > 9000) {
         coordinator.subagents = coordinator.subagents.filter(a => a !== cycler || coordinator.subagents.filter(x => x.state === 'done').length < 4);
         cycler = sub(coordinator, coordinator.id, 1, pick(AGENT_JOBS), { age: 0, modelRaw: 'claude-haiku-5-5' });
@@ -6114,7 +6354,7 @@ function makeDemo(mode) {
           plan.history.push({ at: now, id: ph.id, from: ph.state, to: st, sessionId: by?.sessionId ?? null, agentId: by?.agentId ?? null });
           if (plan.history.length > HISTORY_MAX) plan.history.shift();
           track.set(`${planKeyOf(plan)}#${ph.id}`, { ...newTrack(), ...track.get(`${planKeyOf(plan)}#${ph.id}`), changedAt: now });
-          addFeed({ project: plan.project }, 'plan', by && st === 'in-progress' ? `${plan.title}: ${ph.id} claimed by ${by.label}` : `${plan.title}: ${ph.id} ${ph.state} → ${st}`);
+          addFeed({ project: plan.project }, 'plan', by && st === 'in-progress' ? `${plan.title}: ${ph.id} claimed by ${by.label}` : `${plan.title}: ${ph.id} ${ph.state} → ${st}`, 'item-changed');
         }
         ph.state = st; ph.stateRaw = st; ph.since = st === 'todo' ? null : '2026-10-29';
       });

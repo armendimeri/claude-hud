@@ -170,6 +170,26 @@ and the reason. The session's warning text opens its card or network node. Dismi
 is active. Context has separate 80% and 90% steps, and a new ID is announced through the existing sound, voice
 and notification settings. Long-tool, silent-subagent and account-limit warnings use the same amber treatment.
 
+### While you were away
+
+A cyan-edged card below the banners shows the number of completed turns, finished agents, board item changes and
+needs-you events in the retained feed since the page went away. The needs-you list names the project and reason
+for each request. On return after five minutes hidden or disconnected, the page fetches fresh state. The close
+button dismisses the summary until the next qualifying absence.
+
+### Project focus
+
+Project names in the network, session cards, plan cards and feed are controls. Choosing one filters all three
+panels, including the plan work queue and feed header. The active project appears as a removable chip in the
+Sessions header. Choose the same project again, remove the chip or press Escape to clear it. The address reflects
+the current focus in `?project=`.
+
+### VS Code window
+
+On `localhost` and `127.0.0.1`, sessions with a VS Code entrypoint and a working folder show an **Open in VS Code**
+link in the full card and pinned network card. Compact rows use the same icon with an accessible label. The link
+uses the working folder's `vscode://file/` URL with individually encoded path segments.
+
 ### Arc reactor and vitals
 
 - **Reactor** (232 px; 200 px on screens under 960 px tall):
