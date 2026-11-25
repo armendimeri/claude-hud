@@ -94,6 +94,10 @@ const STATE_MIN_INTERVAL_MS = 250;       // at most 4 state pushes a second
 const KEEPALIVE_MS = 15_000;
 const POLL_MS = 3_000;
 const SILENT_SUBAGENT_MS = 120_000;      // fallback close for a subagent nobody reported done
+const MINUTE_MS = 60_000;
+const PULSE_MINUTES = 30;
+const TOOL_ALERT_MS = 10 * MINUTE_MS;
+const SUB_ALERT_MS = 5 * MINUTE_MS;
 const SILENT_SESSION_MS = 10 * 60_000;   // a session outside the registry counts as ended after this much silence
 const SETTLE_MS = 8_000;                 // hud-0-3 D7: a session with no work yet is shown after this long
 const SETTLE_WORK_MS = 60_000;           // work this long before the HUD first saw a session still counts as its first work
@@ -121,6 +125,7 @@ const SYNC_EVENTS = new Set(['SessionEnd']);   // async hooks can be killed when
 
 const REOPEN_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse']);
 const AGENT_TOOLS = new Set(['Agent', 'Task']);
+const runsInBackground = input => input?.run_in_background === true || input?.run_in_background === 'true';
 const NEEDS_INPUT_TOOLS = { AskUserQuestion: 'Question for you', ExitPlanMode: 'Plan approval' };
 
 // =====================================================================================================================
@@ -140,6 +145,7 @@ function truncate(s, n) { s = str(s); return s.length > n ? s.slice(0, n - 1) + 
 function oneLine(s) { return str(s).replace(/\s+/g, ' ').trim(); }
 function pad2(n) { return String(n).padStart(2, '0'); }
 function dayKey(ts) { const d = new Date(ts); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+const minuteOf = ts => Math.floor(ts / MINUTE_MS) * MINUTE_MS;
 function startOfDay(ts = Date.now()) { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -357,6 +363,7 @@ function newSession(id) {
     id, agent: 'claude', pid: null, cwd: null, project: null, name: null, entrypoint: null, version: null, kind: null,
     inRegistry: false, regStatus: null, regStatusAt: 0,
     hookStatus: null, hookStatusAt: 0, lastHookAt: 0, lastWorkAt: 0, hookModel: null,
+    turn: { startedAt: null, lastMs: null }, turnAt: 0,
     needsYou: null, currentTool: null, hookTools: new Set(), doneTools: new Set(),
     startedAt: null, ended: false, endedAt: null, endReason: null,
     startedBy: null, chainChecked: false,
@@ -476,7 +483,7 @@ function newInfo() {
   return {
     title: null, customTitle: null, modelRaw: null, requestModel: null, bedrock: false, rootBedrock: false,
     effort: null, branch: null, cwd: null, sessionId: null, agentId: null,
-    tokens: zero(), byDay: new Map(), msgs: new Map(), lastUsed: 0, firstTs: 0, lastTs: 0,
+    tokens: zero(), byDay: new Map(), byMinute: new Map(), msgs: new Map(), lastUsed: 0, firstTs: 0, lastTs: 0,
     toolIds: new Set(), openTools: new Map(), agentCalls: new Map(),
     refs: [], touched: [],        // hud-0-3 §4.2: ID-shaped words of each user prompt, and plan files read or written
   };
@@ -507,6 +514,7 @@ async function readTail(t) {
         if (t.format === 'codex' && t.owner) {
           const s = t.owner.session;
           s.hookStatus = null; s.hookStatusAt = 0; s.needsYou = null;
+          s.turn = { startedAt: null, lastMs: null }; s.turnAt = 0;
         }
       }   // replaced or truncated
       if (st.size === t.offset) continue;
@@ -585,11 +593,19 @@ function onAssistantLine(t, j, ts) {
     const tok = { input: num(u.input_tokens), output: num(u.output_tokens), cacheRead: num(u.cache_read_input_tokens), cacheWrite: num(u.cache_creation_input_tokens) };
     const id = typeof m.id === 'string' ? m.id : str(j.uuid);
     const day = ts ? dayKey(ts) : null;
+    const minute = ts ? minuteOf(ts) : null;
     const prev = info.msgs.get(id);
-    if (prev) { addTokens(info.tokens, prev.tok, -1); if (prev.day) addDay(info, prev.day, prev.tok, -1); info.msgs.delete(id); }
+    const bucketNow = minuteOf(Date.now());
+    if (prev) {
+      addTokens(info.tokens, prev.tok, -1);
+      if (prev.day) addDay(info, prev.day, prev.tok, -1);
+      addPulse(info.byMinute, prev.minute, -prev.tok.output, bucketNow);
+      info.msgs.delete(id);
+    }
     addTokens(info.tokens, tok);
     if (day) addDay(info, day, tok, 1);
-    info.msgs.set(id, { tok, day });
+    addPulse(info.byMinute, minute, tok.output, bucketNow);
+    info.msgs.set(id, { tok, day, minute });
     if (info.msgs.size > 4000) info.msgs.delete(info.msgs.keys().next().value);
     info.lastUsed = tok.input + tok.cacheRead + tok.cacheWrite;   // context: the latest turn only (D13)
   }
@@ -599,7 +615,7 @@ function onAssistantLine(t, j, ts) {
     info.toolIds.add(c.id);
     const name = str(c.name) || '?';
     const summary = summarizeTool(name, c.input, info.cwd);
-    info.openTools.set(c.id, { id: c.id, name, summary, since: ts || Date.now() });
+    info.openTools.set(c.id, { id: c.id, name, summary, since: ts || Date.now(), background: runsInBackground(c.input) });
     if (info.openTools.size > 50) info.openTools.delete(info.openTools.keys().next().value);
     if (PLAN_TOOLS.has(name) && isObj(c.input)) {
       const key = planFileKey(c.input.file_path, info.cwd || t.owner?.session.cwd);
@@ -620,6 +636,28 @@ function addDay(info, day, tok, sign) {
   let d = info.byDay.get(day);
   if (!d) { d = zero(); info.byDay.set(day, d); }
   addTokens(d, tok, sign);
+}
+function addPulse(buckets, minute, output, current) {
+  const first = current - (PULSE_MINUTES - 1) * MINUTE_MS;
+  if (minute == null || minute < first || minute > current || !output) return;
+  if (buckets.size >= PULSE_MINUTES && !buckets.has(minute)) {
+    for (const at of buckets.keys()) if (at < first) buckets.delete(at);
+  }
+  const total = (buckets.get(minute) || 0) + output;
+  if (total > 0) buckets.set(minute, total);
+  else buckets.delete(minute);
+}
+function pulseView(buckets, now) {
+  const current = minuteOf(now), first = current - (PULSE_MINUTES - 1) * MINUTE_MS;
+  let start = null, end = null;
+  for (const at of buckets?.keys() || []) {
+    if (at < first || at > current) continue;
+    start = start == null ? at : Math.min(start, at);
+    end = end == null ? at : Math.max(end, at);
+  }
+  const perMin = [];
+  if (start != null) for (let at = start; at <= end; at += MINUTE_MS) perMin.push(buckets.get(at) || 0);
+  return { start, perMin };
 }
 
 function onUserLine(t, j, ts) {
@@ -661,7 +699,10 @@ function codexUsage(info, usage, latest, window, ts) {
   for (const k of Object.keys(delta)) delta[k] = Math.max(0, tok[k] - info.tokens[k]);
   // Repeated cumulative records (including the paired token_count event) must never double count.
   info.tokens = tok;
-  if (ts) addDay(info, dayKey(ts), delta, 1);
+  if (ts) {
+    addDay(info, dayKey(ts), delta, 1);
+    addPulse(info.byMinute, minuteOf(ts), delta.output, minuteOf(Date.now()));
+  }
 }
 
 function codexToolName(name) { return str(name).replace(/^(?:functions|tools|collaboration)\./, ''); }
@@ -708,11 +749,13 @@ function processCodexLine(t, line) {
         break;
       case 'task_started': case 'turn_started': case 'user_message':
         setHookStatus(s, 'busy', ts); clearNeedsYou(s);
+        if (p.type !== 'user_message') startTurn(s, ts);
         if (p.type === 'user_message' && !info.title) info.title = truncate(redact(oneLine(p.message)), 300) || null;
         if (num(p.model_context_window)) info.contextWindow = p.model_context_window;
         break;
       case 'task_complete': case 'turn_complete': case 'turn_aborted':
         setHookStatus(s, 'idle', ts); clearNeedsYou(s); info.openTools.clear();
+        finishTurn(s, ts, p.type !== 'turn_aborted');
         if (ts >= hudStartedAt - 2000) pushFeed(s, p.type === 'turn_aborted' ? 'session' : 'done', p.type === 'turn_aborted' ? 'Codex turn interrupted' : 'Codex turn complete', ts, `codex-stop:${s.id}:${ts}`);
         break;
       case 'session_end': case 'shutdown_complete': endSession(s, ts, 'closed'); break;
@@ -725,7 +768,7 @@ function processCodexLine(t, line) {
       try { input = JSON.parse(p.arguments || '{}'); } catch {}
       const summary = summarizeTool(name, input, info.cwd);
       info.toolIds.add(id);
-      info.openTools.set(id, { id, name, summary, since: ts });
+      info.openTools.set(id, { id, name, summary, since: ts, background: runsInBackground(input) });
       if (info.openTools.size > 50) info.openTools.delete(info.openTools.keys().next().value);
       setHookStatus(s, 'busy', ts);
       if (/^request_user_input(?:_async)?$/.test(name)) setNeedsYou(s, 'Question for you', 'question', ts);
@@ -805,7 +848,7 @@ function codexTree(list) {
 
 function newSub(s) {
   const sub = { agentId: null, toolUseId: null, parentKey: s.id, depth: null, description: null, type: null, modelHint: null,
-    background: false, state: 'running', startedAt: null, endedAt: null, tail: null, currentTool: null, lastHookAt: 0,
+    background: false, state: 'running', startedAt: null, endedAt: null, tail: null, currentTool: null, lastHookAt: 0, startedByHook: false,
     refs: null, touched: [] };   // hud-0-3 §4.2: the words of its Agent call's prompt; plan files from its hooks
   s.subs.add(sub);
   return sub;
@@ -839,6 +882,8 @@ function assignAgentId(s, sub, agentId) {
       sub.startedAt = Math.min(sub.startedAt || Infinity, other.startedAt || Infinity) || null;
       if (other.state === 'done' && sub.state === 'running') { sub.state = 'done'; sub.endedAt = other.endedAt; }
       sub.currentTool ??= other.currentTool;
+      sub.lastHookAt = Math.max(sub.lastHookAt, other.lastHookAt);
+      sub.startedByHook ||= other.startedByHook;
       sub.refs ??= other.refs;
       sub.touched = mergeTouched(sub.touched, other.touched);
       s.subs.delete(other);
@@ -869,7 +914,7 @@ function subagentsDir(s) { return s.transcriptPath ? path.join(path.dirname(s.tr
 function onAgentCall(t, toolUseId, input, ts) {
   const call = {
     description: str(input.description) || null, type: str(input.subagent_type) || 'general-purpose', model: str(input.model) || null,
-    background: input.run_in_background === true || input.run_in_background === 'true', at: ts || Date.now(),
+    background: runsInBackground(input), at: ts || Date.now(),
     agentId: null, done: false, doneAt: null,
     refs: promptRefs(input.prompt),   // hud-0-3 §4.2: the subagent's task, as ID-shaped words only (D3)
   };
@@ -1009,6 +1054,7 @@ function endSession(s, at, reason) {
   s.endedAt = at;
   s.endReason = reason;
   s.currentTool = null;
+  s.turn.startedAt = null;
   s.needsYou = null;
   s.pendingLine = null; s.resumeAt = 0;
   for (const sub of s.subs) closeSub(s, sub, at);
@@ -1116,6 +1162,15 @@ function runChain(retry = false) {
 function setHookStatus(s, status, at) {
   if (at >= s.hookStatusAt) { s.hookStatus = status; s.hookStatusAt = at; }
 }
+function startTurn(s, at) {
+  if (at > s.turnAt) { s.turn.startedAt = at; s.turnAt = at; }
+}
+function finishTurn(s, at, completed = true) {
+  if (!at || at < s.turnAt) return;
+  if (completed && s.turn.startedAt != null) s.turn.lastMs = at - s.turn.startedAt;
+  s.turn.startedAt = null;
+  s.turnAt = at;
+}
 function setNeedsYou(s, reason, kind, at, agentId) {
   if (s.needsYou && s.needsYou.reason === reason) return;
   s.needsYou = { since: s.needsYou?.since ?? at, reason, kind, agentId: agentId ?? null };
@@ -1164,7 +1219,7 @@ function onHook(p) {
   if (typeof p.transcript_path === 'string') attachSessionTranscript(s, p.transcript_path);
   settle(s, now, work);                               // before this event's own feed lines, so "Session started" comes first
   const sub = typeof p.agent_id === 'string' && p.agent_id ? subForAgent(s, p.agent_id, str(p.agent_type)) : null;
-  if (sub) sub.lastHookAt = at;
+  if (sub) sub.lastHookAt = Math.max(sub.lastHookAt, at);
   const id = str(p.tool_use_id);
   const name = str(p.tool_name) || '?';
   switch (ev) {
@@ -1177,6 +1232,7 @@ function onHook(p) {
     case 'UserPromptSubmit':
       clearNeedsYou(s);
       setHookStatus(s, 'busy', at);
+      startTurn(s, at);
       break;
     case 'PreToolUse': {
       if (id) { s.hookTools.add(id); capSet(s.hookTools, 5000); }
@@ -1186,7 +1242,7 @@ function onHook(p) {
       clearNeedsYou(s, sub?.agentId ?? null);
       if (NEEDS_INPUT_TOOLS[name]) setNeedsYou(s, NEEDS_INPUT_TOOLS[name], 'question', at, sub?.agentId);
       const summary = summarizeTool(name, p.tool_input, s.cwd);
-      const tool = { id, name, summary, since: at };
+      const tool = { id, name, summary, since: at, background: runsInBackground(p.tool_input) };
       if (sub) sub.currentTool = tool; else s.currentTool = tool;
       if (AGENT_TOOLS.has(name) && id) {
         const input = isObj(p.tool_input) ? p.tool_input : {};
@@ -1195,7 +1251,7 @@ function onHook(p) {
         child.description ??= str(input.description) || null;
         child.type ??= str(input.subagent_type) || 'general-purpose';
         child.modelHint ??= str(input.model) || null;
-        if (input.run_in_background === true || input.run_in_background === 'true') child.background = true;
+        if (tool.background) child.background = true;
         child.startedAt ??= at;
       }
       feedTool(s, sub, id, name, summary, at);
@@ -1230,10 +1286,15 @@ function onHook(p) {
       clearNeedsYou(s);
       s.currentTool = null;
       setHookStatus(s, 'idle', at);
+      finishTurn(s, at);
       pushFeed(s, 'done', 'Turn finished', at);
       break;
     case 'SubagentStart':
-      if (sub) { sub.startedAt ??= at; if (sub.state === 'done' && at > (sub.endedAt || 0)) { sub.state = 'running'; sub.endedAt = null; } }
+      if (sub) {
+        sub.startedByHook = true;
+        sub.startedAt ??= at;
+        if (sub.state === 'done' && at > (sub.endedAt || 0)) { sub.state = 'running'; sub.endedAt = null; }
+      }
       break;
     case 'SubagentStop':
       if (sub) {
@@ -1346,7 +1407,9 @@ function poll() {
     for (const sub of s.subs) {
       if (sub.state !== 'running') continue;
       if (sub.tail) readTail(sub.tail);
-      const subLast = Math.max(sub.tail?.info.lastTs || 0, sub.lastHookAt, sub.startedAt || 0);
+      // A confirmed worker can be silent while its parent waits. Keep it running until a completion or session end.
+      if (sub.startedByHook) continue;
+      const subLast = subLastActivity(sub);
       const parentMovedOn = (s.tail?.info.lastTs || 0) > subLast || s.lastHookAt > subLast;
       if (now - subLast > SILENT_SUBAGENT_MS && (idle || (sub.background && parentMovedOn))) closeSub(s, sub, subLast);
     }
@@ -2112,13 +2175,23 @@ function sessionStatus(s, now) {
   const last = lastActivity(s);
   return last && now - last < 30_000 ? 'busy' : 'idle';
 }
-function latestOpenTool(info) {
+function latestOpenTool(info, after = 0, done) {
   let best = null;
-  for (const t of info?.openTools.values() || []) if (!best || t.since >= best.since) best = t;
+  for (const t of info?.openTools.values() || []) {
+    if (t.since >= after && !done?.has(t.id) && (!best || t.since >= best.since)) best = t;
+  }
   return best;
 }
 function toolView(t) { return t ? { name: t.name, summary: t.summary, since: t.since } : null; }
 
+function currentSessionTool(s, now) {
+  if (s.currentTool && s.currentTool.since >= s.turnAt) return s.currentTool;
+  const open = latestOpenTool(s.tail?.info, s.turnAt, s.doneTools);
+  return open && now - open.since < 30 * MINUTE_MS ? open : null;
+}
+function subLastActivity(sub) {
+  return Math.max(sub.tail?.info.lastTs || 0, sub.lastHookAt, sub.startedAt || 0);
+}
 function subDepth(s, sub, seen = new Set()) {
   if (Number.isInteger(sub.depth)) return sub.depth;
   if (sub.parentKey === s.id || seen.has(sub)) return 1;
@@ -2141,7 +2214,9 @@ function subView(s, sub, now) {
     model: mi.model, modelRaw: raw || null, provider: mi.provider,
     state: sub.state, background: sub.background,
     startedAt: sub.startedAt || info?.firstTs || null, endedAt: sub.endedAt,
+    lastActivityAt: subLastActivity(sub) || null,
     tokens: info ? { ...info.tokens } : zero(),
+    pulse: pulseView(info?.byMinute, now),
     context: contextFor(mi.model, info?.lastUsed, info?.contextWindow),
     currentTool: toolView(tool),
   };
@@ -2151,11 +2226,7 @@ function sessionView(s, now) {
   const raw = rawModel(info) || s.hookModel;
   const mi = modelInfo(raw, info);
   const status = sessionStatus(s, now);
-  let tool = null;
-  if (status === 'busy' || status === 'needs-you') {
-    tool = s.currentTool;
-    if (!tool) { const open = latestOpenTool(info); if (open && now - open.since < 30 * 60_000) tool = open; }
-  }
+  const tool = status === 'busy' || status === 'needs-you' ? currentSessionTool(s, now) : null;
   const everySub = [...s.subs].filter(sub => !isPlaceholder(sub)).map(sub => subView(s, sub, now)).filter(x => x.id);
   const tokens = info ? { ...info.tokens } : zero();
   const tokensTree = everySub.reduce((acc, x) => addTokens(acc, x.tokens), { ...tokens });   // the whole conversation, like `tokens`
@@ -2176,7 +2247,7 @@ function sessionView(s, now) {
     currentTool: toolView(tool),
     tools,
     startedBy: s.startedBy,
-    tokens, tokensTree,
+    tokens, tokensTree, pulse: pulseView(info?.byMinute, now), turn: { ...s.turn },
     context: contextFor(mi.model, info?.lastUsed, info?.contextWindow),
     subagents,
     agentsRunning: subagents.filter(a => a.state === 'running').length,   // hud-0-3 D6: an idle parent with these reads "Agents working"
@@ -2206,6 +2277,50 @@ function projectsView() {
   }
   return [...out.values()].sort((a, b) => a.project.localeCompare(b.project));
 }
+const liveAlerts = new Map();
+function alertsFor(list, account, now, active, toolFor) {
+  const next = new Map();
+  function add(id, kind, text, session = null, agent = null, at = now) {
+    next.set(id, { id, kind, sessionId: session?.id ?? null, agentId: agent?.id ?? null,
+      project: session?.project ?? null, text, since: active.get(id)?.since ?? at });
+  }
+  function context(session, agent) {
+    const pct = (agent || session).context?.pct;
+    for (const level of [80, 90]) {
+      const id = ['context', session.id, agent?.id, level].filter(v => v != null).join(':');
+      if (pct >= level - (active.has(id) ? 5 : 0)) {
+        add(id, 'context', `${agent ? 'Subagent context' : 'Context'} reached ${level}%`, session, agent);
+      }
+    }
+  }
+  for (const session of list) {
+    if (session.status === 'ended') continue;
+    context(session);
+    if (session.status === 'busy') {
+      const tool = toolFor(session);
+      if (tool?.since && now - tool.since >= TOOL_ALERT_MS && !tool.background && !AGENT_TOOLS.has(tool.name)) {
+        add(`tool:${session.id}:${tool.id || tool.since}`, 'tool', `${tool.name} running for 10 min`, session, null, tool.since + TOOL_ALERT_MS);
+      }
+    }
+    for (const agent of session.subagents) {
+      if (agent.state !== 'running') continue;
+      context(session, agent);
+      const at = agent.lastActivityAt || agent.startedAt;
+      if (at && now - at >= SUB_ALERT_MS) {
+        add(`subagent:${session.id}:${agent.id}`, 'subagent', 'Subagent silent for 5 min', session, agent, at + SUB_ALERT_MS);
+      }
+    }
+  }
+  for (const [key, label] of [['fiveHour', '5-hour usage'], ['sevenDay', 'Weekly usage']]) {
+    const window = account?.[key];
+    if (window?.pct >= 90 && (!window.resetsAt || window.resetsAt > now)) {
+      add(`usage:account:${key}`, 'usage', `${label} reached 90%`);
+    }
+  }
+  active.clear();
+  for (const [id, alert] of next) active.set(id, alert);
+  return [...next.values()];
+}
 function snapshot() {
   if (demo) return demo.snapshot();
   const now = Date.now();
@@ -2223,6 +2338,7 @@ function snapshot() {
     .sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
   const { board, turnedOn } = followBoards(liveAgents(list), planList, { now, track: boardTrack });
   announceMarks(turnedOn, now);
+  const alerts = alertsFor(list, account, now, liveAlerts, x => currentSessionTool(sessions.get(x.id), now));
   return {
     now, uptime: now - hudStartedAt, demo: false, version: VERSION, host: HOSTNAME, hooksInstalled,
     codex: { ...codexMonitoring, directories: CODEX_ROOTS },
@@ -2231,7 +2347,7 @@ function snapshot() {
     externalError,
     projects: projectsView(),
     plans: planList,
-    board,
+    board, alerts,
     feed: feed.slice(-FEED_SNAPSHOT).reverse(),
     account,
     totals: totalsFor(list, planList, tokensToday),
@@ -2523,8 +2639,8 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .seg-out { background: var(--arc); } .seg-cw { background: color-mix(in srgb, var(--arc) 55%, transparent); } .seg-in { background: var(--ink); }
 .bar-cr .bar-f { background: rgba(214, 243, 255, .3); }
 .bar-ctx .bar-f { background: var(--arc); }
-.m-ctx[data-lvl=warn] .bar-f { background: var(--amber); } .m-ctx[data-lvl=hot] .bar-f { background: var(--alert); }
-.m-ctx[data-lvl=warn] .mv { color: var(--amber); } .m-ctx[data-lvl=hot] .mv { color: var(--alert); }
+.m-ctx:is([data-lvl=warn], [data-lvl=hot]) .bar-f { background: var(--amber); }
+.m-ctx:is([data-lvl=warn], [data-lvl=hot]) .mv { color: var(--amber); }
 .m-ctx[data-lvl=none] .mv { color: var(--ink-3); }
 .m-ctx[data-lvl=none] .bar { background: repeating-linear-gradient(90deg, rgba(214, 243, 255, .1) 0 4px, transparent 4px 8px); }
 .bar-m { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(4, 7, 13, .9); }
@@ -2589,7 +2705,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .card-work { display: block; margin-top: 4px; }
 .sub-m { font: 400 11px/16px var(--f-mono); color: var(--ink-2); }
 .sub-k, .sub-c { font: 400 11px/16px var(--f-mono); text-align: right; color: var(--ink-2); }
-.sub-c[data-lvl=warn] { color: var(--amber); } .sub-c[data-lvl=hot] { color: var(--alert); }
+.sub-c:is([data-lvl=warn], [data-lvl=hot]) { color: var(--amber); }
 .sub-s { justify-self: end; color: var(--agent); }
 .sub[data-s=done] .sub-s { color: var(--ok); }
 .sub-more { height: 24px; display: flex; align-items: center; color: var(--ink-2); padding-left: 22px; }
@@ -2620,7 +2736,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .cr-t { color: var(--ink); font-weight: 600; }
 .cr-m, .cr-k, .cr-c, .cr-n { font: 400 11px/16px var(--f-mono); color: var(--ink-2); }
 .cr-k, .cr-c, .cr-n { text-align: right; }
-.cr-c[data-lvl=warn] { color: var(--amber); } .cr-c[data-lvl=hot] { color: var(--alert); }
+.cr-c:is([data-lvl=warn], [data-lvl=hot]) { color: var(--amber); }
 .cr-v { font: 600 11px/14px var(--f-label); text-align: center; color: var(--ink-2); border: 1px solid var(--line); width: 20px; height: 16px; justify-self: center; }
 .cr-v[data-p=bedrock] { border-style: dashed; }
 .cr-w { font: 400 11px/16px var(--f-mono); color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
@@ -2734,7 +2850,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .nf-inner { fill: none; stroke: color-mix(in srgb, var(--sc) 35%, transparent); stroke-width: 1; }
 .nf-ctx-t { fill: none; stroke: rgba(214, 243, 255, .08); stroke-width: 2; }
 .nf-ctx { fill: none; stroke: var(--arc); stroke-width: 2; stroke-linecap: round; }
-.nf-ctx[data-lvl=warn] { stroke: var(--amber); } .nf-ctx[data-lvl=hot] { stroke: var(--alert); }
+.nf-ctx:is([data-lvl=warn], [data-lvl=hot]) { stroke: var(--amber); }
 .nf-letter { fill: var(--ink); font: 700 11px var(--f-label); letter-spacing: .04em; text-anchor: middle; dominant-baseline: central; }
 .nf-badge { fill: #08111c; stroke: var(--sc); stroke-width: 1; }
 .nf-badge-t { fill: var(--ink); font: 700 11px var(--f-label); text-anchor: middle; dominant-baseline: central; }
@@ -2868,6 +2984,11 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .tc-r .trunc { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .tc-r b { font-weight: 400; color: var(--ink); }
 .tc-r.work-label { color: var(--arc); }
+.activity { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; color: var(--ink-2); font: 400 11px/16px var(--f-mono); }
+.card > .activity { margin-top: 8px; }
+.activity-chart { display: block; width: 92px; height: 18px; }
+.activity-base { stroke: var(--line); }
+.activity-path { fill: none; stroke: var(--arc); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .tc-n { font-size: 13px; line-height: 20px; color: var(--ink-2); overflow-wrap: anywhere; }
 .banners { grid-row: 2; display: flex; flex-direction: column; gap: 8px; margin-top: 12px; position: relative; z-index: 20; }
 .ban { position: relative; display: flex; align-items: center; gap: 16px; height: 40px; padding: 0 8px 0 20px; background-color: rgba(30, 8, 14, .94); --hl: rgba(255, 77, 94, .7); box-shadow: 0 0 32px rgba(255, 77, 94, .2); animation: bandown .32s var(--ease) both; cursor: pointer; }
@@ -2885,6 +3006,13 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .ban:focus-visible { outline: none; box-shadow: inset 0 0 0 2px rgba(30, 8, 14, .94), inset 0 0 0 4px var(--arc); }
 .ban-more { padding: 2px 12px; border-radius: 10px; background: rgba(255, 77, 94, .12); border: 1px solid rgba(255, 77, 94, .5); color: var(--alert); white-space: nowrap; }
 .ban-more:hover { background: rgba(255, 77, 94, .22); }
+.warnings { display: flex; flex-direction: column; gap: 4px; max-height: min(24vh, 190px); overflow-y: auto; }
+.warning { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 2px 8px 2px 12px; background: rgba(29, 22, 12, .95); border-left: 3px solid var(--amber); }
+.warning-label { color: var(--amber); display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.warning-project { color: var(--ink); max-width: 24%; }
+.warning-text { flex: 1; min-width: 0; color: var(--amber); text-align: left; overflow-wrap: anywhere; }
+button.warning-text:hover { text-decoration: underline; }
+.warning .ban-x:hover { background: rgba(255, 190, 83, .15); }
 .conn { position: fixed; z-index: 45; top: 56px; left: 0; right: 0; height: 28px; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(40, 26, 6, .92); border-bottom: 1px solid rgba(255, 181, 71, .5); color: var(--amber); }
 .conn[data-s=down] { background: rgba(40, 8, 14, .92); border-color: rgba(255, 77, 94, .5); color: var(--alert); }
 .conn .mono { color: var(--ink-2); font-size: 11px; }
@@ -3002,6 +3130,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
   .p-reactor .vital.wide { grid-column: span 2; }
   .p-reactor .vital.wide .vital-s:first-of-type { display: block; }
   .ban-rl { display: none; } .ban-rs { display: inline; }
+  .warning-label span { display: none; }
 }
 
 /* ---- motion: data and alert layers ---- */
@@ -3096,6 +3225,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .gal-net { position: relative; display: flex; flex-direction: column; border: 1px solid rgba(41, 230, 255, .1); background: rgba(8, 17, 28, .4); }
 .gal-net .net { min-height: 0; }
 .gal-static.banners { position: static; transform: none; width: auto; }
+.gal-static .warnings { max-height: none; }
 .gal-static.tip { position: static; transform: none !important; opacity: 1; display: inline-block; }
 .gal-static.conn { position: static; }
 .gal-topbar .top { margin: 0; position: relative; }
@@ -3356,6 +3486,11 @@ function hudClient() {
     for (const el of scope.querySelectorAll('[data-since]')) txt(el, fmtDur(t - Number(el.dataset.since)));
     for (const el of scope.querySelectorAll('[data-age]')) txt(el, (el.dataset.pre || '') + fmtAge(t - Number(el.dataset.age)) + (el.dataset.post || ''));
     for (const el of scope.querySelectorAll('[data-until]')) txt(el, (el.dataset.pre || '') + fmtAge(Number(el.dataset.until) - t));
+    const minute = Math.floor(t / 60000);
+    for (const chart of scope.querySelectorAll('[data-pulse]')) {
+      const state = activityData.get(chart);
+      if (state.minute !== minute) drawActivity(chart, minute, state.pulse);
+    }
   }
   function since(el, ts) { if (ts) { setData(el, 'since', ts); txt(el, fmtDur(now() - ts)); } else { setData(el, 'since', null); txt(el, ''); } }
   function age(el, ts, pre = '', post = '') {
@@ -3593,6 +3728,32 @@ function hudClient() {
     };
   }
 
+  // Pad and age the stream's sparse series on the page, even when the HUD has nothing to push.
+  const activityData = new WeakMap();
+  function drawActivity(chart, minute, pulse) {
+    activityData.set(chart, { minute, pulse });
+    const offset = minute - 29 - Math.floor((pulse?.start || 0) / 60000);
+    const values = Array.from({ length: 30 }, (_, i) => pulse?.perMin[offset + i] || 0);
+    const peak = Math.max(...values);
+    const points = peak ? values.map((n, i) => `${i * 3 + 2},${(16 - 14 * n / peak).toFixed(1)}`).join(' ') : '';
+    setAttr(chart.lastElementChild, 'points', points);
+    const label = peak ? `Output over the last 30 minutes. Peak ${fmtInt(peak)} tokens per minute.` : 'No output tokens in the last 30 minutes';
+    setAttr(chart, 'aria-label', label);
+    setData(chart, 'tip', label);
+  }
+  function activityLine() {
+    const chart = s('svg', { class: 'activity-chart', 'data-pulse': '', viewBox: '0 0 91 18', role: 'img' },
+      s('path', { class: 'activity-base', d: 'M2 16H89' }), s('polyline', { class: 'activity-path' }));
+    const turn = h('span', { hidden: true });
+    const el = h('div', { class: 'activity' }, chart, turn);
+    return { el, set(pulse, timing) {
+      drawActivity(chart, Math.floor(now() / 60000), pulse);
+      const lastMs = timing?.lastMs;
+      show(turn, lastMs != null);
+      txt(turn, lastMs == null ? '' : 'Last turn ' + fmtDur(lastMs));
+    } };
+  }
+
   // ---- session card (comfortable) and compact row (dense) -------------------------------------------------------------
   function sessionCard(api = {}) {
     const projName = h('span'), projLbl = h('span', { class: 'label trunc', 'data-tip-if': 'trunc' }, projName), tag = statusTag();
@@ -3604,12 +3765,12 @@ function hudClient() {
     const sby = h('button', { class: 'chip', type: 'button', hidden: true }, icon('agent'), h('span', { text: 'Started by' }), sbyName);
     const ageEl = h('span'), toolsEl = h('span');
     const nowRow = nowLine(), tok = tokenMeter(), cr = cacheMeter(), ctx = contextMeter(), subs = subList();
-    const sumEl = h('div', { class: 'card-sum' }), work = workLabel('card-work');
+    const sumEl = h('div', { class: 'card-sum' }), work = workLabel('card-work'), activity = activityLine();
     const el = h('article', { class: 'card cutbox', tabindex: '-1' },
       h('div', { class: 'card-scan', 'aria-hidden': 'true' }), h('div', { class: 'card-glow', 'aria-hidden': 'true' }),
       h('header', { class: 'card-h' }, h('div', { class: 'card-proj' }, projLbl, bChip), h('span', { class: 'card-meta mono' }, ageEl, ' · ', toolsEl), tag.el),
       h('div', { class: 'card-tr' }, title, h('div', { class: 'card-chips' }, mChip, prov.el, sby)),
-      sumEl, work.el, nowRow.el, h('div', { class: 'meters' }, tok.el, cr.el, ctx.el), subs.el);
+      sumEl, work.el, nowRow.el, h('div', { class: 'meters' }, tok.el, cr.el, ctx.el), activity.el, subs.el);
     let st = null, sbyId = null;
     sby.addEventListener('click', e => { e.stopPropagation(); if (sbyId) api.jump?.(sbyId); });
     return {
@@ -3637,6 +3798,7 @@ function hudClient() {
         tok.set(x.tokens, x.tokensTree, c.maxTok);
         cr.set(x.tokens?.cacheRead || 0, c.maxCache);
         ctx.set(x.context);
+        activity.set(x.pulse, x.turn);
         work.set(x.work, c.plans);
         subs.update(x.subagents || [], x.id, c.plans);
         if (st === 'ended') txt(sumEl, [shortModel(x.model), provName(x.provider), `${fmtTok(headline(x.tokens))} tokens`, plural(x.tools || 0, 'tool', 'tools'), (x.subagents || []).length ? plural(x.subagents.length, 'subagent', 'subagents') : null].filter(Boolean).join(' · '));
@@ -3767,7 +3929,7 @@ function hudClient() {
     const meter = label => {
       const f = h('span', { class: 'bar-f' }), v = h('span', { class: 'mv mono' }), note = h('span', { class: 'mn mono' });
       const row = [h('span', { class: 'ml label', text: label }), h('span', { class: 'bar bar-acct' }, f), v, note];
-      return { row, set(w) { const p = w && w.pct; f.style.transform = `scaleX(${p == null ? 0 : Math.min(1, p / 100)})`; txt(v, fmtPct(p)); f.style.backgroundColor = p >= 90 ? 'var(--alert)' : p >= 70 ? 'var(--amber)' : ''; setData(note, 'pre', 'resets in '); setData(note, 'until', w && w.resetsAt); txt(note, w && w.resetsAt ? 'resets in ' + fmtAge(w.resetsAt - now()) : ''); } };
+      return { row, set(w) { const p = w && w.pct; f.style.transform = `scaleX(${p == null ? 0 : Math.min(1, p / 100)})`; txt(v, fmtPct(p)); f.style.backgroundColor = p >= 70 ? 'var(--amber)' : ''; setData(note, 'pre', 'resets in '); setData(note, 'until', w && w.resetsAt); txt(note, w && w.resetsAt ? 'resets in ' + fmtAge(w.resetsAt - now()) : ''); } };
     };
     const five = meter('5-hour'), week = meter('Weekly');
     acctRows.append(...five.row, ...week.row);
@@ -4087,6 +4249,7 @@ function hudClient() {
       if (i.kind === 'sat') return h('div', { class: 'tc' }, h('div', { class: 'tc-t', text: plural(i.count, 'finished subagent', 'finished subagents') }), h('div', { class: 'tc-n', text: 'Folded to keep the network readable. Click to expand.' }));
       const tag = statusTag(); tag.set(i.state);
       const t = x.tokens || {}, tool = x.currentTool, end = x.endedAt || null, work = workText(x.work, cx.plans);
+      const activity = activityLine(); activity.set(x.pulse, x.turn);
       return h('div', { class: 'tc' },
         h('div', { class: 'tc-h' }, tag.el, h('span', { class: 'label c-ink2 trunc', text: i.kind === 'session' ? (x.project || '') : `Subagent · level ${i.depth}` })),
         h('div', { class: 'tc-t', text: i.kind === 'session' ? (x.title || x.name || 'Untitled session') : `${x.type || 'agent'}: ${x.description || ''}` }),
@@ -4098,7 +4261,8 @@ function hudClient() {
         h('div', { class: 'tc-r' }, h('span', { text: 'Tokens' }), h('b', { text: fmtTok(headline(t)) }), h('span', { text: `in ${fmtTok(t.input)} · out ${fmtTok(t.output)} · write ${fmtTok(t.cacheWrite)}` })),
         h('div', { class: 'tc-r' }, h('span', { text: 'Cache read' }), h('b', { text: fmtTok(t.cacheRead) }),
           i.kind === 'session' && headline(x.tokensTree) > headline(t) ? h('span', { text: `· with subagents ${fmtTok(headline(x.tokensTree))}` }) : null),
-        h('div', { class: 'tc-r' }, h('span', { text: 'Context' }), h('b', { text: x.context ? fmtPct(x.context.pct) : '—' }), h('span', { text: x.context ? `${fmtTok(x.context.used)} of ${fmtTok(x.context.window)}` : 'window unknown' })));
+        h('div', { class: 'tc-r' }, h('span', { text: 'Context' }), h('b', { text: x.context ? fmtPct(x.context.pct) : '—' }), h('span', { text: x.context ? `${fmtTok(x.context.used)} of ${fmtTok(x.context.window)}` : 'window unknown' })),
+        activity.el);
     }
 
     // A tool call: the node ripples, and a packet runs down the edge from whoever started it.
@@ -4754,10 +4918,13 @@ function hudClient() {
   function banners(api = {}) {
     const list = h('div', { style: 'display:contents' });
     const more = h('button', { class: 'ban-more label', type: 'button', hidden: true });
-    const el = h('div', { class: 'banners', role: 'region', 'aria-label': 'Sessions waiting for you', 'aria-live': 'polite', hidden: true }, list, more);
+    const warnings = h('div', { class: 'warnings', role: 'group', 'aria-label': 'Warnings', hidden: true });
+    const el = h('div', { class: 'banners', role: 'region', 'aria-label': 'HUD alerts', 'aria-live': 'polite', hidden: true }, list, more, warnings);
     const rows = new Map(), dismissed = new Set();
-    let expanded = false, last = [];
-    more.addEventListener('click', e => { e.stopPropagation(); expanded = !expanded; update(last); });
+    const warningRows = new Map(), dismissedWarnings = new Set();
+    let expanded = false, last = [], latestWarnings = [], hasWaiting = false;
+    const visibility = () => show(el, hasWaiting || !warnings.hidden);
+    more.addEventListener('click', e => { e.stopPropagation(); expanded = !expanded; updateWaiting(last); });
     function row(x) {
       const rl = h('span', { class: 'ban-rl' }), rs = h('span', { class: 'ban-rs' });   // the reason, and its short form for narrow screens
       const p = h('span', { class: 'ban-p label' }), t = h('span', { class: 'ban-t trunc' }), r = h('span', { class: 'ban-r' }, rl, rs), tm = h('span', { class: 'ban-tm' });
@@ -4770,12 +4937,13 @@ function hudClient() {
       e.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
       return { el: e, set(y) { cur = y; txt(p, y.project || ''); setData(p, 'tip', y.project || null); p.dataset.tipIf = 'trunc'; txt(t, y.title || y.name || 'Untitled session'); t.dataset.tip = y.title || y.name || ''; t.dataset.tipIf = 'trunc'; txt(rl, y.needsYou.reason); txt(rs, shortReason(y.needsYou.reason)); since(tm, y.needsYou.since); setAttr(e, 'aria-label', `${y.project}: ${y.needsYou.reason}. Go to the session.`); } };
     }
-    function update(sessions) {
+    function updateWaiting(sessions) {
       last = sessions;
       const waiting = sessions.filter(x => x.status === 'needs-you' && x.needsYou && !dismissed.has(x.id + ':' + x.needsYou.since)).sort((a, b) => a.needsYou.since - b.needsYou.since);
       const shown = expanded ? waiting : waiting.slice(0, 1);
       reconcile(list, rows, shown, x => x.id, row, (r, x) => r.set(x), !motion.rm);
-      show(el, waiting.length > 0);
+      hasWaiting = waiting.length > 0;
+      visibility();
       show(more, waiting.length > 1);
       txt(more, expanded ? 'Fewer' : `+${waiting.length - 1} more`);
       setAttr(more, 'aria-label', expanded ? 'Show only the longest-waiting session' : `Show all ${waiting.length} waiting sessions`);
@@ -4783,7 +4951,36 @@ function hudClient() {
       if (first && more.parentElement !== first) first.querySelector('.ban-tm').before(more);
       if (!first && more.parentElement !== el) el.append(more);
     }
-    return { el, update };
+    function warningRow(alert) {
+      let current = alert;
+      const project = h('span', { class: 'warning-project label trunc', 'data-tip-if': 'trunc' });
+      const reason = alert.sessionId && api.jump
+        ? h('button', { class: 'warning-text', type: 'button', on: { click: () => api.jump(current.sessionId, current.agentId) } })
+        : h('span', { class: 'warning-text' });
+      const close = h('button', { class: 'ban-x', type: 'button', on: { click: () => {
+        dismissedWarnings.add(current.id);
+        updateWarnings(latestWarnings);
+      } } }, icon('close'));
+      const row = h('div', { class: 'warning', 'data-kind': alert.kind, 'data-alert-id': alert.id },
+        h('span', { class: 'warning-label label' }, icon('alert'), h('span', { text: 'Warning' })), project, reason, close);
+      return { el: row, set(next) {
+        current = next;
+        const name = next.project || (next.sessionId ? 'Session' : 'Claude account');
+        txt(project, name); setData(project, 'tip', name);
+        txt(reason, next.text);
+        setAttr(close, 'aria-label', 'Dismiss warning: ' + next.text);
+      } };
+    }
+    function updateWarnings(alerts) {
+      latestWarnings = alerts;
+      const ids = new Set(alerts.map(a => a.id));
+      for (const id of dismissedWarnings) if (!ids.has(id)) dismissedWarnings.delete(id);
+      const visible = alerts.filter(a => !dismissedWarnings.has(a.id));
+      reconcile(warnings, warningRows, visible, a => a.id, warningRow, (row, a) => row.set(a));
+      show(warnings, visible.length > 0);
+      visibility();
+    }
+    return { el, update(sessions, alerts = []) { updateWaiting(sessions); updateWarnings(alerts); } };
   }
 
   // ---- ticker -------------------------------------------------------------------------------------------------------------------
@@ -4946,6 +5143,8 @@ function hudClient() {
         if (title && BOARD_MARKS[flag] && !previous.includes(flag)) out.push({ type: 'board-mark', text: `${title}: ${key.slice(cut + 1)} ${BOARD_MARKS[flag][0].toLowerCase()}` });
       }
     }
+    const previousAlerts = new Set((prev.alerts || []).map(a => a.id));
+    for (const alert of next.alerts || []) if (!previousAlerts.has(alert.id)) out.push({ type: 'warning', alert });
     if ((prev.totals?.agentsRunning || 0) > 0 && (next.totals?.agentsRunning || 0) === 0) out.push({ type: 'all-idle' });
     return out;
   }
@@ -4975,6 +5174,11 @@ function hudClient() {
           }
         } else if (e.type === 'board-mark') {
           if (sound) audio.play('plan'); if (speak) voice.say(e.text);
+        } else if (e.type === 'warning') {
+          const title = e.alert.project || (e.alert.sessionId ? 'Session' : 'Claude account');
+          if (sound) audio.play('plan');
+          if (speak) voice.say(`${title}. ${e.alert.text}`);
+          notify(`${title} warning`, e.alert.text, e.alert.id);
         } else if (e.type === 'sub-start') { if (sound) audio.play('agent'); }
         else if (e.type === 'sub-done') { if (sound) audio.play('done'); }
         else if (e.type === 'session-start') { if (sound) audio.play('session'); }
@@ -5274,7 +5478,7 @@ function hudClient() {
       state = st;
       const boot = o.boot || (!booted && root.classList.contains('booting'));
       top.update(st);
-      ban.update(st.sessions || []);
+      ban.update(st.sessions || [], st.alerts || []);
       rx.guard(() => { react.update(st.sessions || [], st.totals || {}, { boot }); vit.update(st, { boot }); }, () => render(state));
       ex.guard(() => { const has = (st.external || []).length > 0 || !!st.externalError; ex.el.hidden = !has; if (has) exb.update(st.external, st.externalError); }, () => render(state));
       if (ex.el.hidden !== exHidden) { exHidden = ex.el.hidden; lMore.refresh(); }
@@ -5314,7 +5518,7 @@ function hudClient() {
   return {
     h, s, txt, icon, glyph, ICONS, GLYPHS, STATUS, statusTag, provBadge, odo, tip, motion, prefs, now, syncClock, tickTimers,
     fmtTok, fmtPct, fmtDur, fmtAge, headline, shortModel, ctxLevel,
-    contextMeter, tokenMeter, cacheMeter, sessionCard, compactRow, subList, reactor, vitals, externals, network, planCard, planNodeCard, workQueue, quietBoards,
+    contextMeter, tokenMeter, cacheMeter, activityLine, sessionCard, compactRow, subList, reactor, vitals, externals, network, planCard, planNodeCard, workQueue, quietBoards,
     banners, ticker, panel, toggle, topBar, createHud, boot, audio, voice, happenings, needsPhrase, reconcile, moreBelow, stateCounts, FEED_TAGS,
   };
 }
@@ -5607,6 +5811,28 @@ function designMain(H) {
   section('Work queue and quiet boards', null,
     wide('Work queue with entries · Ready open', fullQueue.el), wide('Empty work queue', emptyQueue.el), spec('Quiet board folded', quiet.el));
 
+  const sampleWarnings = [
+    ['context', 'Context reached 80%', needs], ['context', 'Context reached 90%', fresh],
+    ['tool', 'Bash running for 10 min', busy], ['subagent', 'Subagent silent for 5 min', waiting, waiting.subagents[0]],
+    ['usage', '5-hour usage reached 90%'], ['usage', 'Weekly usage reached 90%'],
+  ].map(([kind, text, session, agent], i) => ({ id: `${kind}:spec:${i}`, kind, text, since: t,
+    sessionId: session?.id ?? null, agentId: agent?.id ?? null, project: session?.project ?? null }));
+  const warningGallery = H.banners();
+  warningGallery.el.classList.add('gal-static');
+  warningGallery.update([needs], sampleWarnings);
+  section('Warnings', null, wide('Context, long-running tool, silent subagent and account limits', warningGallery.el));
+
+  const firstMinute = Math.floor(t / 60000) * 60000 - 29 * 60000;
+  const activitySpec = (label, perMin, lastMs) => {
+    const line = H.activityLine();
+    line.set({ start: firstMinute, perMin }, { lastMs });
+    return spec(label, line.el);
+  };
+  section('Session activity', null,
+    activitySpec('Empty', [], null),
+    activitySpec('Steady output', Array.from({ length: 30 }, (_, i) => 900 + (i % 4) * 130), 94_000),
+    activitySpec('One burst', Array.from({ length: 30 }, (_, i) => i === 23 ? 2400 : 0), 14_000));
+
   // ---- alerts, ticker, externals, states ----
   const b1 = H.banners({}), b4 = H.banners({});
   b1.update([needs]);
@@ -5697,6 +5923,7 @@ function makeDemo(mode) {
   // Board following (hud-0-3 P4): each agent's made-up evidence beside its label and branch, the marks' clocks, and the
   // marks already announced. The demo's state goes through the same followBoards() as the real one.
   const evidence = new Map();   // session or subagent id -> { refs, touched }
+  const demoPulses = new WeakMap(), demoAlerts = new Map();
   const track = new Map(), announced = new Set();
   const WM2_SLUG = 'customer-history-and-change-requests';
 
@@ -5710,6 +5937,7 @@ function makeDemo(mode) {
       provider: o.agent === 'codex' ? 'openai' : mi.provider, model: mi.model, modelRaw: model, effort: o.effort || 'high', branch: o.branch || 'main',
       startedAt: t0 - (o.age || 1800) * 1000, lastActivityAt: t0 - (o.quiet || 2) * 1000, endedAt: o.status === 'ended' ? t0 - (o.endedAgo || 180) * 1000 : null,
       currentTool: null, tools: rnd(6, 180), startedBy: null, tokens: tok(o.scale || 1), tokensTree: null, context: null, subagents: [],
+      turn: { startedAt: o.status === 'busy' ? t0 - 30_000 : null, lastMs: 94_000 },
       _ctx: o.ctx ?? rnd(6, 48),
     };
     if (s.status === 'busy' || s.status === 'needs-you') setTool(s);
@@ -5729,7 +5957,16 @@ function makeDemo(mode) {
     return a;
   }
   function setTool(x) { const [name, summary] = pick(TOOLS); x.currentTool = { name, summary, since: Date.now() - rnd(0, 20) * 1000 }; }
-  function grow(x) { x.tokens.output += rnd(20, 400); x.tokens.cacheRead += rnd(2_000, 30_000); x.tokens.cacheWrite += rnd(0, 3_000); x.tokens.input += rnd(0, 3); }
+  function noteOutput(x, at, output, current) {
+    let buckets = demoPulses.get(x);
+    if (!buckets) { buckets = new Map(); demoPulses.set(x, buckets); }
+    addPulse(buckets, minuteOf(at), output, current);
+  }
+  function grow(x, now) {
+    const output = rnd(20, 400);
+    x.tokens.output += output; x.tokens.cacheRead += rnd(2_000, 30_000); x.tokens.cacheWrite += rnd(0, 3_000); x.tokens.input += rnd(0, 3);
+    noteOutput(x, now, output, minuteOf(now));
+  }
 
   // Board links (hud-0-3 P4), one of each kind: the FidiaCRM session by the IDs in its title (R14, so its current chunk
   // UX-10 too), the coordinator by its title and the board it wrote, its first subagent by the `<slug>/<ID>` of its
@@ -5737,7 +5974,8 @@ function makeDemo(mode) {
   // its description (P4, worked on while todo: "board not updated").
   let coordinator, flipper, cycler = null, explore = null, codex = null, waiter = null;
   if (!dense) {
-    session({ project: 'FidiaCRM', title: 'R14 quotation screens: totals, VAT rows and the discount line', status: 'needs-you', needsYou: 'Permission: Bash', needsFor: 95, branch: 'ux/R14-quotation-wizard', scale: 2 });
+    const needs = session({ project: 'FidiaCRM', title: 'R14 quotation screens: totals, VAT rows and the discount line', status: 'needs-you', needsYou: 'Permission: Bash', needsFor: 95, branch: 'ux/R14-quotation-wizard', scale: 2, ctx: 82 });
+    noteOutput(needs, t0 - 4 * MINUTE_MS, 2100, minuteOf(t0));
     coordinator = session({ project: 'WasteManagement2', title: 'Coordinator: customer history plan, phases P2 and P3', status: 'busy', branch: 'customer-history', scale: 4, ctx: 42, age: 5400,
       touched: [{ id: 'demo-edit-1', file: `wastemanagement2|docs/plans/${WM2_SLUG}/status.md`, write: true, at: t0 - 600_000 }] });
     explore = sub(coordinator, coordinator.id, 1, ['general-purpose', 'P2 history tab and header'], { age: 120, refs: [[`${WM2_SLUG}/P2`]] });
@@ -5845,8 +6083,8 @@ function makeDemo(mode) {
   function tick() {
     const now = Date.now();
     for (const s of sessionsList) {
-      if (s.status === 'busy') { grow(s); s.lastActivityAt = now; if (Math.random() < 0.18) { setTool(s); s.tools++; addFeed(s, 'tool', `${s.currentTool.name} · ${s.currentTool.summary}`); } }
-      for (const a of s.subagents) if (a.state === 'running') { grow(a); if (Math.random() < 0.15) { setTool(a); addFeed(s, 'tool', `${a.type} › ${a.currentTool.name} · ${a.currentTool.summary}`); } }
+      if (s.status === 'busy') { grow(s, now); s.lastActivityAt = now; if (Math.random() < 0.18) { setTool(s); s.tools++; addFeed(s, 'tool', `${s.currentTool.name} · ${s.currentTool.summary}`); } }
+      for (const a of s.subagents) if (a.state === 'running') { grow(a, now); a.lastActivityAt = now; if (Math.random() < 0.15) { setTool(a); addFeed(s, 'tool', `${a.type} › ${a.currentTool.name} · ${a.currentTool.summary}`); } }
     }
     if (coordinator && coordinator.status === 'busy') {
       coordinator._ctx += 0.6;
@@ -5891,7 +6129,10 @@ function makeDemo(mode) {
   function snapshot() {
     const now = Date.now();
     const list = sessionsList.map(s => {
-      const out = { ...s, subagents: s.subagents.map(a => { const { _ctx, ...rest } = a; return { ...rest, context: contextFor(a.model, Math.round(_ctx / 100 * (CONTEXT_WINDOWS[a.model] || 0))) }; }) };
+      const out = { ...s, pulse: pulseView(demoPulses.get(s), now), subagents: s.subagents.map(a => {
+        const { _ctx, ...rest } = a;
+        return { ...rest, context: contextFor(a.model, Math.round(_ctx / 100 * (CONTEXT_WINDOWS[a.model] || 0))), pulse: pulseView(demoPulses.get(a), now) };
+      }) };
       delete out._ctx;
       out.context = contextFor(s.model, Math.round(s._ctx / 100 * (CONTEXT_WINDOWS[s.model] || 0)));
       out.tokensTree = out.subagents.reduce((acc, a) => addTokens(acc, a.tokens), { ...s.tokens });
@@ -5918,9 +6159,10 @@ function makeDemo(mode) {
       announced.add(key);
       addFeed({ project: P.plan.project }, 'plan', `${P.plan.title}: ${node.id} ${MARK_WORDS[flag]}`);
     }
+    const alerts = alertsFor(list, acct, now, demoAlerts, x => x.currentTool);
     return {
       now, uptime: now - t0, demo: dense ? 'dense' : true, version: VERSION, host: 'STARK-01', hooksInstalled: true,   // a made-up machine, so demo screenshots carry no real one
-      sessions: list, external, externalError: null, projects: projectList, plans: planList, board, feed: feedList.slice(-FEED_SNAPSHOT).reverse(),
+      sessions: list, external, externalError: null, projects: projectList, plans: planList, board, alerts, feed: feedList.slice(-FEED_SNAPSHOT).reverse(),
       account: acct, totals: totalsFor(list, planList, tokensToday),
     };
   }

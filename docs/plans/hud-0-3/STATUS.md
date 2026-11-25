@@ -14,7 +14,7 @@ Every agent reads this file first and updates it last.
 | P3 | A lighter stream | `stream` | P2 | Opus 5.5 / high | accepted | 2026-11-25 | [P3](handoffs/P3-stream.md) | later state 24.2 KB (from 36.8) with --demo=dense; `full: true` first state, `plans` event |
 | P4 | Board following: the engine | `tracker` | P3 | Opus 5.5 / xhigh | accepted | 2026-11-25 | [P4](handoffs/P4-tracker.md) | 33 tests passed, all demo marks and lists verified |
 | P5 | Board following: the page | `tracker-ui` | P4 | Opus 5.5 / high | accepted | 2026-11-25 | [P5](handoffs/P5-tracker-ui.md) | Selftest, 33 tests and nine browser views rechecked |
-| P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | todo | | | |
+| P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6](handoffs/P6-alerts.md) | Selftest, 39 tests and nine browser views rechecked |
 | P7 | Page extras | `page` | P6 | Opus 5.5 / high | todo | | | |
 | P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | todo | | | |
 | P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | todo | | | |
@@ -102,6 +102,9 @@ This plan's own rules, on top of the standard.
   drift announcements. Selftest, all 33 tests and all nine browser views passed, including copy and mobile layout.
 - 2026-11-25 · alerts · P5 · Accepted after selftest, all 33 tests, and nine browser views covering the queue,
   clipboard, board details, quiet-board persistence and responsive layout.
+- 2026-11-25 · alerts · P6 · Handed off amber warnings, 30-minute activity lines and turn duration. Selftest, all
+  39 tests and nine browser views passed, including warning dismissal across a live update and the gallery.
+- 2026-11-26 · page · P6 · Accepted after selftest, 39 Node tests and nine browser views covering warning dismissal and the activity line.
 
 ## Kickoff
 

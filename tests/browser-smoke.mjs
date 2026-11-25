@@ -1,7 +1,7 @@
 // Windows browser check: node tests/browser-smoke.mjs
 // Starts its own `--demo` HUD on a free port (over temp folders, tests/helpers.mjs), opens /?view=network,
 // /?view=cards and /design at 1440x900, 1024x768 and 390x844 in headless Edge with an isolated profile, and fails on
-// a runtime exception or a horizontal page scroll. It also exercises Plans and captures its states in .hud-tmp/.
+// a runtime exception or a horizontal page scroll. It also exercises Plans and warnings, with captures in .hud-tmp/.
 // HUD_TEST_BROWSER picks another Chromium-based browser. Node built-ins only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -185,6 +185,74 @@ try {
       'steady graph nodes, live count/mark rebuild, new-mark announcement and no-board state');
     console.log('pass graph signature updates, new-mark announcements and no-board state');
   }
+
+  async function checkWarnings(width, height) {
+    const amber = '.app > .banners .warning[data-kind="context"]';
+    const red = '.app > .banners .ban';
+    const chart = '.p-sess .card[data-s="busy"] .activity-chart';
+    const before = await evaluate(`(() => {
+      const warning = document.querySelector('${amber}'), needs = document.querySelector('${red}');
+      return {
+        below: warning.getBoundingClientRect().top >= needs.getBoundingClientRect().bottom,
+        amber: getComputedStyle(warning).borderLeftColor === getComputedStyle(warning.querySelector('.warning-label')).color &&
+          getComputedStyle(warning).borderLeftColor !== getComputedStyle(needs, '::before').backgroundColor,
+        text: warning.querySelector('.warning-text').textContent,
+      };
+    })()`);
+    assert.deepEqual(before, { below: true, amber: true, text: 'Context reached 80%' });
+    await capture('warning', width, height);
+    await click(amber + ' .ban-x');
+    const peak = await evaluate(`document.querySelector('${chart}').getAttribute('aria-label')`);
+    await until(`document.querySelector('${chart}').getAttribute('aria-label') !== ${JSON.stringify(peak)}`, 'real SSE changed the plotted output');
+    assert.ok(await evaluate(`!document.querySelector('${amber}') && !!document.querySelector('${red}')`),
+      'the warning stays dismissed after a state push and the red banner stays visible');
+
+    const transitions = await evaluate(`(() => {
+      const banner = H.banners();
+      const low = { id: 'context:session:80', kind: 'context', text: 'Context reached 80%' };
+      const high = { id: 'context:session:90', kind: 'context', text: 'Context reached 90%' };
+      const emit = (from, to) => H.happenings({ sessions: [], alerts: from }, { sessions: [], alerts: to })
+        .filter(e => e.type === 'warning').map(e => e.alert.id);
+      banner.update([], [low]);
+      banner.el.querySelector('.ban-x').click();
+      banner.update([], [low, high]);
+      const escalation = banner.el.querySelector('.warning [aria-label]').getAttribute('aria-label');
+      banner.update([], []);
+      banner.update([], [low]);
+      return {
+        escalation, rearmed: !!banner.el.querySelector('[data-alert-id="context:session:80"]'),
+        first: emit([], [low]), steady: emit([low], [low]), high: emit([low], [low, high]),
+      };
+    })()`);
+    assert.deepEqual(transitions, {
+      escalation: 'Dismiss warning: Context reached 90%', rearmed: true,
+      first: ['context:session:80'], steady: [], high: ['context:session:90'],
+    });
+    console.log('pass amber warning order, dismissal after SSE, warning rearm and one announcement per active id');
+  }
+
+  async function checkActivity() {
+    const result = await evaluate(`(() => {
+      const line = H.activityLine();
+      const mount = document.createElement('div');
+      mount.append(line.el);
+      const start = Math.floor(H.now() / 60000) * 60000;
+      line.set({ start, perMin: [20] }, { lastMs: 62_000 });
+      const path = mount.querySelector('.activity-path');
+      const full = path.getAttribute('points');
+      const turn = line.el.querySelector('span').textContent;
+      H.syncClock(start + 60000);
+      H.tickTimers(mount);
+      const padded = path.getAttribute('points')?.endsWith('89,16.0');
+      H.syncClock(start + 30 * 60000);
+      H.tickTimers(mount);
+      const aged = !path.getAttribute('points');
+      H.syncClock(Date.now());
+      return { plotted: full?.endsWith('89,2.0'), turn, padded, aged };
+    })()`);
+    assert.deepEqual(result, { plotted: true, turn: 'Last turn 1:02', padded: true, aged: true });
+    console.log('pass activity view pads missing minutes and ages out output without a state push');
+  }
   await call('Runtime.enable'); await call('Page.enable');
   await call('Page.bringToFront');
   await call('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -230,9 +298,12 @@ try {
         if (name === 'network' && width === 1440) {
           await click('.nf button[aria-label*="P4 price check"]');
           assert.equal(await evaluate("document.querySelector('.net-pin .work-label').textContent"), work, 'the network card shows the linked item and plan');
+          assert.ok(await evaluate("document.querySelector('.net-pin .activity-chart[aria-label^=Output]')"), 'the network subagent card plots recent output');
           await click('.net-pin button:last-child');
         }
         if (name === 'cards' && width === 1440) {
+          await checkWarnings(width, height);
+          await checkActivity();
           await checkBoardInteractions();
           await checkBoardUpdates();
         }
@@ -243,6 +314,16 @@ try {
           el.querySelector('.wq-empty') && [...el.querySelectorAll('.wq-count b')].every(count => count.textContent === '0')) &&
           document.querySelector('.gal-sec .work-queue .wq-row') && document.querySelector('.gal-sec .quiet-toggle[aria-expanded="false"]')`),
         `${where} has full and empty queues and folded quiet boards`);
+        const specimens = await evaluate(`(() => {
+          const warnings = [...document.querySelectorAll('.gal-sec .warning')].map(el => el.dataset.kind);
+          const section = [...document.querySelectorAll('.gal-sec')].find(el => el.querySelector('h2')?.textContent === 'Session activity');
+          const lines = [...section.querySelectorAll('.activity-path')]
+            .map(el => (el.getAttribute('points') || '').split(' ').filter(point => point && !point.endsWith(',16.0')).length);
+          return { warnings, lines };
+        })()`);
+        assert.deepEqual(specimens.warnings, ['context', 'context', 'tool', 'subagent', 'usage', 'usage'], `${where} shows every warning`);
+        const [empty, steady, burst] = specimens.lines;
+        assert.ok(empty === 0 && steady >= 29 && burst === 1, `${where} shows empty, steady and burst activity specimens`);
       }
       const overflow = await evaluate('document.documentElement.scrollWidth - innerWidth');
       assert.ok(overflow <= 0, `${where} has no horizontal page scroll (scrollWidth exceeds the window by ${overflow}px)`);
@@ -262,6 +343,8 @@ try {
         await capture('design-board', width, height);
         await evaluate("document.querySelector('.gal-sec .work-queue').closest('.gal-sec').scrollIntoView()");
         await capture('design-queue', width, height);
+        await evaluate("document.querySelector('.gal-sec .warning').closest('.gal-sec').scrollIntoView()");
+        await capture('design-warnings', width, height);
       }
       console.log(`pass ${where}: no runtime exception, no horizontal page scroll`);
     }

@@ -116,6 +116,11 @@ Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
 2. **What is running?** The number in the reactor, amber sessions, violet subagents.
 3. **What just finished?** LAST DONE in the feed header, and green checks.
 
+Amber warnings sit below any red banner. Context warns at 80% and again at 90%, clearing below 75% and 85%
+respectively. A busy session warns when a foreground tool other than an Agent or Task call reaches 10 minutes.
+A running subagent warns after 5 minutes of silence. Cached 5-hour and weekly account usage each warn at 90%.
+× hides that warning until it clears. New warnings use the Sound, Voice and Notify settings.
+
 **Sessions** show as a **network** or as **cards** (the switch above them; the page remembers your choice, and
 `?view=network` or `?view=cards` in the address picks one).
 - **Network:** each session hangs off the hub (this PC), and each subagent off whoever started it.
@@ -128,6 +133,9 @@ Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
 - **Cards:** one card per session, with its current tool, tokens, context and subagents. Above 8 open sessions they
   turn into one-line rows. When a panel has more than fits, a bar at its bottom says what is out of sight; click it
   to scroll there.
+
+Full session cards and network node details show a 30-minute line of output tokens per minute.
+The last completed turn's duration appears beside the line when the HUD knows it.
 
 A session that has finished its turn but still has a subagent running reads **Agents working**, in violet, where it
 would say Idle: it isn't waiting for you. The reactor's ring counts it with the busy ones.
@@ -173,7 +181,7 @@ Completed boards and boards unchanged for 14 days with no active work or owner r
 |---|---|
 | `~/.claude/sessions/<pid>.json` | The list of running sessions: id, folder, name, busy or idle. The `*.key` files next to them are never opened. |
 | `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). For board links, it extracts ID-shaped words from user and Agent prompts and keeps only those words in memory. It also reads the paths of `Read`, `Edit`, `Write` and `MultiEdit` calls for Markdown files under `docs/`, `Documentation/` or `doc/`. Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
-| Hook events (`POST /event`) | Event name, tool name and the input fields used for short summaries and board-file evidence. The forwarder omits prompt bodies and the receiver drops them from direct posts. With `HUD_RECORD=<file>` set (off by default), the redacted event is also written to that file. |
+| Hook events (`POST /event`) | Event name and time, tool name and the input fields used for short summaries and board-file evidence. Prompt and Stop hooks time Claude turns, and the background flag keeps background tools out of the long-tool warnings. The forwarder omits prompt bodies and the receiver drops them from direct posts. With `HUD_RECORD=<file>` set (off by default), the redacted event is also written to that file. |
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
 | `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |

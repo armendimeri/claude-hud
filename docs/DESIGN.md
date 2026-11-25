@@ -163,6 +163,13 @@ As built. Each entry says what the component shows, its states, and which motion
 - **Motion:** it slides down in 320 ms on arrival, and the red left edge breathes on a 1.6 s cycle (layer 3).
 - **Narrow:** under 900 px the title is dropped. Under 600 px the reason is shortened ("Allow Bash", "Question").
 
+### Warnings
+
+Amber rows sit below the red needs-you rows in the same banner area. Each names the project or Claude account
+and the reason. The session's warning text opens its card or network node. Dismissal lasts while the alert ID
+is active. Context has separate 80% and 90% steps, and a new ID is announced through the existing sound, voice
+and notification settings. Long-tool, silent-subagent and account-limit warnings use the same amber treatment.
+
 ### Arc reactor and vitals
 
 - **Reactor** (232 px; 200 px on screens under 960 px tall):
@@ -204,7 +211,10 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
 - **Meters:**
   - tokens: output, cache write and input segments, the number, and "incl. subagents";
   - cache read, kept apart;
-  - context: amber from 70%, red from 90%, "—" when the window is unknown, "used of window".
+  - context: amber from 70%, "—" when the window is unknown, "used of window".
+- **Activity:** a small cyan SVG line plots the latest 30 minutes of output tokens per minute, with a flat
+  baseline when there is no output. The window advances locally through quiet minutes. The last turn's duration
+  appears beside the line when known. Network node details use the same component.
 - **Subagent rows:** below.
 - **States:**
   - busy: an amber scan line runs along the top edge (layer 2);
