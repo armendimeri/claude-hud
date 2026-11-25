@@ -13,7 +13,7 @@ Every agent reads this file first and updates it last.
 | P2 | Truthful sessions | `engine` | P1 | Opus 5.5 / high | accepted | 2026-11-25 | [P2](handoffs/P2-engine.md) | settle time, placeholders, Agents working, 5.2 windows |
 | P3 | A lighter stream | `stream` | P2 | Opus 5.5 / high | accepted | 2026-11-25 | [P3](handoffs/P3-stream.md) | later state 24.2 KB (from 36.8) with --demo=dense; `full: true` first state, `plans` event |
 | P4 | Board following: the engine | `tracker` | P3 | Opus 5.5 / xhigh | accepted | 2026-11-25 | [P4](handoffs/P4-tracker.md) | 33 tests passed, all demo marks and lists verified |
-| P5 | Board following: the page | `tracker-ui` | P4 | Opus 5.5 / high | todo | | | |
+| P5 | Board following: the page | `tracker-ui` | P4 | Opus 5.5 / high | accepted | 2026-11-25 | [P5](handoffs/P5-tracker-ui.md) | Selftest, 33 tests and nine browser views rechecked |
 | P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | todo | | | |
 | P7 | Page extras | `page` | P6 | Opus 5.5 / high | todo | | | |
 | P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | todo | | | |
@@ -98,6 +98,10 @@ This plan's own rules, on top of the standard.
 - 2026-11-25 · tracker · P4 · Handed off the board engine, demo and eight integration tests. All 33 tests and nine
   browser checks passed. Board resolution averaged 0.218 ms and steady dense demo updates averaged 25.4 KB.
 - 2026-11-25 · tracker-ui · P4 · Accepted after selftest, 33 tests, nine browser views and a demo check of work fields, marks and lists.
+- 2026-11-25 · tracker-ui · P5 · Handed off the work queue, live board details, session links, quiet boards and
+  drift announcements. Selftest, all 33 tests and all nine browser views passed, including copy and mobile layout.
+- 2026-11-25 · alerts · P5 · Accepted after selftest, all 33 tests, and nine browser views covering the queue,
+  clipboard, board details, quiet-board persistence and responsive layout.
 
 ## Kickoff
 

@@ -109,6 +109,8 @@ edit; `Grep` / `Glob` → search; `WebFetch` / `WebSearch` → web; `Agent` / `T
   apart, the numbers count up from 0, and "SYSTEMS ONLINE" types into the ticker.
 - **Reduced motion:** rotation, scanning, dashes, the ambient layer and the boot are off; state changes are plain
   fades; alerts keep their colour without breathing.
+- **In-flight plan items:** the pulse and flowing edges stop with EFFECTS off or reduced motion. The cyan count
+  and amber mark badges stay visible.
 
 ## 7. Sound and voice
 
@@ -313,7 +315,8 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
 ### Plan graph
 
 - **One card per board:**
-  - **Header:** the project, a NEEDS YOU chip, the state the board itself declares, and "done / total".
+  - **Header:** the project, a WORKING chip with the number of linked active agents, a NEEDS YOU chip, the
+    state the board itself declares, and "done / total".
   - **Then:** the title, the graph, the questions and decisions waiting (2 lines each), the runs as chips, and the
     last log line.
 - **Graph:**
@@ -322,9 +325,28 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
     characters) and the agent below.
 - **Badges:** a check for accepted or done, an arrow for handed off, "!" for blocked, a return arrow for bounced, and
   pause bars for partial.
-- **States:** todo is dashed. In progress is cyan, with a pulse and flowing edges (layer 2).
-- **Hover or focus a node:** a card with the state, agent, model, since, waits for and notes.
-- **Order of boards:** those needing you first, then those in progress, then by project.
+- **States:** todo is dashed. In-progress and in-flight items pulse with flowing incoming edges. A cyan badge
+  counts active agents on the item. Small amber badges use distinct symbols for **Board not updated**,
+  **Stalled**, and **Started early**, with the full labels in the node's accessible name and details.
+- **Node details:** hover or focus to preview the state, agent, model, dependencies, notes, linked agents, marks,
+  and up to three recent changes. Select the node or run to open a card with buttons that jump to each linked
+  session. Session cards, compact rows, subagent rows and network node cards show **On _ID_ · _plan title_**.
+- **Order of boards:** owner attention, linked active agents, in-progress items, most recent change, then project
+  and title.
+
+### Work queue
+
+Five buttons sit in one horizontal row at the top of Plans, even at 390 px. Each opens its list in place with
+the project, plan, item ID, title, model and effort when available. Needs you shows owner inputs and the work
+they unlock. In flight offers a jump per active agent. Ready shows the project folder and Copy action, with a
+selected prompt and **Press Ctrl+C** feedback when the browser can't copy it. To accept lists handoffs and
+Drift spells out the amber marks. An empty list keeps its count at zero and states what is empty when opened.
+
+### Quiet boards
+
+One collapsed **+N quiet boards** control follows the active boards. It groups finished boards and boards
+unchanged for 14 days without linked active agents or owner attention. Expansion is saved in browser
+preferences. With no boards, Plans shows its empty message.
 
 ### Feed
 

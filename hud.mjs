@@ -2582,6 +2582,11 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .sub-n b { font: 600 13px/16px var(--f-label); letter-spacing: .08em; color: var(--agent); margin-right: 8px; }
 .sub[data-s=done] .sub-n { color: var(--ink-2); }
 .sub[data-s=done] .sub-n b { color: var(--ink-2); }
+.sub[data-work], .crow[data-work] { height: auto; min-height: 40px; padding-top: 3px; padding-bottom: 3px; }
+.sub.flash { background: var(--arc-15); }
+.sub-label, .cr-title { display: grid; min-width: 0; }
+.work-label { color: var(--arc); font: 500 11px/16px var(--f-body); }
+.card-work { display: block; margin-top: 4px; }
 .sub-m { font: 400 11px/16px var(--f-mono); color: var(--ink-2); }
 .sub-k, .sub-c { font: 400 11px/16px var(--f-mono); text-align: right; color: var(--ink-2); }
 .sub-c[data-lvl=warn] { color: var(--amber); } .sub-c[data-lvl=hot] { color: var(--alert); }
@@ -2771,11 +2776,36 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .net-legend i.dash { border-top: 2px dashed var(--agent); }
 
 /* ---- plans ---- */
+.work-queue { margin-bottom: 12px; }
+.wq-counts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.wq-count { display: grid; justify-items: center; align-content: center; gap: 1px; min-height: 39px; padding: 2px 0; border: 1px solid var(--line); background: var(--arc-06); color: var(--ink-2); }
+.wq-count + .wq-count { border-left: 0; }
+.wq-count:hover, .wq-count[aria-expanded=true] { background: var(--arc-15); color: var(--ink); }
+.wq-count:focus-visible { position: relative; z-index: 1; }
+.wq-count b { font: 600 15px/16px var(--f-mono); color: var(--arc); }
+.wq-count .label { font-size: 10px; line-height: 13px; letter-spacing: .02em; white-space: nowrap; }
+.wq-count[data-live=need] b { color: var(--alert); }
+.wq-count[data-live=drift] b { color: var(--amber); }
+.wq-list { border: 1px solid var(--line); border-top: 0; }
+.wq-rows { list-style: none; padding: 0; margin: 0; }
+.wq-row { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; padding: 8px; overflow-wrap: anywhere; }
+.wq-row + .wq-row { border-top: 1px solid var(--line); }
+.wq-row-main { flex: 1 0 140px; min-width: 0; }
+.wq-meta, .wq-folder, .wq-empty, .wq-copy-status { font-size: 11px; color: var(--ink-2); }
+.wq-empty { margin: 0; padding: 8px; }
+.wq-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.wq-copy { flex-basis: 100%; min-width: 0; }
+.wq-copy:not(:has(input:not([hidden]), .wq-copy-status:not(:empty))) { display: none; }
+.wq-copy input { width: 100%; border: 1px solid var(--line); padding: 4px; color: var(--ink); background: var(--deep); font: 11px var(--f-mono); }
+.quiet-boards { margin-top: 8px; border-top: 1px solid var(--line); }
+.quiet-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 0; color: var(--ink-2); text-align: left; }
+.quiet-toggle:hover, .quiet-toggle[aria-expanded=true] { color: var(--arc); }
 .plans { display: flex; flex-direction: column; gap: 0; container-type: inline-size; }
 .plan { padding: 16px 0; border-top: 1px solid rgba(41, 230, 255, .12); }
 .plan:first-child { border-top: 0; padding-top: 0; }
-.plan-h { display: flex; align-items: center; gap: 8px; height: 20px; min-width: 0; }
-.plan-p { color: var(--ink-2); min-width: 0; flex: 1; }
+.plan-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 20px; min-width: 0; }
+.plan-p { color: var(--ink-2); min-width: 0; flex: 1 0 6ch; }
+@container (max-width: 360px) { .plan-state { order: 1; } }
 .plan-c { font: 400 11px/16px var(--f-mono); color: var(--ink-2); flex: none; }
 .plan-t { margin-top: 4px; font: 600 15px/20px var(--f-body); color: var(--ink); }
 .plan-g { margin-top: 12px; overflow-x: auto; overflow-y: hidden; }
@@ -2787,9 +2817,9 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .pg-pulse { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; pointer-events: none; animation: pnpulse 2s var(--ease) infinite; }
 .pg-pulse svg { width: 100%; height: 100%; display: block; overflow: visible; fill: none; stroke: var(--arc); stroke-width: 1; }
 .pe.alert { stroke: rgba(255, 77, 94, .5); }
-.pn { cursor: default; --sc: rgba(214, 243, 255, .42); }
+.pn { cursor: pointer; --sc: rgba(214, 243, 255, .42); }
 .pn:focus-visible { outline: none; }
-.pn:focus-visible .pn-focus { opacity: 1; }
+.pn:focus-visible .pn-focus, .pn[aria-expanded=true] .pn-focus { opacity: 1; }
 .pn-focus { fill: none; stroke: var(--arc); stroke-width: 2; opacity: 0; }
 .pn-hex { fill: #08111c; stroke: var(--sc); stroke-width: 1.5; transition: fill .3s, stroke .3s; }
 .pn-id { fill: var(--ink); font: 700 11px var(--f-label); letter-spacing: .06em; text-anchor: middle; dominant-baseline: central; }
@@ -2804,6 +2834,19 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .pn[data-s=blocked], .pn[data-s=bounced] { --sc: var(--alert); } .pn[data-s=blocked] .pn-hex, .pn[data-s=bounced] .pn-hex { fill: rgba(255, 77, 94, .16); }
 .pn[data-s=partial] { --sc: var(--amber); }
 .pn[data-s=unknown] .pn-hex { stroke-dasharray: 1 3; }
+.pn[data-active] .pn-hex { stroke: var(--arc); stroke-dasharray: none; }
+.pn-active, .pn-drift { fill: var(--deep); stroke: var(--arc); }
+.pn-drift { stroke: var(--amber); }
+.pn-count, .pn-flag { fill: var(--arc); text-anchor: middle; dominant-baseline: central; font: 700 10px var(--f-label); }
+.pn-flag { fill: var(--amber); font-size: 8px; }
+.plan-detail { position: relative; margin-top: 8px; padding: 8px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+.plan-detail .tc-h { padding-right: 32px; }
+.plan-detail-close { position: absolute; top: 3px; right: 3px; }
+.plan-agents, .plan-history { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.plan-history { flex-direction: column; }
+.plan-agent { max-width: 100%; height: auto; min-height: 32px; padding-block: 4px; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.plan-flags { color: var(--amber); }
+:root:not(.fx) .pg-pulse[data-active], :root:not(.fx) .eflow[data-active] { display: none; }
 .plan-need { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; color: var(--alert); }
 .plan-need .ic { margin-top: 2px; }
 .plan-need-t { color: var(--ink); font-size: 13px; line-height: 20px; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -2824,6 +2867,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .tc-r { display: flex; gap: 4px 8px; align-items: center; flex-wrap: wrap; font: 400 11px/16px var(--f-mono); color: var(--ink-2); }
 .tc-r .trunc { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .tc-r b { font-weight: 400; color: var(--ink); }
+.tc-r.work-label { color: var(--arc); }
 .tc-n { font-size: 13px; line-height: 20px; color: var(--ink-2); overflow-wrap: anywhere; }
 .banners { grid-row: 2; display: flex; flex-direction: column; gap: 8px; margin-top: 12px; position: relative; z-index: 20; }
 .ban { position: relative; display: flex; align-items: center; gap: 16px; height: 40px; padding: 0 8px 0 20px; background-color: rgba(30, 8, 14, .94); --hl: rgba(255, 77, 94, .7); box-shadow: 0 0 32px rgba(255, 77, 94, .2); animation: bandown .32s var(--ease) both; cursor: pointer; }
@@ -2906,6 +2950,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .p-sess { grid-column: span 6; }
 .p-sess .pc { display: flex; flex-direction: column; }
 .p-plans { grid-column: span 3; }
+@media (max-width: 1439px) { .p-plans { scroll-margin-top: 64px; } }
 @media (max-width: 1439px) {
   .app { height: auto; min-height: 100vh; }
   .main { grid-template-rows: auto auto; }
@@ -2916,6 +2961,10 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
   .p-plans { grid-column: 5 / span 8; }
   .p-plans .pc { overflow: visible; }
   .top { position: sticky; top: 0; }
+}
+@media (min-width: 900px) and (max-width: 1100px) {
+  .p-sess .pc { max-height: clamp(280px, calc(100vh - 430px), 480px); overflow: auto; }
+  .p-sess .net { min-height: 328px; }
 }
 @media (max-width: 899px) {
   .app { padding: 0 12px 12px; grid-template-rows: auto auto minmax(0, 1fr) auto; }
@@ -3467,17 +3516,34 @@ function hudClient() {
   }
 
   // ---- subagent rows ---------------------------------------------------------------------------------------------------
+  function workText(work, plans) {
+    return (work?.items || []).map(item => {
+      const key = item.plan || work.plan;
+      const plan = plans?.get(key);
+      return `On ${item.id} · ${plan?.title || plan?.slug || key.slice(key.indexOf('|') + 1)}`;
+    }).join(' · ');
+  }
+  function workLabel(cls = '') {
+    const el = h('span', { class: 'work-label trunc ' + cls, hidden: true, 'data-tip-if': 'trunc' });
+    return { el, set(work, plans) {
+      const text = workText(work, plans);
+      txt(el, text); show(el, !!text); setData(el, 'tip', text);
+      return !!text;
+    } };
+  }
   function subRow() {
     const g = h('span', { class: 'sub-g' }), typ = h('b'), desc = h('span');
     const name = h('span', { class: 'sub-n trunc', 'data-tip-if': 'trunc' }, typ, desc);
+    const work = workLabel();
     const model = h('span', { class: 'sub-m trunc' }), k = h('span', { class: 'sub-k' }), c = h('span', { class: 'sub-c' });
     const sw = h('span'), st = h('span', { class: 'mono', style: 'margin-left:8px;letter-spacing:0' });
-    const el = h('div', { class: 'sub' }, g, name, model, k, c, h('span', { class: 'sub-s label' }, sw, st));
+    const el = h('div', { class: 'sub', tabindex: '-1' }, g, h('span', { class: 'sub-label' }, name, work.el), model, k, c, h('span', { class: 'sub-s label' }, sw, st));
     let prev = null;
     return {
       el,
-      set(a, d) {
+      set(a, d, plans) {
         setData(el, 's', a.state); setData(el, 'd', d); el.style.setProperty('--d', d);
+        setData(el, 'id', a.id); setData(el, 'work', work.set(a.work, plans) ? '1' : null);
         if (prev !== a.state) {
           g.replaceChildren(glyph(a.state === 'done' ? 'done' : 'running'));
           if (prev === 'running' && a.state === 'done') { el.classList.remove('just-done'); void el.offsetWidth; el.classList.add('just-done'); setTimeout(() => el.classList.remove('just-done'), 1600); }
@@ -3507,7 +3573,7 @@ function hudClient() {
     const rows = new Map();
     return {
       el,
-      update(subs, rootId) {
+      update(subs, rootId, plans) {
         show(el, subs.length > 0);
         const { list, kids } = subTree(subs, rootId);
         const keepUp = new Set();
@@ -3518,7 +3584,7 @@ function hudClient() {
         const done = vis.filter(([a]) => a.state === 'done' && !keepUp.has(a.id)).sort((x, y) => (y[0].endedAt || 0) - (x[0].endedAt || 0));
         const hide = new Set(done.slice(4).map(([a]) => a.id));
         vis = vis.filter(([a]) => !hide.has(a.id));
-        reconcile(rowsEl, rows, vis, ([a]) => a.id, () => subRow(), (r, [a, d]) => r.set(a, d));
+        reconcile(rowsEl, rows, vis, ([a]) => a.id, () => subRow(), (r, [a, d]) => r.set(a, d, plans));
         const bits = [];
         if (hide.size) bits.push(`+${hide.size} earlier finished`);
         if (deeper) bits.push(`+${deeper} more, deeper`);
@@ -3538,12 +3604,12 @@ function hudClient() {
     const sby = h('button', { class: 'chip', type: 'button', hidden: true }, icon('agent'), h('span', { text: 'Started by' }), sbyName);
     const ageEl = h('span'), toolsEl = h('span');
     const nowRow = nowLine(), tok = tokenMeter(), cr = cacheMeter(), ctx = contextMeter(), subs = subList();
-    const sumEl = h('div', { class: 'card-sum' });
+    const sumEl = h('div', { class: 'card-sum' }), work = workLabel('card-work');
     const el = h('article', { class: 'card cutbox', tabindex: '-1' },
       h('div', { class: 'card-scan', 'aria-hidden': 'true' }), h('div', { class: 'card-glow', 'aria-hidden': 'true' }),
       h('header', { class: 'card-h' }, h('div', { class: 'card-proj' }, projLbl, bChip), h('span', { class: 'card-meta mono' }, ageEl, ' · ', toolsEl), tag.el),
       h('div', { class: 'card-tr' }, title, h('div', { class: 'card-chips' }, mChip, prov.el, sby)),
-      sumEl, nowRow.el, h('div', { class: 'meters' }, tok.el, cr.el, ctx.el), subs.el);
+      sumEl, work.el, nowRow.el, h('div', { class: 'meters' }, tok.el, cr.el, ctx.el), subs.el);
     let st = null, sbyId = null;
     sby.addEventListener('click', e => { e.stopPropagation(); if (sbyId) api.jump?.(sbyId); });
     return {
@@ -3571,7 +3637,8 @@ function hudClient() {
         tok.set(x.tokens, x.tokensTree, c.maxTok);
         cr.set(x.tokens?.cacheRead || 0, c.maxCache);
         ctx.set(x.context);
-        subs.update(x.subagents || [], x.id);
+        work.set(x.work, c.plans);
+        subs.update(x.subagents || [], x.id, c.plans);
         if (st === 'ended') txt(sumEl, [shortModel(x.model), provName(x.provider), `${fmtTok(headline(x.tokens))} tokens`, plural(x.tools || 0, 'tool', 'tools'), (x.subagents || []).length ? plural(x.subagents.length, 'subagent', 'subagents') : null].filter(Boolean).join(' · '));
       },
     };
@@ -3582,18 +3649,20 @@ function hudClient() {
     const m = h('span', { class: 'cr-m trunc' }), v = h('span', { class: 'cr-v' });
     const wIc = h('span', { style: 'display:flex' }), wT = h('span', { class: 'trunc', 'data-tip-if': 'trunc' }), wTm = h('span', { class: 'mono' });
     const k = h('span', { class: 'cr-k' }), c = h('span', { class: 'cr-c' }), n = h('span', { class: 'cr-n' });
-    const el = h('div', { class: 'crow', tabindex: '-1' }, tag.el, p, t, m, v, h('span', { class: 'cr-w' }, wIc, wT, wTm), k, c, n);
+    const work = workLabel();
+    const el = h('div', { class: 'crow', tabindex: '-1' }, tag.el, p, h('span', { class: 'cr-title' }, t, work.el), m, v, h('span', { class: 'cr-w' }, wIc, wT, wTm), k, c, n);
     let icName = null, st = null;
     el.addEventListener('click', () => api.open?.(el.dataset.id));
     return {
       el,
-      update(x) {
+      update(x, cxt = {}) {
         const vs = viewStatus(x);
         if (st && st !== vs) glitch(el);
         st = vs; setData(el, 's', vs); setData(el, 'id', x.id);
         tag.set(vs);
         txt(p, x.project || '—'); setData(p, 'tip', x.project);
         const title = x.title || x.name || 'Untitled session'; txt(t, title); t.dataset.tip = title;
+        setData(el, 'work', work.set(x.work, cxt.plans) ? '1' : null);
         txt(m, (x.agent === 'codex' ? 'Codex · ' : '') + shortModel(x.model)); setData(m, 'tip', x.modelRaw);
         txt(v, provLetter(x.provider)); setData(v, 'p', x.provider); setData(v, 'tip', 'Runs on ' + provName(x.provider));
         let ic = 'clock', w = '';
@@ -4017,10 +4086,11 @@ function hudClient() {
       const x = i.x;
       if (i.kind === 'sat') return h('div', { class: 'tc' }, h('div', { class: 'tc-t', text: plural(i.count, 'finished subagent', 'finished subagents') }), h('div', { class: 'tc-n', text: 'Folded to keep the network readable. Click to expand.' }));
       const tag = statusTag(); tag.set(i.state);
-      const t = x.tokens || {}, tool = x.currentTool, end = x.endedAt || null;
+      const t = x.tokens || {}, tool = x.currentTool, end = x.endedAt || null, work = workText(x.work, cx.plans);
       return h('div', { class: 'tc' },
         h('div', { class: 'tc-h' }, tag.el, h('span', { class: 'label c-ink2 trunc', text: i.kind === 'session' ? (x.project || '') : `Subagent · level ${i.depth}` })),
         h('div', { class: 'tc-t', text: i.kind === 'session' ? (x.title || x.name || 'Untitled session') : `${x.type || 'agent'}: ${x.description || ''}` }),
+        work ? h('div', { class: 'tc-r work-label', text: work }) : null,
         h('div', { class: 'tc-r' }, h('b', { text: shortModel(x.model) || 'model unknown' }), x.effort ? h('span', { text: x.effort }) : null,
           h('span', { text: '· ' + (x.agent === 'codex' ? 'Codex / ' : '') + provName(x.provider) }), h('span', { text: '· ' + (end ? 'ran ' + fmtAge(end - (x.startedAt || end)) : 'running ' + fmtAge(now() - (x.startedAt || now()))) })),
         x.needsYou ? h('div', { class: 'tc-r c-alert' }, icon('alert'), h('span', { text: x.needsYou.reason })) : null,
@@ -4295,7 +4365,13 @@ function hudClient() {
     return {
       el, nodeCard,
       update(sessions, c) { data = sessions; cx = c || {}; render(); },
-      pin(id) { if (nodes.has(id) && pinnedId !== id) togglePin(id); const r = nodes.get(id); if (r) { rovingId = id; roving(); r.btn.focus({ preventScroll: true }); } },
+      pin(id) {
+        const r = nodes.get(id);
+        if (!r) return false;
+        if (pinnedId !== id) togglePin(id);
+        rovingId = id; roving(); r.btn.focus({ preventScroll: true });
+        return true;
+      },
       hoverDemo(id) { const r = nodes.get(id); if (r) hover(r, true); },   // the gallery shows a lit path without a mouse
     };
   }
@@ -4303,6 +4379,10 @@ function hudClient() {
 
   // ---- plan graph ------------------------------------------------------------------------------------------------------------
   const DONE_STATES = new Set(['accepted', 'done', 'handed-off']);
+  const BOARD_MARKS = { unclaimed: ['Board not updated', '!'], stalled: ['Stalled', 'Ⅱ'], early: ['Started early', '↑'] };
+  const boardPlanKey = p => p.project + '|' + p.slug;
+  const activeAgents = item => (item?.agents || []).filter(a => a.active);
+  let planDetailId = 0;
   function planLayout(nodes, horizontal) {
     const ids = new Set(nodes.map(n => n.id));
     const deps = new Map(nodes.map(n => [n.id, (n.waitsFor || []).filter(d => ids.has(d) && d !== n.id)]));
@@ -4332,14 +4412,26 @@ function hudClient() {
     const along = pad * 2 + Math.max(0, L.length - 1) * step, across = pad * 2 + (per - 1) * cross + 18;
     return { pos, deps, w: horizontal ? along : across, h: horizontal ? across : along + 18, horizontal };
   }
-  function planNodeCard(n) {
+  function planNodeCard(n, info = {}, jump) {
     const tag = statusTag(); tag.set(STATUS[n.state] ? n.state : 'unknown', null, n.stateRaw && n.stateRaw !== n.state ? n.stateRaw : null);
+    const agentRows = (info.agents || []).map(({ label, sessionId, active }) => {
+      const text = label + (active ? ' · active' : ' · idle');
+      return jump ? h('button', { type: 'button', class: 'btn plan-agent', text, on: { click: () => jump(sessionId) } }) : h('span', { text });
+    });
     return h('div', { class: 'tc' },
       h('div', { class: 'tc-h' }, tag.el, n.group && n.group !== 'Board' ? h('span', { class: 'label c-ink2 trunc', text: n.group }) : null),
       h('div', { class: 'tc-t', text: `${n.id} · ${n.name || ''}` }),
       h('div', { class: 'tc-r' }, n.agent ? h('span', {}, 'agent ', h('b', { text: n.agent })) : null, n.model ? h('span', { text: [n.model, n.effort].filter(Boolean).join(' / ') }) : null, n.since ? h('span', { text: 'since ' + n.since }) : null),
-      n.waitsFor && n.waitsFor.length ? h('div', { class: 'tc-r', text: 'waits for ' + n.waitsFor.join(', ') + (n.waitsForOther && n.waitsForOther.length ? ' · ' + n.waitsForOther.join(', ') : '') }) : null,
-      n.notes ? h('div', { class: 'tc-n', text: n.notes }) : null);
+      (n.waitsFor?.length || n.waitsForOther?.length) ? h('div', { class: 'tc-r', text: 'waits for ' + [...(n.waitsFor || []), ...(n.waitsForOther || [])].join(', ') }) : null,
+      n.notes ? h('div', { class: 'tc-n', text: n.notes }) : null,
+      agentRows.length ? h('div', { class: 'tc-r plan-agents', 'aria-label': 'Linked agents' }, agentRows) : null,
+      info.flags?.length ? h('div', { class: 'tc-r plan-flags', text: info.flags.map(flag => BOARD_MARKS[flag][0]).join(' · ') }) : null,
+      info.history?.length ? h('div', { class: 'tc-r plan-history', 'aria-label': 'Recent changes' }, info.history.map(entry => {
+        const time = new Date(entry.at);
+        const state = entry.to === 'in-progress' && entry.label ? `claimed by ${entry.label}` :
+          `${entry.from} → ${entry.to}${entry.label ? ' by ' + entry.label : ''}`;
+        return h('div', {}, h('time', { class: 'mono', datetime: time.toISOString(), text: pad2(time.getHours()) + ':' + pad2(time.getMinutes()) }), ' · ', state);
+      })) : null);
   }
   // Circuit-style elbow from a to b; returns the SVG path and its straight segments (for the flow strips).
   function elbow(a, b, horizontal) {
@@ -4355,7 +4447,7 @@ function hudClient() {
     segs.push([a, { x: a.x, y: my }], [{ x: a.x, y: my }, { x: b.x, y: my }], [{ x: b.x, y: my }, b]);
     return { d: `M${a.x} ${a.y}V${my - rr}Q${a.x} ${my} ${a.x + sg * rr} ${my}H${b.x - sg * rr}Q${b.x} ${my} ${b.x} ${my + rr}V${b.y}`, segs };
   }
-  function planGraph() {
+  function planGraph(detailId, open, preview) {
     const svg = s('svg', { role: 'group' });
     const fx = h('div', { class: 'pg-fx', 'aria-hidden': 'true' });
     const box = h('div', { class: 'pg-box' }, svg, fx);
@@ -4370,10 +4462,20 @@ function hudClient() {
     }
     return {
       el: wrap,
-      update(nodes) {
+      select(id) {
+        for (const g of svg.querySelectorAll('.pn')) setAttr(g, 'aria-expanded', String(g.dataset.id === id));
+      },
+      focus(id) { [...svg.querySelectorAll('.pn')].find(g => g.dataset.id === id)?.focus(); },
+      update(nodes, items, key, selected) {
         const width = wrap.clientWidth || 300;
-        const sigNow = width + '|' + nodes.map(n => n.id + n.state + (n.waitsFor || []).join()).join(';');
+        const views = new Map(nodes.map(n => {
+          const item = items[`${key}#${n.id}`];
+          return [n.id, { count: activeAgents(item).length, flags: (item?.flags || []).filter(flag => BOARD_MARKS[flag]) }];
+        }));
+        const sigNow = JSON.stringify([width, nodes.map(n => [n.id, n.name, n.state, n.agent, n.kind, n.waitsFor, views.get(n.id)])]);
         if (sigNow === sig) return; sig = sigNow;
+        const focused = svg.contains(doc.activeElement) ? doc.activeElement.dataset.id : null;
+        if (svg.contains(tip.anchor)) tip.close();
         let G = planLayout(nodes, true);
         if (G.w > width) { const V = planLayout(nodes, false); if (V.w <= width) G = V; }
         setAttr(svg, 'width', G.w); setAttr(svg, 'height', G.h); setAttr(svg, 'viewBox', `0 0 ${G.w} ${G.h}`);
@@ -4381,57 +4483,126 @@ function hudClient() {
         const byId = new Map(nodes.map(n => [n.id, n])), out = [], fxKids = [];
         for (const n of nodes) for (const d of G.deps.get(n.id)) {
           const a = G.pos.get(d), b = G.pos.get(n.id), from = byId.get(d);
-          const cls = n.state === 'in-progress' ? 'pe flow' : n.state === 'blocked' || n.state === 'bounced' ? 'pe alert' : DONE_STATES.has(from.state) ? 'pe done' : 'pe';
+          const count = views.get(n.id).count, flowing = n.state === 'in-progress' || count > 0;
+          const cls = flowing ? 'pe flow' : n.state === 'blocked' || n.state === 'bounced' ? 'pe alert' : DONE_STATES.has(from.state) ? 'pe done' : 'pe';
           const E = G.horizontal ? elbow({ x: a.x + 20, y: a.y }, { x: b.x - 20, y: b.y }, true) : elbow({ x: a.x, y: a.y + 40 }, { x: b.x, y: b.y - 22 }, false);
           out.push(s('path', { class: cls, d: E.d }));
-          if (n.state === 'in-progress') for (const [p, q] of E.segs) { if (Math.hypot(q.x - p.x, q.y - p.y) < 2) continue; const f = h('div', { class: 'eflow plan' }, h('i')); placeFlow(f, p, q); fxKids.push(f); }
+          if (flowing) for (const [p, q] of E.segs) {
+            if (Math.hypot(q.x - p.x, q.y - p.y) < 2) continue;
+            const f = h('div', { class: 'eflow plan', 'data-active': count ? '1' : null }, h('i')); placeFlow(f, p, q); fxKids.push(f);
+          }
         }
         for (const n of nodes) {
           const p = G.pos.get(n.id), st = STATUS[n.state] ? n.state : 'unknown', input = n.kind === 'input';
+          const { count, flags } = views.get(n.id);
           const R = n.id.length > 4 ? 21 : 18, D = R + 2;   // a long id ("UX-10") gets a bigger shape, so it never touches the outline
           const shape = input ? `${p.x},${p.y - D} ${p.x + D},${p.y} ${p.x},${p.y + D} ${p.x - D},${p.y}` : hexPts(R).split(' ').map(q => { const [x, y] = q.split(',').map(Number); return (x + p.x).toFixed(2) + ',' + (y + p.y).toFixed(2); }).join(' ');
-          const label = `${n.id} ${n.name || ''}: ${(STATUS[st] || STATUS.unknown)[1]}${n.agent ? ', agent ' + n.agent : ''}`;
-          const g = s('g', { class: 'pn', 'data-s': st, tabindex: '0', role: 'img', 'aria-label': label },
+          const label = [`${n.id} ${n.name || ''}: ${(STATUS[st] || STATUS.unknown)[1]}`, n.agent && 'agent ' + n.agent,
+            count && plural(count, 'active agent', 'active agents'), ...flags.map(flag => BOARD_MARKS[flag][0])].filter(Boolean).join(', ');
+          const badge = (x, y, circle, text, word, r = 7) => [
+            s('circle', { class: circle, cx: x, cy: y, r }), s('text', { class: text, x, y }, word),
+          ];
+          const g = s('g', { class: 'pn', 'data-id': n.id, 'data-s': st, 'data-active': count || null, tabindex: '0', role: 'button',
+            'aria-label': label, 'aria-controls': detailId, 'aria-expanded': String(selected === n.id) },
             s('circle', { class: 'pn-focus', cx: p.x, cy: p.y, r: R + 6 }),
             s('polygon', { class: 'pn-hex', points: shape }),
             s('text', { class: 'pn-id', x: p.x, y: p.y + 0.5, style: n.id.length > 4 ? 'letter-spacing:0' : null }, n.id),
             mark(n, p.x, p.y, R),
+            count ? badge(p.x - R * .72, p.y - R * .72, 'pn-active', 'pn-count', count > 99 ? '99+' : count, 8) : null,
+            flags.map((flag, i) => s('g', { 'data-flag': flag },
+              badge(p.x + (i - (flags.length - 1) / 2) * 13, p.y + R - 1, 'pn-drift', 'pn-flag', BOARD_MARKS[flag][1], 6))),
             n.agent || input ? s('text', { class: 'pn-ag', x: p.x, y: p.y + R + 16 }, (input ? 'you' : n.agent).slice(0, 12)) : null);
-          const open = () => tip.open(g, planNodeCard(n)), close = () => tip.close(g);
-          g.addEventListener('pointerenter', open); g.addEventListener('pointerleave', close);
-          g.addEventListener('focus', open); g.addEventListener('blur', close);
+          const peek = () => { if (g.getAttribute('aria-expanded') === 'false') tip.open(g, preview(n.id)); };
+          const close = () => tip.close(g);
+          g.addEventListener('pointerenter', peek); g.addEventListener('pointerleave', close);
+          g.addEventListener('focus', peek); g.addEventListener('blur', close);
+          g.addEventListener('click', () => { close(); open(n.id); });
+          g.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); close(); open(n.id); }
+          });
           out.push(g);
-          if (st === 'in-progress') fxKids.push(h('div', { class: 'pg-pulse', style: `left:${p.x}px;top:${p.y}px` }, s('svg', { viewBox: '-22 -22 44 44' }, s('polygon', { points: input ? '0,-20 20,0 0,20 -20,0' : hexPts(Math.min(R, 21)) }))));
+          if (count || st === 'in-progress') fxKids.push(h('div', { class: 'pg-pulse', 'data-active': count ? '1' : null, 'data-id': n.id,
+            style: `left:${p.x}px;top:${p.y}px` }, s('svg', { viewBox: '-22 -22 44 44' }, s('polygon', { points: input ? '0,-20 20,0 0,20 -20,0' : hexPts(Math.min(R, 21)) }))));
         }
         svg.replaceChildren(...out);
         fx.replaceChildren(...fxKids);
+        if (focused) this.focus(focused);
       },
     };
   }
-  function planCard() {
+  function planCard(api = {}) {
     const proj = h('span', { class: 'plan-p label trunc' });
     const need = h('span', { class: 'chip', style: 'color:var(--alert);border-color:rgba(255,77,94,.5)', hidden: true }, icon('alert'), 'Needs you');
     const live = h('span', { class: 'chip', style: 'color:var(--arc);border-color:rgba(41,230,255,.5)', hidden: true }, 'Working');
-    const stChip = h('span', { class: 'chip', hidden: true }), count = h('span', { class: 'plan-c' });
+    const stChip = h('span', { class: 'chip plan-state', hidden: true }), count = h('span', { class: 'plan-c' });
     const title = h('h3', { class: 'plan-t trunc', 'data-tip-if': 'trunc' });
-    const graph = planGraph(), needs = h('div'), runs = h('div', { class: 'plan-runs', hidden: true }), log = h('p', { class: 'plan-log', hidden: true });
-    const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj, live, need, stChip, count), title, graph.el, needs, runs, log);
+    const detailId = 'plan-detail-' + ++planDetailId;
+    const detailBody = h('div');
+    const close = h('button', { type: 'button', class: 'tgl plan-detail-close', 'aria-label': 'Close item details',
+      on: { click: closeDetail } }, icon('close'));
+    const detail = h('div', { id: detailId, class: 'plan-detail', tabindex: '-1', hidden: true }, close, detailBody);
+    const graph = planGraph(detailId, select, id => planNodeCard(nodes.get(id), infoFor(id)));
+    const needs = h('div'), runs = h('div', { class: 'plan-runs', hidden: true }), log = h('p', { class: 'plan-log', hidden: true });
+    const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj, live, need, stChip, count), title, graph.el, needs, runs, detail, log);
     let needSig = null, runSig = null;   // the need rows and run chips are rebuilt only when their text changed
+    let plan, items = {}, labelOf = () => 'Agent', nodes = new Map(), selected = null, detailSig = '';
+    function infoFor(id) {
+      const item = items[`${boardPlanKey(plan)}#${id}`];
+      return {
+        agents: (item?.agents || []).map(a => ({ ...a, label: labelOf(a) })),
+        flags: (item?.flags || []).filter(flag => BOARD_MARKS[flag]),
+        history: (plan.history || []).filter(entry => entry.id === id).slice(-3).reverse().map(entry => ({
+          ...entry, label: entry.sessionId ? labelOf(entry) : null,
+        })),
+      };
+    }
+    function drawDetail() {
+      const node = nodes.get(selected);
+      show(detail, !!node);
+      if (!node) {
+        if (detailSig) { detailSig = ''; detailBody.replaceChildren(); }
+        return;
+      }
+      const info = infoFor(selected);
+      const sig = JSON.stringify([node, info]);
+      if (sig === detailSig) return;
+      detailSig = sig;
+      detailBody.replaceChildren(planNodeCard(node, info, api.jump));
+    }
+    function select(id) {
+      selected = selected === id ? null : id;
+      tip.close();
+      graph.select(selected);
+      for (const button of runs.children) setAttr(button, 'aria-expanded', String(button.dataset.id === selected));
+      drawDetail();
+      if (selected) detail.focus();
+      api.layout?.();
+    }
+    function closeDetail() {
+      const id = selected;
+      select(id);
+      const run = [...runs.children].find(button => button.dataset.id === id);
+      if (run) run.focus(); else graph.focus(id);
+    }
+    detail.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
     return {
       el,
-      // working: the sessions busy in the plan's project (or waiting on their subagents), counted by the page
-      update(p, working = 0) {
-        const all = [...(p.phases || [])];
+      update(p, board = {}, nameOf = labelOf) {
+        plan = p; items = board.items || {}; labelOf = nameOf;
+        const all = p.phases || [], key = boardPlanKey(p), working = board.plans?.[key]?.active || 0;
+        nodes = new Map([...all, ...(p.runs || [])].map(n => [n.id, n]));
+        if (!nodes.has(selected)) selected = null;
         txt(proj, p.project || ''); setData(proj, 'tip', p.path ? 'From ' + p.path : null);
         txt(title, p.title || p.slug); title.dataset.tip = p.title || p.slug;
-        show(live, working > 0); setData(live, 'tip', working ? `${working} session${working > 1 ? 's' : ''} running in ${p.project}` : null);
+        show(live, working > 0); txt(live, 'Working ' + working);
+        setData(live, 'tip', working ? plural(working, 'active agent', 'active agents') + ' linked to this board' : null);
         show(stChip, !!p.state); txt(stChip, p.state ? p.state + (p.stateDate ? ' ' + p.stateDate : '') : '');
         const done = all.filter(n => DONE_STATES.has(n.state)).length;
         txt(count, `${done}/${all.length}`); setData(count, 'tip', `${done} of ${all.length} done, handed off or accepted`);
         const stuck = all.filter(n => n.state === 'blocked' || n.state === 'bounced');
         show(need, (p.needsYou && p.needsYou.length > 0) || stuck.length > 0);
         setData(el, 'project', p.project || ''); setData(el, 'need', need.hidden ? null : '1');
-        graph.update(all);
+        graph.update(all, items, key, selected);
         const rows = [
           // the id is in the label already, so a text that starts with it ("D2 A changed booking …") drops it
           ...(p.needsYou || []).map(q => [`${q.kind === 'decision' ? 'Decision' : 'Question'} ${q.id}${q.item ? ' · ' + q.item : ''}`, String(q.text || '').replace(new RegExp('^\\**' + String(q.id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b\\**[\\s:·.–-]*'), '')]),
@@ -4439,22 +4610,144 @@ function hudClient() {
         ];
         const ns = JSON.stringify(rows);
         if (ns !== needSig) { needSig = ns; needs.replaceChildren(...rows.map(([b, t]) => h('div', { class: 'plan-need' }, icon('alert'), h('div', { class: 'plan-need-t', 'data-tip': t }, h('b', { text: b }), t)))); }
-        const rs = (p.runs || []).map(r => [r.id, r.state, [`Run ${r.id}: ${r.name || ''}`, r.lane ? 'lane ' + r.lane : '', r.chunks && r.chunks.length ? 'chunks ' + r.chunks.join(', ') : '', r.startWhen ? 'starts when ' + r.startWhen : ''].filter(Boolean).join(' · ')]);
+        const rs = (p.runs || []).map(r => {
+          const item = items[`${key}#${r.id}`];
+          return [r.id, r.state, [`Run ${r.id}: ${r.name || ''}`, r.lane && 'lane ' + r.lane,
+            r.chunks?.length && 'chunks ' + r.chunks.join(', '), r.startWhen && 'starts when ' + r.startWhen].filter(Boolean).join(' · '),
+          activeAgents(item).length, (item?.flags || []).filter(flag => BOARD_MARKS[flag])];
+        });
         show(runs, rs.length > 0);
         const rsig = JSON.stringify(rs);
         if (rsig !== runSig) {
           runSig = rsig;
-          runs.replaceChildren(...rs.map(([id, state, tip]) => {
-            const tag = h('span', { class: 'chip', 'data-tip': tip });
+          runs.replaceChildren(...rs.map(([id, state, summary, active, flags]) => {
+            const tag = h('button', { type: 'button', class: 'chip', 'data-tip': summary, 'data-id': id,
+              'aria-controls': detailId, 'aria-expanded': String(selected === id), on: { click: () => select(id) } });
             const [gl, wd, c] = STATUS[state] || STATUS.unknown;
             tag.append(h('span', { class: 'c-' + (c === 'dim' ? 'dim' : c), style: 'display:flex' }, glyph(gl)), `${id} · ${wd}`);
+            if (active) tag.append(h('span', { class: 'c-arc', text: active + ' active' }));
+            for (const flag of flags) tag.append(h('span', { class: 'c-amber', 'aria-label': BOARD_MARKS[flag][0], text: BOARD_MARKS[flag][1] }));
             return tag;
           }));
         }
+        drawDetail();
         const last = (p.lastLog || []).filter(l => /^\d{4}-\d\d-\d\d/.test(l)).pop() || (p.lastLog || []).slice(-1)[0];
         show(log, !!last); txt(log, last || ''); setData(log, 'tip', last || null);
       },
     };
+  }
+
+  const QUEUE_LABELS = { need: 'Needs you', flight: 'In flight', ready: 'Ready', accept: 'To accept', drift: 'Drift' };
+  const QUEUE_EMPTY = { need: 'No owner inputs waiting', flight: 'No items in flight', ready: 'No items ready to start',
+    accept: 'No items waiting for acceptance', drift: 'No board drift' };
+  function queueRows(st, plans, labelOf) {
+    const board = st.board || {}, rows = { need: [], flight: [], ready: [], accept: [], drift: [] };
+    const roots = new Map((st.projects || []).map(p => [p.project, p.root]));
+    const nodes = new Map();
+    for (const [key, p] of plans) {
+      const folder = p.path?.split(/[\\/]docs[\\/]plans[\\/]/i)[0];
+      const root = folder && folder !== p.path ? folder : roots.get(p.project);
+      for (const n of [...(p.phases || []), ...(p.runs || [])]) {
+        nodes.set(`${key}#${n.id}`, { id: n.id, project: p.project, plan: p.title || p.slug, slug: p.slug, title: n.name,
+          model: [n.model, n.effort].filter(Boolean).join(' / '), folder: root });
+      }
+    }
+    for (const [key, entries] of [['need', board.ownerInputs], ['ready', board.ready], ['accept', board.awaiting]]) {
+      for (const entry of entries || []) {
+        const row = nodes.get(`${entry.plan}#${entry.id}`);
+        if (row) rows[key].push({ ...row, note: entry.unlocks?.length ? 'Unlocks ' + entry.unlocks.join(', ') : null });
+      }
+    }
+    for (const [key, item] of Object.entries(board.items || {})) {
+      const row = nodes.get(key);
+      if (!row) continue;
+      const agents = activeAgents(item);
+      if (agents.length) rows.flight.push({ ...row, agents: agents.map(a => ({ ...a, label: labelOf(a) })) });
+      const flags = (item.flags || []).filter(flag => BOARD_MARKS[flag]);
+      if (flags.length) rows.drift.push({ ...row, note: flags.map(flag => BOARD_MARKS[flag][0]).join(' · ') });
+    }
+    return rows;
+  }
+
+  let queueId = 0;
+  function workQueue(api = {}) {
+    const id = 'work-queue-' + ++queueId;
+    const list = h('div', { id, class: 'wq-list', role: 'region', hidden: true });
+    const counts = h('div', { class: 'wq-counts' });
+    const el = h('section', { class: 'work-queue', 'aria-label': 'Work queue' }, counts, list);
+    const buttons = new Map();
+    let current = null, rows = {}, listSig = '';
+    for (const [key, label] of Object.entries(QUEUE_LABELS)) {
+      const total = h('b', { text: 0 });
+      const button = h('button', { class: 'wq-count', type: 'button', 'data-queue': key,
+        'aria-controls': id, 'aria-expanded': 'false' }, total, h('span', { class: 'label', text: label }));
+      button.addEventListener('click', () => { current = current === key ? null : key; draw(); api.layout?.(); });
+      buttons.set(key, { button, total }); counts.append(button);
+    }
+    function copyAction(row) {
+      const prompt = `Do ${row.slug}/${row.id}. Follow the workflow-run skill.`;
+      const button = h('button', { class: 'btn wq-button', type: 'button', 'aria-label': 'Copy kickoff for ' + row.id, text: 'Copy' });
+      const input = h('input', { type: 'text', readonly: true, value: prompt, 'aria-label': 'Kickoff prompt', hidden: true });
+      const status = h('span', { role: 'status', class: 'wq-copy-status' });
+      button.addEventListener('click', async () => {
+        txt(status, '');
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(prompt);
+            show(input, false); txt(status, 'Copied'); return;
+          }
+        } catch {} // Plain HTTP, denied permission, or unavailable clipboard.
+        show(input, true); input.focus(); input.select();
+        let copied = false;
+        try { copied = doc.execCommand('copy'); } catch {}
+        if (copied) { button.focus(); show(input, false); }
+        txt(status, copied ? 'Copied' : 'Press Ctrl+C');
+        api.layout?.();
+      });
+      return { button, details: h('div', { class: 'wq-copy' }, input, status) };
+    }
+    function entry(row) {
+      const copy = current === 'ready' ? copyAction(row) : null;
+      return h('li', { class: 'wq-row' },
+        h('div', { class: 'wq-row-main' },
+          h('div', { class: 'wq-meta', text: row.project + ' · ' + row.plan }),
+          h('div', {}, h('b', { text: row.id }), row.title ? ' · ' + row.title : ''),
+          row.model ? h('div', { class: 'wq-meta', text: row.model }) : null,
+          row.note ? h('div', { class: current === 'drift' ? 'wq-meta c-amber' : 'wq-meta', text: row.note }) : null,
+          copy && row.folder ? h('div', { class: 'wq-folder mono', text: row.folder }) : null),
+        copy?.button,
+        row.agents?.length ? h('div', { class: 'wq-actions' }, row.agents.map(a =>
+          h('button', { type: 'button', class: 'btn plan-agent wq-button', text: a.label, on: { click: () => api.jump?.(a.sessionId, a.agentId) } }))) : null,
+        copy?.details);
+    }
+    function draw() {
+      for (const [key, { button, total }] of buttons) {
+        const count = rows[key]?.length || 0;
+        txt(total, count); setData(button, 'live', count ? key : null);
+        setAttr(button, 'aria-expanded', String(current === key));
+      }
+      show(list, !!current);
+      const entries = rows[current] || [], sig = JSON.stringify([current, entries]);
+      if (listSig === sig) return;
+      listSig = sig;
+      setAttr(list, 'aria-label', QUEUE_LABELS[current]);
+      if (current) list.replaceChildren(entries.length ? h('ul', { class: 'wq-rows' }, entries.map(entry)) :
+        h('p', { class: 'wq-empty', text: QUEUE_EMPTY[current] }));
+      else list.replaceChildren();
+    }
+    return { el, update(next, open = current) { rows = next; current = open; draw(); } };
+  }
+
+  function quietBoards(toggle) {
+    const list = h('div', { class: 'plans', hidden: true });
+    const button = h('button', { class: 'quiet-toggle label', type: 'button', 'aria-expanded': 'false',
+      on: { click: () => toggle() } });
+    const el = h('div', { class: 'quiet-boards', hidden: true }, button, list);
+    return { el, list, update(count, expanded) {
+      show(el, count > 0); show(list, expanded && count > 0);
+      txt(button, `${expanded ? '−' : '+'}${count} quiet ${count === 1 ? 'board' : 'boards'}`);
+      setAttr(button, 'aria-expanded', String(expanded && count > 0));
+    } };
   }
 
   // ---- needs-you banners ------------------------------------------------------------------------------------------------------
@@ -4637,11 +4930,21 @@ function hudClient() {
         if (!q) { if (a.state === 'running') out.push({ type: 'sub-start', x, a }); } else if (q.state === 'running' && a.state === 'done') out.push({ type: 'sub-done', x, a });
       }
     }
-    const pk = pl => pl.project + '|' + pl.slug, pp = new Map((prev.plans || []).map(pl => [pk(pl), pl]));
+    const pp = new Map((prev.plans || []).map(pl => [boardPlanKey(pl), pl]));
+    const boardTitles = new Map();
     for (const pl of next.plans || []) {
-      const q = pp.get(pk(pl)); if (!q) continue;
+      const key = boardPlanKey(pl);
+      boardTitles.set(key, pl.title || pl.slug);
+      const q = pp.get(key); if (!q) continue;
       const qs = new Map([...(q.phases || []), ...(q.runs || [])].map(n => [n.id, n.state]));
       for (const n of [...(pl.phases || []), ...(pl.runs || [])]) { const was = qs.get(n.id); if (was && was !== n.state) out.push({ type: 'phase', plan: pl, n, from: was }); }
+    }
+    for (const [key, item] of Object.entries(next.board?.items || {})) {
+      const previous = prev.board?.items?.[key]?.flags || [];
+      const cut = key.lastIndexOf('#'), title = boardTitles.get(key.slice(0, cut));
+      for (const flag of item.flags || []) {
+        if (title && BOARD_MARKS[flag] && !previous.includes(flag)) out.push({ type: 'board-mark', text: `${title}: ${key.slice(cut + 1)} ${BOARD_MARKS[flag][0].toLowerCase()}` });
+      }
     }
     if ((prev.totals?.agentsRunning || 0) > 0 && (next.totals?.agentsRunning || 0) === 0) out.push({ type: 'all-idle' });
     return out;
@@ -4670,6 +4973,8 @@ function hudClient() {
             if (speak) voice.say(`Phase ${e.n.id} ${w}`);
             notify(`${e.plan.title}: ${e.n.id} ${w}`, `${e.plan.project} · ${e.n.name || ''}`, 'plan-' + e.plan.slug + e.n.id);
           }
+        } else if (e.type === 'board-mark') {
+          if (sound) audio.play('plan'); if (speak) voice.say(e.text);
         } else if (e.type === 'sub-start') { if (sound) audio.play('agent'); }
         else if (e.type === 'sub-done') { if (sound) audio.play('done'); }
         else if (e.type === 'session-start') { if (sound) audio.play('session'); }
@@ -4798,7 +5103,7 @@ function hudClient() {
   // ---- the whole page --------------------------------------------------------------------------------------------------------------
   function createHud(mount, opts = {}) {
     const bg = h('div', { class: 'bg', 'aria-hidden': 'true' }, h('div', { class: 'bg-grid' }), h('div', { class: 'bg-dots' }), h('div', { class: 'bg-dots d2' }), h('div', { class: 'bg-shim' }), h('div', { class: 'bg-vig' }));
-    const api = { jump: id => jump(id), showCard: id => { setView('cards', true); jump(id); }, open: id => jump(id) };
+    const api = { jump: (id, agentId) => jump(id, agentId), showCard: id => { setView('cards', true); jump(id); }, open: id => jump(id) };
     const top = topBar(api), ban = banners(api);
     const conn = h('div', { class: 'conn', hidden: true, role: 'status' }, h('span', { class: 'label conn-w' }), h('span', { class: 'mono conn-m' }));
     const connRetry = h('button', { type: 'button', text: 'Retry now' }); conn.append(connRetry);
@@ -4829,8 +5134,17 @@ function hudClient() {
       const k = els.filter(e => e.dataset.need).length;
       return [k ? h('span', { class: 'c-alert', text: `${k} ${k === 1 ? 'needs' : 'need'} you` }) : null, h('span', { class: 'trunc', text: els.map(e => e.dataset.project).join(', ') })];
     });
-    pl.content.append(plansEmpty, plansBox, plMore.el);
-    const planMap = new Map();
+    const planApi = { jump: api.jump, layout: plMore.refresh };
+    const queue = workQueue(planApi);
+    let showQuiet = prefs.get('quietBoardsExpanded', false);
+    const quiet = quietBoards(() => {
+      showQuiet = !showQuiet;
+      prefs.set('quietBoardsExpanded', showQuiet);
+      renderPlans(state);
+      plMore.refresh();
+    });
+    pl.content.append(queue.el, plansEmpty, plansBox, quiet.el, plMore.el);
+    const planMap = new Map(), quietMap = new Map();
     let plSig = '';
 
     const tk = panel('p-tick', 'Feed', { label: 'Live feed' });
@@ -4864,18 +5178,23 @@ function hudClient() {
       const crowdedNarrow = innerWidth < 600 && st.sessions.filter(x => x.status !== 'ended').length > 8;   // too many nodes for a narrow window: rows read better
       return autoNet && !crowdedNarrow ? 'network' : 'cards';
     }
-    function jump(id) {
+    function jump(id, agentId) {
       if (!state) return;
-      if (view === 'network') { net.pin(id); return; }
+      const behavior = motion.rm ? 'auto' : 'smooth';
+      if (view === 'network') {
+        if ((agentId && net.pin(agentId)) || net.pin(id)) net.el.scrollIntoView({ behavior, block: 'nearest' });
+        return;
+      }
       const c = cards.get(id) || rowsMap.get(id); if (!c) return;
-      c.el.scrollIntoView({ behavior: motion.rm ? 'auto' : 'smooth', block: 'center' });
-      c.el.classList.add('flash'); setTimeout(() => c.el.classList.remove('flash'), 900);
-      c.el.focus({ preventScroll: true });
+      const target = (agentId && c.el.querySelector(`.sub[data-id="${CSS.escape(agentId)}"]`)) || c.el;
+      target.scrollIntoView({ behavior, block: 'center' });
+      target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 900);
+      target.focus({ preventScroll: true });
     }
     function ctxFor(st) {
       const live = st.sessions.filter(x => x.status !== 'ended');
       return {
-        byId: new Map(st.sessions.map(x => [x.id, x])), host: st.host,
+        byId: new Map(st.sessions.map(x => [x.id, x])), plans: new Map((st.plans || []).map(p => [boardPlanKey(p), p])), host: st.host,
         maxTok: Math.max(1, ...live.map(x => headline(x.tokens))), maxCache: Math.max(1, ...live.map(x => x.tokens?.cacheRead || 0)),
       };
     }
@@ -4901,20 +5220,40 @@ function hudClient() {
     }
     function renderPlans(st) {
       pl.guard(() => {
-        const plans = (st.plans || []).slice();
-        const needs = p => (p.needsYou && p.needsYou.length) || (p.phases || []).some(n => n.state === 'blocked' || n.state === 'bounced');
-        const active = p => (p.phases || []).some(n => n.state === 'in-progress');
-        // A plan's "Working" chip counts the sessions of its project that are busy, need you, or wait on running
-        // subagents. Counted here, so plans carry nothing that changes with a session (PLAN hud-0-3 P3).
-        const busyBy = new Map();
-        for (const x of st.sessions || []) if (x.status === 'busy' || x.status === 'needs-you' || (x.status !== 'ended' && x.agentsRunning > 0)) busyBy.set(x.project, (busyBy.get(x.project) || 0) + 1);
-        const working = p => busyBy.get(p.project) || 0;
-        // needs you, then a session is working in its project, then a phase in progress, then the board changed most recently
+        const plans = (st.plans || []).slice(), board = st.board || {};
+        const byPlan = new Map(plans.map(p => [boardPlanKey(p), p]));
+        const sessions = new Map(st.sessions.map(x => [x.id, x]));
+        const nameOf = ({ sessionId, agentId }) => {
+          const session = sessions.get(sessionId);
+          if (agentId) {
+            const agent = session?.subagents?.find(a => a.id === agentId);
+            return agent?.description || agent?.type || 'Subagent ' + agentId.slice(0, 8);
+          }
+          return session?.title || session?.name || session?.project || 'Session ' + sessionId.slice(0, 8);
+        };
+        const owner = new Set((board.ownerInputs || []).map(item => item.plan));
+        const nodes = p => [...(p.phases || []), ...(p.runs || [])];
+        const needs = p => p.needsYou?.length || owner.has(boardPlanKey(p)) || nodes(p).some(n => n.state === 'blocked' || n.state === 'bounced');
+        const active = p => nodes(p).some(n => n.state === 'in-progress');
+        const working = p => board.plans?.[boardPlanKey(p)]?.active || 0;
+        const staleBefore = st.now - 14 * 86_400_000;
+        const isQuiet = p => {
+          const all = nodes(p);
+          return (all.length > 0 && all.every(n => DONE_STATES.has(n.state))) ||
+            (p.touchedAt > 0 && p.touchedAt <= staleBefore && !working(p) && !needs(p));
+        };
         plans.sort((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || (working(b) > 0 ? 1 : 0) - (working(a) > 0 ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || (b.touchedAt || 0) - (a.touchedAt || 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
+        const visible = [], folded = [];
+        for (const p of plans) (isQuiet(p) ? folded : visible).push(p);
+        queue.update(queueRows(st, byPlan, nameOf));
+        show(queue.el, plans.length > 0);
         show(plansEmpty, plans.length === 0);
+        quiet.update(folded.length, showQuiet);
         txt(plSum, plans.length ? [`${plans.length}`, st.totals?.plansInProgress ? `${st.totals.plansInProgress} in progress` : null].filter(Boolean).join(' · ') : '');
-        reconcile(plansBox, planMap, plans, p => p.project + '|' + p.slug, () => planCard(), (c, p) => c.update(p, working(p)), booted);
-        const sig = plans.map(p => p.project + '|' + p.slug + (needs(p) ? '!' : '')).join();
+        const update = (c, p) => c.update(p, board, nameOf);
+        reconcile(plansBox, planMap, visible, boardPlanKey, () => planCard(planApi), update, booted);
+        reconcile(quiet.list, quietMap, showQuiet ? folded : [], boardPlanKey, () => planCard(planApi), update, false);
+        const sig = visible.map(p => boardPlanKey(p) + (needs(p) ? '!' : '')).join();
         if (sig !== plSig) { plSig = sig; plMore.refresh(); }   // the hint only changes with the boards (scroll and resize repaint it too)
       }, () => renderPlans(st));
     }
@@ -4975,7 +5314,7 @@ function hudClient() {
   return {
     h, s, txt, icon, glyph, ICONS, GLYPHS, STATUS, statusTag, provBadge, odo, tip, motion, prefs, now, syncClock, tickTimers,
     fmtTok, fmtPct, fmtDur, fmtAge, headline, shortModel, ctxLevel,
-    contextMeter, tokenMeter, cacheMeter, sessionCard, compactRow, subList, reactor, vitals, externals, network, planCard, planNodeCard,
+    contextMeter, tokenMeter, cacheMeter, sessionCard, compactRow, subList, reactor, vitals, externals, network, planCard, planNodeCard, workQueue, quietBoards,
     banners, ticker, panel, toggle, topBar, createHud, boot, audio, voice, happenings, needsPhrase, reconcile, moreBelow, stateCounts, FEED_TAGS,
   };
 }
@@ -5071,7 +5410,11 @@ function designMain(H) {
   waiting.agentsRunning = 1;
   const all = [needs, busy, waiting, fresh, idle, ended, long];
   const byId = new Map(all.map(x => [x.id, x]));
-  const cardCtx = { byId, host, maxTok: Math.max(...all.map(x => H.headline(x.tokens))), maxCache: Math.max(...all.map(x => x.tokens.cacheRead)) };
+  const galleryPlan = { project: 'WasteManagement2', slug: 'customer-history', title: 'Customer change history' };
+  const galleryPlanKey = 'WasteManagement2|customer-history', galleryPlans = new Map([[galleryPlanKey, galleryPlan]]);
+  busy.work = { plan: galleryPlanKey, items: [{ id: 'P1' }], role: 'coordinator' };
+  busy.subagents[0].work = { plan: galleryPlanKey, items: [{ id: 'P2' }], role: 'worker' };
+  const cardCtx = { byId, plans: galleryPlans, host, maxTok: Math.max(...all.map(x => H.headline(x.tokens))), maxCache: Math.max(...all.map(x => x.tokens.cacheRead)) };
   const totals = list => {
     const live = list.filter(x => x.status !== 'ended'), subs = live.reduce((n, x) => n + x.subagents.filter(a => a.state === 'running').length, 0);
     return { sessions: live.length, needsYou: live.filter(x => x.status === 'needs-you').length, busy: live.filter(x => x.status === 'busy').length, subagentsRunning: subs,
@@ -5158,7 +5501,7 @@ function designMain(H) {
   // ---- session cards ----
   const card = (label, x) => { const c = H.sessionCard({ jump: () => {} }); c.update(x, cardCtx); return spec(label, h('div', { class: 'cards' }, c.el)); };
   const rows = H.h('div', { class: 'cards compact' });
-  for (const x of all) { const r = H.compactRow(); r.update(x); rows.append(r.el); }
+  for (const x of all) { const r = H.compactRow(); r.update(x, cardCtx); rows.append(r.el); }
   const deep = sess({ project: 'claude-hud', title: 'Folding: deep trees and many finished subagents', subagents: (() => {
     const out = [], a = sub({ type: 'general-purpose', description: 'Level 1' }), b = sub({ parentId: a.id, depth: 2, description: 'Level 2' }), c = sub({ parentId: b.id, depth: 3, description: 'Level 3' }), d = sub({ parentId: c.id, depth: 4, description: 'Level 4, folded' });
     out.push(a, b, c, d);
@@ -5220,8 +5563,23 @@ function designMain(H) {
   // ---- plans ----
   const P = (id, name, agent, state, waitsFor = [], extra = {}) => Object.assign({ id, name, agent, state, stateRaw: state, since: state === 'todo' ? null : '2026-10-29', waitsFor, waitsForOther: [], notes: waitsFor.length ? 'Waits for ' + waitsFor.join(' and ') : null, group: 'Board', kind: 'phase', model: 'Opus 5.5', effort: 'high' }, extra);
   const plan = (o) => Object.assign({ project: 'WasteManagement2', slug: uid('plan'), title: 'Customer change history and change requests', path: 'docs/plans/customer-history/STATUS.md', format: 'standard', size: 'phased', state: 'building', stateDate: null, needsYou: [], runs: [], lastLog: ['2026-10-29 · data · P1 · Handed off: history tables and triggers, 14 tests.'] }, o);
-  const pc = (label, p, cls) => { const c = H.planCard(); const box = h('div', { class: 'plans' }, c.el); const e = spec(label, box); if (cls) e.classList.add(cls); requestAnimationFrame(() => c.update(p)); return e; };
+  const pc = (label, p, cls, board) => {
+    const c = H.planCard(); const box = h('div', { class: 'plans' }, c.el); const e = spec(label, box);
+    if (cls) e.classList.add(cls);
+    requestAnimationFrame(() => c.update(p, board, a => a.agentId ? 'History UI subagent' : 'Customer history coordinator'));
+    return e;
+  };
+  const following = plan({ ...galleryPlan, phases: [P('P1', 'Data and history', 'data', 'todo'),
+    P('P2', 'History tab and header', 'history-ui', 'in-progress', ['P1']), P('P3', 'Change requests', 'requests', 'in-progress', ['P2'])],
+    history: [{ id: 'P2', from: 'todo', to: 'in-progress', sessionId: busy.id, agentId: busy.subagents[0].id, at: t - 180_000 }] });
+  const worker = { sessionId: busy.id, agentId: busy.subagents[0].id, active: true, label: 'History UI subagent' };
+  const followBoard = { plans: { [galleryPlanKey]: { active: 2 } }, items: {
+    [galleryPlanKey + '#P1']: { agents: [{ ...worker, agentId: null }], flags: ['unclaimed'] },
+    [galleryPlanKey + '#P2']: { agents: [worker], flags: ['early'] },
+    [galleryPlanKey + '#P3']: { agents: [], flags: ['stalled'] },
+  } };
   section('Plan graph', 'Laid out from “waits for”; left to right when it fits, top to bottom when not. Edges into a running phase flow.',
+    pc('In flight and all three drift marks', following, 'wide', followBoard),
     pc('Node × every state', plan({ title: 'Every state', phases: [P('P1', 'Accepted', 'a', 'accepted'), P('P2', 'Handed off', 'b', 'handed-off', ['P1']), P('P3', 'In progress', 'c', 'in-progress', ['P2']), P('P4', 'Partial', 'd', 'partial', ['P3']), P('P5', 'Blocked', 'e', 'blocked', ['P4']), P('P6', 'Bounced', 'f', 'bounced', ['P5']), P('P7', 'Todo', 'g', 'todo', ['P6']), P('P8', 'Unknown', 'h', 'unknown', ['P7'])] }), 'wide'),
     pc('Phased plan: P1 → (P2 ∥ P3) → P4', plan({ phases: [P('P1', 'Data and history', 'data', 'accepted'), P('P2', 'History tab and header', 'history-ui', 'in-progress', ['P1']), P('P3', 'Change requests in the service', 'requests', 'bounced', ['P1']), P('P4', 'Verification and cleanup', 'verify', 'todo', ['P2', 'P3'])] })),
     pc('Chunk board with runs, an owner input and a question', plan({ project: 'FidiaCRM', title: 'Implementation', format: 'legacy', state: null,
@@ -5229,6 +5587,25 @@ function designMain(H) {
       runs: [{ id: 'R14', name: 'Quotation screens', state: 'in-progress', lane: 'A', chunks: ['UX-10', 'UX-11'], startWhen: 'UX-06 done' }, { id: 'R15', name: 'Clients screens', state: 'todo', lane: 'B', chunks: ['UX-12'], startWhen: 'O-9 is in' }],
       needsYou: [{ kind: 'question', id: '3', item: 'UX-12', text: 'Contact names longer than 60 characters: cut them, or widen the column to 120?' }], lastLog: [] })),
     pc('Small plan with an open decision', plan({ project: 'TourCMS', title: 'Booking changes', size: 'small', state: 'approved', stateDate: '2026-10-28', phases: [P('P1', 'Change dates', 'bookings', 'todo'), P('P2', 'Change people', 'bookings', 'todo', ['P1'])], needsYou: [{ kind: 'decision', id: 'D2', text: 'A changed booking keeps its original price unless the tour price went down ★' }], lastLog: [] })));
+  const emptyQueue = H.workQueue(), fullQueue = H.workQueue();
+  emptyQueue.update({}, 'ready');
+  const queueRow = { project: galleryPlan.project, plan: galleryPlan.title, slug: galleryPlan.slug, model: 'Opus 5.5 / high' };
+  fullQueue.update({
+    need: [{ ...queueRow, id: 'O-1', title: 'Review the refund policy', note: 'Unlocks P6', model: '' }],
+    flight: [{ ...queueRow, id: 'P2', title: 'History tab and header', agents: [worker] }],
+    ready: [{ ...queueRow, id: 'P4', title: 'Verification and cleanup', folder: 'C:/Users/demo/source/repos/WasteManagement2' }],
+    accept: [{ ...queueRow, id: 'P5', title: 'Table system' }],
+    drift: [{ ...queueRow, id: 'P3', title: 'Change requests', note: 'Stalled' }],
+  }, 'ready');
+  const quietPlan = H.planCard();
+  let expanded = false;
+  const quiet = H.quietBoards(() => {
+    expanded = !expanded; quiet.update(1, expanded);
+    if (expanded) quietPlan.update(plan({ title: 'Completed migration', phases: [P('P1', 'Move history', 'data', 'accepted')] }));
+  });
+  quiet.list.append(quietPlan.el); quiet.update(1, expanded);
+  section('Work queue and quiet boards', null,
+    wide('Work queue with entries · Ready open', fullQueue.el), wide('Empty work queue', emptyQueue.el), spec('Quiet board folded', quiet.el));
 
   // ---- alerts, ticker, externals, states ----
   const b1 = H.banners({}), b4 = H.banners({});
@@ -5259,7 +5636,7 @@ function designMain(H) {
     wide('Reconnecting, then down: the last state stays, dimmed', h('div', { class: 'col' }, conn, connDown, (() => { const c = H.sessionCard(); c.update(busy, cardCtx); return h('div', { class: 'stale', style: 'width:100%' }, h('div', { class: 'main gal-main' }, h('div', { class: 'cards' }, c.el))); })())));
 
   // ---- render the networks once they have a size; then keep the fixtures alive so the motion can be reviewed ----
-  const netCtx = { byId: new Map([...all, ...dense, one].map(x => [x.id, x])), host, maxTok: 1, maxCache: 1 };
+  const netCtx = { byId: new Map([...all, ...dense, one].map(x => [x.id, x])), plans: galleryPlans, host, maxTok: 1, maxCache: 1 };
   requestAnimationFrame(() => nets.forEach(([n, list, after]) => { n.update(list, netCtx); if (after) after(n, list); }));
   let tickN = 0;
   setInterval(() => {
@@ -5435,8 +5812,18 @@ function makeDemo(mode) {
     runs: [], lastLog: [],
     touchedAt: t0 - 2 * 3600_000,
     history: waiter ? [{ at: t0 - 3 * 3600_000, id: 'P1', from: 'todo', to: 'in-progress', sessionId: waiter.id, agentId: null },
-      { at: t0 - 2 * 3600_000, id: 'P1', from: 'in-progress', to: 'handed-off', sessionId: waiter.id, agentId: null }] : [],
+      { at: t0 - 2 * 3600_000, id: 'P1', from: 'in-progress', to: 'handed-off', sessionId: waiter.id, agentId: null },
+      ...[['unknown', 'todo'], ['todo', 'in-progress'], ['in-progress', 'partial'], ['partial', 'todo']].map(([from, to], i) => ({
+        id: 'P4', from, to, at: t0 - (8 - i) * 60_000, sessionId: waiter.id, agentId: waiter.subagents[0].id,
+      }))] : [],
   };
+  const quietPlans = [
+    { ...smallPlan, slug: 'currency-display', title: 'Currency display', path: `${repo('TourCMS')}\\docs\\plans\\currency-display.md`,
+      state: 'closed', needsYou: [], touchedAt: t0 - 86_400_000, history: [],
+      phases: [{ ...smallPlan.phases[0], state: 'accepted', stateRaw: 'accepted' }] },
+    { ...smallPlan, slug: 'archived-booking-notes', title: 'Archived booking notes', path: `${repo('TourCMS')}\\docs\\plans\\archived-booking-notes.md`,
+      format: 'legacy', state: null, needsYou: [], touchedAt: t0 - 16 * 86_400_000, history: [], phases: [smallPlan.phases[1]] },
+  ];
   for (const n of [...plan.phases, ...chunkPlan.phases, ...chunkPlan.runs, ...smallPlan.phases]) { n.waitsForOther = []; n.handoff ??= false; }
   // The marks' clocks: P4 has been worked on for 4 minutes, UX-12's Codex session was last busy 15 minutes ago.
   track.set(`TourCMS|booking-changes#P4`, { ...newTrack(), inFlightSince: t0 - 4 * 60_000 });
@@ -5513,7 +5900,7 @@ function makeDemo(mode) {
       return out;
     }).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
     const tokensToday = list.reduce((acc, s) => addTokens(acc, s.tokensTree), zero());
-    const planList = dense ? [plan] : [plan, chunkPlan, smallPlan];
+    const planList = dense ? [plan] : [plan, chunkPlan, smallPlan, ...quietPlans];
     const agents = [];
     for (const s of list) {
       agents.push({ key: s.id, parent: s.startedBy, sessionId: s.id, agentId: null, view: s, project: s.project,

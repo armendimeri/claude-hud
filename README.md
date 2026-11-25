@@ -144,14 +144,24 @@ never did anything is not listed once it closes. A resumed conversation lists th
 finished long before it was reopened are left out, though their tokens still count in its total.
 
 **Plans** shows the boards of the projects with open sessions: each phase as a hexagon, colour and badge for its
-state, and the questions waiting for you. A board's **Working** chip counts the sessions of its project that are
-busy, need you, or wait on their subagents. **Feed** is the live event list: hover to pause it; the chevron
-collapses it.
+state, and the questions waiting for you. The **Working** chip counts active sessions and subagents linked to
+that board. An item in flight shows a pulse and its active-agent count. Select an item to see who is on it,
+jump to their session, and read its last three state changes. Amber badges flag **Board not updated**,
+**Stalled**, and **Started early**. Linked sessions and subagents show **On _ID_ · _plan title_**.
+
+The **work queue** at the top of Plans opens lists for **Needs you** (owner inputs), **In flight**, **Ready**,
+**To accept**, and **Drift**. Ready rows show the project folder and copy the kickoff prompt. If clipboard access
+fails, the HUD selects the prompt so you can press **Ctrl+C**. In-flight rows jump to the linked agent.
+Completed boards and boards unchanged for 14 days with no active work or owner request fold under
+**+N quiet boards**. The browser remembers whether you opened them.
+
+**Feed** is the live event list. Hover to pause it or use the chevron to collapse it.
 
 **Top bar toggles**, all remembered in the browser:
-- **Effects:** the ambient motion (rotating reactor, radar, floating nodes). Off, everything that moves still means
-  something. Your system's reduced-motion setting turns it off too.
+- **Effects:** the ambient motion (rotating reactor, radar, floating nodes) and live item pulses in Plans. Your
+  system's reduced-motion setting turns these off too.
 - **Voice** and **sound:** short spoken or tonal announcements ("FidiaCRM needs your approval"). Off by default.
+  Both toggles also apply when a board drift mark appears.
 - **Notifications:** Windows notifications when a session needs you or a plan phase is blocked, bounced or handed
   off. Sent only while the tab is in the background.
 
