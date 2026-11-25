@@ -43,8 +43,17 @@ Routes: `/` (the page), `/design` (the component gallery), `/api/state` (the ful
 (server-sent events), `/api/health`, and `POST /event`, which the hooks use. The stream starts each connection with
 the full state (marked `full: true`); after that a `state` event comes on every change but without the plans and the
 feed, a `plans` event comes only when a board changed, and each feed line comes as its own `event`. The page keeps the
-last plans and feed, so an update stays small on a phone or a TV (about 24 KB with `--demo=dense`, from 37 KB). Requests whose `Host` header is not
+last plans and feed, so a steady update averages about 25 KB with `--demo=dense` (about 37 KB before the stream change).
+Requests whose `Host` header is not
 `127.0.0.1:<port>` or `localhost:<port>` are refused (with `--lan`, an IP address or this PC's name is accepted too).
+
+Each session and subagent has a `work` field with its linked plan, items and role, or `null` if no link resolves.
+`state.board` carries active links, ready work, handoffs awaiting acceptance, owner inputs and three drift marks.
+An item is marked `unclaimed` after 3 minutes of active work while it is still `todo`, `stalled` after 30 minutes
+without work or board changes while it is `in-progress`, and `early` when work starts ahead of a dependency.
+`HUD_UNCLAIMED_MS` and `HUD_STALLED_MS` override the two time limits in milliseconds for tests. Each plan carries
+its last 50 state changes in `plans[n].history`, with the writing agent when known. History and mark timers reset on
+restart. The HUD reads boards without writing to them.
 
 ## Viewing it from another device
 
@@ -153,8 +162,8 @@ collapses it.
 | Source | What the HUD takes from it |
 |---|---|
 | `~/.claude/sessions/<pid>.json` | The list of running sessions: id, folder, name, busy or idle. The `*.key` files next to them are never opened. |
-| `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
-| Hook events (`POST /event`) | What the hooks send: event name, tool name and the few input fields a short summary needs. With `HUD_RECORD=<file>` set (off by default), each one is also written to that file, redacted. |
+| `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). For board links, it extracts ID-shaped words from user and Agent prompts and keeps only those words in memory. It also reads the paths of `Read`, `Edit`, `Write` and `MultiEdit` calls for Markdown files under `docs/`, `Documentation/` or `doc/`. Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
+| Hook events (`POST /event`) | Event name, tool name and the input fields used for short summaries and board-file evidence. The forwarder omits prompt bodies and the receiver drops them from direct posts. With `HUD_RECORD=<file>` set (off by default), the redacted event is also written to that file. |
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
 | `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |

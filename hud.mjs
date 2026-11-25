@@ -98,6 +98,14 @@ const SILENT_SESSION_MS = 10 * 60_000;   // a session outside the registry count
 const SETTLE_MS = 8_000;                 // hud-0-3 D7: a session with no work yet is shown after this long
 const SETTLE_WORK_MS = 60_000;           // work this long before the HUD first saw a session still counts as its first work
 const STARTUP_MS = 5_000;                // sessions found this soon after the HUD starts are shown at once
+// Board following (hud-0-3 D4, PLAN §4.2). Tests shorten the two marks' limits with HUD_UNCLAIMED_MS / HUD_STALLED_MS.
+const UNCLAIMED_MS = Number(process.env.HUD_UNCLAIMED_MS) > 0 ? Number(process.env.HUD_UNCLAIMED_MS) : 3 * 60_000;
+const STALLED_MS = Number(process.env.HUD_STALLED_MS) > 0 ? Number(process.env.HUD_STALLED_MS) : 30 * 60_000;
+const PLAN_WRITE_MS = 60_000;            // a board change this soon after an agent wrote the file is that agent's
+const HISTORY_MAX = 50;                  // state changes kept per plan, in memory
+const REFS_MAX = 40;                     // ID-shaped words kept per agent from its task text
+const TOUCHED_MAX = 20;                  // plan files read or written, kept per agent
+const ITEMS_MAX = 3;                     // board items one agent links to
 const EXTERNAL_ROWS_MAX = 200;
 const CLOUDWATCH_EVERY_MS = 60_000;
 const ACCEPT_USAGE = process.env.HUD_ACCEPT_USAGE === '1';           // D12 (a), off by default
@@ -175,7 +183,7 @@ function redact(s) {
   return out;
 }
 
-const NO_REDACT = new Set(['id', 'parentId', 'sessionId', 'startedBy', 'agentId']);
+const NO_REDACT = new Set(['id', 'parentId', 'sessionId', 'startedBy', 'agentId', 'plan']);
 function redactDeep(v, key) {
   if (typeof v === 'string') return NO_REDACT.has(key) ? v : redact(v);
   if (Array.isArray(v)) return v.map(x => redactDeep(x, key));
@@ -336,6 +344,9 @@ const plans = new Map();        // `${project}|${relative path}` -> { plan, mtim
 const roots = new Map();        // project root (lower-cased) -> { root, project, watchers, timer }
 const rootCache = new Map();    // cwd (lower-cased) -> { root, mainRoot, project }
 const external = new Map();     // D12 rows
+const planWrites = new Map();   // plan file key -> { sessionId, agentId, at }: the last agent that wrote it (hud-0-3 §4.2)
+const planHistory = new Map();  // planKey -> the plan's last HISTORY_MAX state changes, { at, id, from, to, sessionId, agentId }
+const boardTrack = new Map();   // itemKey -> { inFlightSince, lastInFlightAt, changedAt, on }: the marks' clocks, in memory
 let externalError = null;
 let account = null;             // 5-hour and weekly usage from Claude Code's own cache in ~/.claude.json (of the first folder that has one)
 let hooksInstalled = false;
@@ -352,6 +363,7 @@ function newSession(id) {
     tail: null, transcriptPath: null, lastFind: 0, root: null,
     subs: new Set(), byToolUse: new Map(), byAgent: new Map(),
     seenAt: Date.now(), shown: false, pendingLine: null, resumeAt: 0,
+    touched: [],                  // plan files from PreToolUse hooks (hud-0-3 §4.2); the transcript's are on its tail
   };
 }
 function getSession(id) {
@@ -466,6 +478,7 @@ function newInfo() {
     effort: null, branch: null, cwd: null, sessionId: null, agentId: null,
     tokens: zero(), byDay: new Map(), msgs: new Map(), lastUsed: 0, firstTs: 0, lastTs: 0,
     toolIds: new Set(), openTools: new Map(), agentCalls: new Map(),
+    refs: [], touched: [],        // hud-0-3 §4.2: ID-shaped words of each user prompt, and plan files read or written
   };
 }
 function getTail(file) {
@@ -588,6 +601,14 @@ function onAssistantLine(t, j, ts) {
     const summary = summarizeTool(name, c.input, info.cwd);
     info.openTools.set(c.id, { id: c.id, name, summary, since: ts || Date.now() });
     if (info.openTools.size > 50) info.openTools.delete(info.openTools.keys().next().value);
+    if (PLAN_TOOLS.has(name) && isObj(c.input)) {
+      const key = planFileKey(c.input.file_path, info.cwd || t.owner?.session.cwd);
+      if (key) {
+        const at = ts || Date.now();
+        noteTouched(info.touched, c.id, key, name !== 'Read', at);
+        if (name !== 'Read') noteWrite(key, t.owner?.session.id ?? info.sessionId, t.owner ? t.owner.agentId : info.agentId, at);
+      }
+    }
     if (AGENT_TOOLS.has(name)) onAgentCall(t, c.id, isObj(c.input) ? c.input : {}, ts);
     if (ts >= hudStartedAt - 2000 && t.owner) {
       const s = t.owner.session;
@@ -603,12 +624,19 @@ function addDay(info, day, tok, sign) {
 
 function onUserLine(t, j, ts) {
   const content = j.message?.content;
+  // A prompt (hud-0-3 D3): only its ID-shaped words are kept, the text is dropped here. Lines Claude Code adds itself
+  // (isMeta, a compaction summary) and tool results are not prompts.
+  const prompt = !j.isMeta && !j.isCompactSummary && !j.isVisibleInTranscriptOnly;
+  if (typeof content === 'string') { if (prompt) addPrompt(t.info, content); return; }
   if (!Array.isArray(content)) return;
+  let results = false;
   for (const b of content) {
     if (!isObj(b) || b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
+    results = true;
     t.info.openTools.delete(b.tool_use_id);
     if (t.info.agentCalls.has(b.tool_use_id)) onAgentResult(t, b.tool_use_id, j.toolUseResult, b.is_error === true, ts);
   }
+  if (prompt && !results) addPrompt(t.info, content.filter(b => isObj(b) && b.type === 'text').map(b => str(b.text)).join('\n'));
 }
 
 // =====================================================================================================================
@@ -777,7 +805,8 @@ function codexTree(list) {
 
 function newSub(s) {
   const sub = { agentId: null, toolUseId: null, parentKey: s.id, depth: null, description: null, type: null, modelHint: null,
-    background: false, state: 'running', startedAt: null, endedAt: null, tail: null, currentTool: null, lastHookAt: 0 };
+    background: false, state: 'running', startedAt: null, endedAt: null, tail: null, currentTool: null, lastHookAt: 0,
+    refs: null, touched: [] };   // hud-0-3 §4.2: the words of its Agent call's prompt; plan files from its hooks
   s.subs.add(sub);
   return sub;
 }
@@ -810,6 +839,8 @@ function assignAgentId(s, sub, agentId) {
       sub.startedAt = Math.min(sub.startedAt || Infinity, other.startedAt || Infinity) || null;
       if (other.state === 'done' && sub.state === 'running') { sub.state = 'done'; sub.endedAt = other.endedAt; }
       sub.currentTool ??= other.currentTool;
+      sub.refs ??= other.refs;
+      sub.touched = mergeTouched(sub.touched, other.touched);
       s.subs.delete(other);
     } else {
       other.agentId = null;                // an earlier guess was wrong; that call waits for its own meta.json
@@ -840,6 +871,7 @@ function onAgentCall(t, toolUseId, input, ts) {
     description: str(input.description) || null, type: str(input.subagent_type) || 'general-purpose', model: str(input.model) || null,
     background: input.run_in_background === true || input.run_in_background === 'true', at: ts || Date.now(),
     agentId: null, done: false, doneAt: null,
+    refs: promptRefs(input.prompt),   // hud-0-3 §4.2: the subagent's task, as ID-shaped words only (D3)
   };
   t.info.agentCalls.set(toolUseId, call);
   if (t.owner) applyAgentCall(t.owner.session, t, toolUseId, call);
@@ -859,6 +891,7 @@ function applyAgentCall(s, t, toolUseId, call) {
   sub.description ??= call.description;
   sub.type ??= call.type;
   sub.modelHint ??= call.model;
+  if (call.refs?.length) sub.refs = call.refs;
   if (call.background) sub.background = true;
   sub.startedAt = sub.startedAt ? Math.min(sub.startedAt, call.at) : call.at;
   if (call.agentId) assignAgentId(s, sub, call.agentId);
@@ -1147,6 +1180,7 @@ function onHook(p) {
       break;
     case 'PreToolUse': {
       if (id) { s.hookTools.add(id); capSet(s.hookTools, 5000); }
+      hookTouch(s, sub, p, id, name, at);
       if (!sub) setHookStatus(s, 'busy', at);
       if (s.doneTools.has(id)) break;                 // async hooks can arrive out of order
       clearNeedsYou(s, sub?.agentId ?? null);
@@ -1170,6 +1204,7 @@ function onHook(p) {
     case 'PostToolUse':
     case 'PostToolUseFailure': {
       if (id) { s.doneTools.add(id); capSet(s.doneTools, 1000); }
+      if (ev === 'PostToolUse') hookTouch(s, sub, p, id, name, at);   // the write has happened: its time is now
       const holder = sub || s;
       if (holder.currentTool && (!id || holder.currentTool.id === id)) holder.currentTool = null;
       clearNeedsYou(s, sub?.agentId ?? null);
@@ -1320,6 +1355,7 @@ function poll() {
     if (![...sessions.values()].some(s => s.project === r.project)) dropRoot(key);
   }
   scheduleState();
+  if (!clients.size) snapshot();   // the marks' clocks and feed lines (hud-0-3 D4) run with no page open too
 }
 function dropSession(s) {
   if (s.tail) s.tail.owner = null;
@@ -1505,6 +1541,7 @@ function parsePlan(text, file, root, project, planText = null) {
         kind,
         model: me.model && !/^[—-]$/.test(me.model) ? me.model : null,
         effort: me.effort,
+        handoff: !!cell(col.handoff) && !/^[—-]$/.test(cell(col.handoff)),   // hud-0-3 P4: a handoff is linked ("—" says none will be)
         _deps: [cell(col.deps), (/waits? for\s+([^·;]+)/i.exec(cell(col.notes)) || [])[1] || ''].join(' '),
         _chunks: cell(col.chunks),
         lane: cell(col.lane) || null,
@@ -1540,6 +1577,17 @@ function parsePlan(text, file, root, project, planText = null) {
     lastLog: log.slice(-5).map(l => truncate(l, 240)),
   };
 }
+
+/**
+ * The board file of a parsed plan, relative to its project root, rebuilt from the slug parsePlan() gave it (a phased
+ * plan `docs/plans/<slug>/STATUS.md`, a small one `docs/plans/<slug>.md`, any other board `<slug>.md`). Lower-cased,
+ * with forward slashes: `planFile(p)` is the same key planFileKey() makes from a path an agent read or wrote.
+ */
+function planFile(p) {
+  const rel = p.slug.includes('/') ? `${p.slug}.md` : p.size === 'small' ? `docs/plans/${p.slug}.md` : `docs/plans/${p.slug}/STATUS.md`;
+  return `${p.project}|${rel}`.toLowerCase();
+}
+const planKeyOf = p => `${p.project}|${p.slug}`;   // PLAN hud-0-3 §4.1, the key renderPlans uses
 
 function ensureRoot(root, project) {
   const key = root.toLowerCase();
@@ -1616,15 +1664,322 @@ async function projectInfo(root) {
   return { headline, standard: !!claude && /^\*\*Workflow:\*\*.*standard/im.test(claude), git: git ? git.toLowerCase() : null };
 }
 
-function diffPlan(a, b) {
+/**
+ * Feeds each state change, and records it in the plan's history (hud-0-3 §4.2). A change seen within PLAN_WRITE_MS of
+ * an agent writing the board file is that agent's: "claimed by <title>" when it moved the item to in-progress.
+ */
+function diffPlan(a, b, now = Date.now()) {
   const old = new Map([...a.phases, ...a.runs].map(n => [n.id, n.state]));
+  const w = planWrites.get(planFile(b));
+  const by = w && now - w.at <= PLAN_WRITE_MS ? w : null;
+  const key = planKeyOf(b);
   for (const n of [...b.phases, ...b.runs]) {
     const was = old.get(n.id);
-    if (was && was !== n.state) pushFeed({ id: null, project: b.project }, 'plan', `${b.title}: ${n.id} ${was} → ${n.state}`);
+    if (!was || was === n.state) continue;
+    const hist = planHistory.get(key) || [];
+    hist.push({ at: now, id: n.id, from: was, to: n.state, sessionId: by?.sessionId ?? null, agentId: by?.agentId ?? null });
+    if (hist.length > HISTORY_MAX) hist.splice(0, hist.length - HISTORY_MAX);
+    planHistory.set(key, hist);
+    const itemKey = `${key}#${n.id}`;
+    boardTrack.set(itemKey, { ...newTrack(), ...boardTrack.get(itemKey), changedAt: now });
+    const who = by && n.state === 'in-progress' ? agentLabel(by) : null;
+    pushFeed({ id: null, project: b.project }, 'plan', who ? `${b.title}: ${n.id} claimed by ${truncate(oneLine(who), 80)}` : `${b.title}: ${n.id} ${was} → ${n.state}`);
   }
   const asked = new Set(a.needsYou.map(x => `${x.kind}:${x.id}:${x.text}`));
   for (const x of b.needsYou) {
     if (!asked.has(`${x.kind}:${x.id}:${x.text}`)) pushFeed({ id: null, project: b.project }, 'needs-you', `${b.title}: ${x.kind === 'decision' ? 'decision' : 'question'} ${x.id ?? ''} waiting on you`.replace(/\s+/g, ' '));
+  }
+}
+
+// =====================================================================================================================
+// Board following (hud-0-3 D1 to D5, PLAN §4.2). The HUD links agents to board items from evidence and marks where the
+// board and the agents disagree. It never writes to a board. The evidence is kept raw, as ID-shaped words and plan-file
+// keys, and resolved in snapshot(): a transcript is often read before its plan. Nothing of it is kept on disk.
+
+const ID_WORD_RE = /(?<![\w/\\.-])(?:([a-z0-9][\w.-]*)\/)?([A-Z]{1,4}-?\d+(?:-\d+)?)(?![\w-])/g;
+const PROMPT_NOISE_RE = /<(system-reminder|bash-stdout|bash-stderr|local-command-stdout)>[\s\S]*?<\/\1>/g;
+const PLAN_TOOLS = new Set(['Read', 'Edit', 'Write', 'MultiEdit']);
+const PLAN_PATH_RE = /(?:^|[\\/])(?:docs|documentation|doc)[\\/].*\.md$/i;
+const FINISHED = new Set(['handed-off', 'accepted', 'done']);
+const OWNER_AGENTS = /^(human|owner)$/i;
+const MARK_WORDS = { unclaimed: 'board not updated', stalled: 'stalled', early: 'started early' };
+
+/** ID-shaped words, in text order: `<slug>/<ID>` and bare `<ID>`, an ID being `[A-Z]{1,4}-?\d+(-\d+)?` (runs: R<n>, S<n>). */
+function idWords(text, max = 200) {
+  const out = [];
+  if (typeof text !== 'string' || !text) return out;
+  for (const m of text.matchAll(ID_WORD_RE)) { out.push(m[1] ? `${m[1]}/${m[2]}` : m[2]); if (out.length >= max) break; }
+  return out;
+}
+/**
+ * Adds one prompt's ID-shaped words to holder.refs (prompts, oldest first, each a list of words) and drops the text
+ * (D3). At most REFS_MAX words are kept: bare IDs go first, since they only count as mentions, so a `<slug>/<ID>`
+ * assignment outlives the IDs that later prompts list.
+ */
+function addPrompt(holder, text) {
+  const words = idWords(typeof text === 'string' ? text.replace(PROMPT_NOISE_RE, ' ') : '');
+  if (!words.length) return;
+  const refs = holder.refs;
+  refs.push(words);
+  let n = refs.reduce((a, p) => a + p.length, 0);
+  for (let i = 0; i < refs.length && n > REFS_MAX; i++) {
+    const p = refs[i];
+    for (let k = 0; k < p.length && n > REFS_MAX;) { if (p[k].includes('/')) k++; else { p.splice(k, 1); n--; } }
+  }
+  while (n > REFS_MAX && refs.length) { refs[0].shift(); n--; if (!refs[0].length) refs.shift(); }
+  for (let i = refs.length - 1; i >= 0; i--) if (!refs[i].length) refs.splice(i, 1);
+}
+function promptRefs(text) { const h = { refs: [] }; addPrompt(h, text); return h.refs.length ? h.refs : null; }
+
+/**
+ * The key of a plan file an agent read or wrote, `<project>|<path from the project root>` lower-cased with forward
+ * slashes, or null outside a docs folder. Either slash and any case give the same key, and a file in a worktree gets
+ * the main repository's project (rootFor), so it belongs to the main repository's plan.
+ */
+function planFileKey(file, cwd) {
+  file = str(file);
+  if (!file || !PLAN_PATH_RE.test(file)) return null;
+  if (!path.isAbsolute(file)) { if (!cwd) return null; file = path.resolve(cwd, file); }
+  const abs = path.resolve(file);
+  const r = rootFor(path.dirname(abs));
+  const rel = path.relative(r.root, abs).replace(/\\/g, '/');
+  return /^(?:docs|documentation|doc)\//i.test(rel) ? `${r.project}|${rel}`.toLowerCase() : null;
+}
+/** Records a plan file an agent read or wrote, once per tool-use id, oldest first, at most TOUCHED_MAX. */
+function noteTouched(list, id, file, write, at) {
+  if (id && list.some(x => x.id === id)) return;
+  let k = list.length;
+  while (k > 0 && list[k - 1].at > at) k--;
+  list.splice(k, 0, { id: id || null, file, write, at });
+  if (list.length > TOUCHED_MAX) list.splice(0, list.length - TOUCHED_MAX);
+}
+function mergeTouched(a, b) {
+  if (!b?.length) return a || [];
+  if (!a?.length) return b;
+  const out = [...a];
+  for (const x of b) if (!x.id || !out.some(y => y.id === x.id)) out.push(x);
+  return out.sort((p, q) => p.at - q.at).slice(-TOUCHED_MAX);
+}
+function noteWrite(file, sessionId, agentId, at) {
+  if (!sessionId) return;
+  const prev = planWrites.get(file);
+  if (prev && prev.at > at) return;
+  planWrites.delete(file);
+  planWrites.set(file, { sessionId, agentId: agentId ?? null, at });
+  if (planWrites.size > 500) planWrites.delete(planWrites.keys().next().value);
+}
+/** A Read, Edit, Write or MultiEdit hook on a plan file. PostToolUse moves the write's time to when it happened. */
+function hookTouch(s, sub, p, id, name, at) {
+  if (!PLAN_TOOLS.has(name) || !isObj(p.tool_input)) return;
+  const key = planFileKey(p.tool_input.file_path, str(p.cwd) || s.cwd);
+  if (!key) return;
+  noteTouched((sub || s).touched, id, key, name !== 'Read', at);
+  if (name !== 'Read') noteWrite(key, s.id, sub?.agentId ?? null, at);
+}
+/** Who wrote a board, for its "claimed by" line: a subagent's description, or a session's title. */
+function agentLabel(w) {
+  const s = sessions.get(w.sessionId);
+  if (!s) return null;
+  if (w.agentId) { const sub = s.byAgent.get(w.agentId); return sub ? sub.description || sub.type || null : null; }
+  return s.tail?.info.customTitle || s.tail?.info.title || s.name || null;
+}
+
+/** The plans, indexed once per snapshot for resolveWork() and boardState(). */
+function indexPlans(planList) {
+  const list = [], byProject = new Map(), byKey = new Map(), files = new Map(), dirs = new Map();
+  for (const p of planList) {
+    const nodes = new Map();
+    for (const n of [...(p.phases || []), ...(p.runs || [])]) if (!nodes.has(n.id)) nodes.set(n.id, n);
+    const P = { key: planKeyOf(p), slug: p.slug.toLowerCase(), plan: p, nodes, mtime: p.touchedAt || 0 };
+    list.push(P); byKey.set(P.key, P);
+    if (!byProject.has(p.project)) byProject.set(p.project, []);
+    byProject.get(p.project).push(P);
+    const file = planFile(p);
+    files.set(file, P);
+    // A plan folder's PLAN.md and handoffs/ belong to its board; with two boards in one folder, to neither.
+    if (p.size !== 'small') { const dir = file.slice(0, file.lastIndexOf('/')); dirs.set(dir, dirs.has(dir) ? null : P); }
+  }
+  return { list, byProject, byKey, files, dirs };
+}
+/** The plan a plan-file key belongs to: its board, or the PLAN.md or a file in handoffs/ next to the board. */
+function planOfFile(file, ix) {
+  const own = ix.files.get(file);
+  if (own) return own;
+  const cut = file.lastIndexOf('/'), dir = file.slice(0, cut), base = file.slice(cut + 1);
+  if (base === 'plan.md') return ix.dirs.get(dir) || null;
+  const up = dir.lastIndexOf('/');
+  return up > 0 && dir.slice(up + 1) === 'handoffs' ? ix.dirs.get(dir.slice(0, up)) || null : null;
+}
+/** A branch `<slug>` or `<slug>/<ID or run>`, maybe followed by `-words`. Branch IDs may be in lower case. */
+function branchRef(branch) {
+  const m = /^([^/\s]+)(?:\/([A-Za-z]{1,4}-?\d+(?:-\d+)?)(?=$|[-_./](?!\d)))?/.exec(str(branch));
+  return m ? { slug: m[1].toLowerCase(), id: m[2] ? m[2].toUpperCase() : null } : null;
+}
+
+/**
+ * The board items one agent works on (PLAN hud-0-3 §4.2 steps 1 to 3). Pure. `agent` is its evidence: { project,
+ * label (a session's title or a subagent's description), refs (its prompts, oldest first, each a list of ID-shaped
+ * words), touched ([{ file, write, at }], oldest first), branch }. `parentWork` is the work of whoever started it, and
+ * `ix` is indexPlans(). Returns { plan, items: [{ id, via, plan }], role: 'worker' } or null.
+ *
+ * `<slug>/<ID>` words are read from the newest prompt back, so a session given a second item works on that one. An
+ * item outside the home plan keeps its own `plan`; with no home plan, the first item's plan is the agent's plan.
+ */
+function resolveWork(agent, parentWork, ix) {
+  const cands = ix.byProject.get(agent.project);
+  if (!cands?.length) return null;
+  const bySlug = slug => cands.find(P => P.slug === slug.toLowerCase()) || null;
+  const prompts = agent.refs || [];
+  const slugRefs = [];
+  for (let i = prompts.length - 1; i >= 0; i--) {
+    for (const w of prompts[i]) { const cut = w.indexOf('/'); if (cut > 0) slugRefs.push([w.slice(0, cut), w.slice(cut + 1)]); }
+  }
+  // 2. The home plan: the first match wins.
+  let home = null;
+  for (const [slug] of slugRefs) if ((home = bySlug(slug))) break;
+  if (!home) {
+    let pick = null, write = null;
+    for (const t of agent.touched || []) {
+      const P = planOfFile(t.file, ix);
+      if (!P || !cands.includes(P)) continue;
+      pick = { t, P };
+      if (t.write) write = pick;
+    }
+    if (pick && !pick.t.write && write && pick.t.at - write.t.at <= 10 * 60_000) pick = write;   // a write beats a read made soon after it
+    home = pick?.P ?? null;
+  }
+  const br = branchRef(agent.branch);
+  if (!home && br) home = bySlug(br.slug);
+  if (!home && parentWork?.plan) home = cands.find(P => P.key === parentWork.plan) || null;
+  // 3. The items, at most ITEMS_MAX. A run links itself and its current item (its first chunk not finished).
+  const items = [];
+  const add = (P, id, via) => {
+    const n = P.nodes.get(id);
+    if (!n) return;
+    for (const x of n.kind === 'run' ? [id, (n.chunks || []).find(c => !FINISHED.has(P.nodes.get(c)?.state))] : [id]) {
+      if (x && items.length < ITEMS_MAX && !items.some(i => i.plan === P.key && i.id === x)) items.push({ id: x, via, plan: P.key });
+    }
+  };
+  for (const [slug, id] of slugRefs) { const P = bySlug(slug); if (P?.nodes.has(id)) { add(P, id, 'ref'); break; } }
+  for (const w of idWords(agent.label || '')) {
+    const cut = w.indexOf('/'), id = cut > 0 ? w.slice(cut + 1) : w;
+    let P = cut > 0 ? bySlug(w.slice(0, cut)) : null;
+    if (!P?.nodes.has(id)) {
+      const having = cands.filter(c => c.nodes.has(id));
+      const open = having.filter(c => !FINISHED.has(c.nodes.get(id).state));
+      P = home?.nodes.has(id) ? home : having.length === 1 ? having[0] : open.length === 1 ? open[0] : null;   // else: nothing (D2)
+    }
+    if (P) add(P, id, 'name');
+  }
+  if (br?.id) { const P = bySlug(br.slug); if (P) add(P, br.id, 'branch'); }
+  const plan = home?.key ?? items[0]?.plan ?? null;
+  return plan ? { plan, items, role: 'worker' } : null;
+}
+/** Resolves every agent, parents first (step 2.4), then step 4: whoever has a subagent linked in its own plan coordinates. */
+function linkAgents(agents, ix) {
+  const byKey = new Map(agents.map(e => [e.key, e]));
+  const visit = (e, depth) => {
+    if (e.work !== undefined) return e.work;
+    e.work = null;                        // an agent in a cycle of parents resolves without one
+    const p = e.parent ? byKey.get(e.parent) : null;
+    return (e.work = resolveWork(e, p && depth < 20 ? visit(p, depth + 1) : null, ix));
+  };
+  for (const e of agents) visit(e, 0);
+  for (const e of agents) {
+    const p = e.agentId && e.parent ? byKey.get(e.parent) : null;
+    if (p?.work && e.work?.items.some(i => i.plan === p.work.plan)) p.work.role = 'coordinator';
+  }
+}
+function newTrack() { return { inFlightSince: null, lastInFlightAt: 0, changedAt: 0, on: new Set() }; }
+/**
+ * state.board (PLAN hud-0-3 §4.2, §4.3) from resolved agents: links, marks and lists. `track` keeps each item's clocks
+ * between calls (boardTrack; the demo has its own): when its current unbroken stretch in flight began, when it was last
+ * in flight, when it last changed state (diffPlan), and its marks at the last call. Nothing before `floor` (the HUD's
+ * start) counts, so after a restart `stalled` counts from the restart. Returns { board, turnedOn: [{ P, node, flag }] }.
+ */
+function boardState(agents, ix, { now, track, unclaimedMs = UNCLAIMED_MS, stalledMs = STALLED_MS, floor = hudStartedAt }) {
+  const items = {}, plans = {}, ready = [], awaiting = [], ownerInputs = [], turnedOn = [];
+  const item = k => (items[k] ??= { agents: [], flags: [], since: null });
+  for (const e of agents) {
+    const w = e.work;
+    if (!w) continue;
+    if (e.active) for (const pk of new Set([w.plan, ...w.items.map(i => i.plan)])) (plans[pk] ??= { active: 0 }).active++;
+    for (const i of w.items) item(`${i.plan}#${i.id}`).agents.push({ sessionId: e.sessionId, agentId: e.agentId, active: e.active, via: i.via, role: w.role });
+  }
+  const live = new Set();
+  for (const P of ix.list) {
+    const std = P.plan.format === 'standard';
+    const inRun = new Set(std ? (P.plan.runs || []).flatMap(r => r.chunks || []) : []);
+    const done = id => !P.nodes.has(id) || FINISHED.has(P.nodes.get(id).state);
+    for (const n of P.nodes.values()) {
+      const k = `${P.key}#${n.id}`;
+      live.add(k);
+      const x = items[k], deps = n.waitsFor || [];
+      const inFlight = !!x && x.agents.some(a => a.active);
+      let t = track.get(k);
+      if (inFlight) { if (!t) track.set(k, (t = newTrack())); t.inFlightSince ??= now; t.lastInFlightAt = now; }
+      else if (t) t.inFlightSince = null;
+      const flags = [];
+      let since = inFlight ? t.inFlightSince : null;
+      if (n.state === 'todo' && inFlight && now - t.inFlightSince >= unclaimedMs) flags.push('unclaimed');
+      if (n.state === 'in-progress' && !inFlight) {
+        since = Math.max(floor, t?.lastInFlightAt || 0, t?.changedAt || 0, P.mtime);
+        if (now - since >= stalledMs) flags.push('stalled');
+      }
+      if ((n.state === 'in-progress' || inFlight) && deps.some(d => !done(d))) flags.push('early');
+      if (x || flags.length) { const it = item(k); it.flags = flags; it.since = since; }
+      if (flags.length || t?.on.size) {
+        if (!t) track.set(k, (t = newTrack()));
+        for (const f of flags) if (!t.on.has(f)) turnedOn.push({ P, node: n, flag: f });
+        t.on = new Set(flags);
+      }
+      if (!std) continue;   // the lists need the standard's states and owner inputs
+      if (n.state === 'handed-off') awaiting.push({ plan: P.key, id: n.id });
+      // Ready: an item to start, or a run. An item that is part of a run starts with its run, not on its own.
+      if (n.state === 'todo' && !inFlight && n.kind !== 'input' && !OWNER_AGENTS.test(n.agent || '') && !inRun.has(n.id) && deps.every(done)) {
+        ready.push({ plan: P.key, id: n.id, run: n.kind === 'run' });
+      }
+      if (n.kind === 'input' && n.state === 'todo') {
+        const unlocks = [];
+        for (const m of P.nodes.values()) if ((m.state === 'todo' || m.state === 'blocked') && m.kind !== 'input' && (m.waitsFor || []).includes(n.id)) unlocks.push(m.id);
+        if (unlocks.length) ownerInputs.push({ plan: P.key, id: n.id, unlocks });
+      }
+    }
+  }
+  for (const k of track.keys()) if (!live.has(k)) track.delete(k);
+  return { board: { items, plans, ready, awaiting, ownerInputs }, turnedOn };
+}
+/** Links `agents` (see liveAgents) to the boards of `planList`, puts `work` on each one's view, and builds state.board. */
+function followBoards(agents, planList, opts) {
+  const ix = indexPlans(planList);
+  linkAgents(agents, ix);
+  for (const e of agents) e.view.work = e.work;
+  return boardState(agents, ix, opts);
+}
+/** The evidence of every session and subagent in the state's list (§4.2): parents are keyed `<sessionId>` and `<sessionId>/<id>`. */
+function liveAgents(list) {
+  const out = [];
+  for (const x of list) {
+    const s = sessions.get(x.id), info = s?.tail?.info;
+    out.push({ key: x.id, parent: x.startedBy || null, sessionId: x.id, agentId: null, view: x, project: x.project,
+      label: x.title, refs: info?.refs, touched: mergeTouched(info?.touched, s?.touched), branch: x.branch,
+      active: x.status === 'busy' || x.status === 'needs-you' });
+    for (const a of x.subagents || []) {
+      const sub = s && (s.byAgent.get(a.id) || s.byToolUse.get(a.id));
+      const own = sub ? sub.tail?.info : sessions.get(a.id)?.tail?.info;   // or a Codex child session drawn as a subagent
+      out.push({ key: `${x.id}/${a.id}`, parent: a.parentId === x.id ? x.id : `${x.id}/${a.parentId}`, sessionId: x.id, agentId: a.id,
+        view: a, project: x.project, label: a.description, refs: sub ? sub.refs || own?.refs : null,
+        touched: sub ? mergeTouched(own?.touched, sub.touched) : [], branch: own?.branch || x.branch, active: a.state === 'running' });
+    }
+  }
+  return out;
+}
+/** A mark that turns on writes one feed line, once per item and mark (D4). Marks already on at start are not news. */
+function announceMarks(turnedOn, now) {
+  for (const { P, node, flag } of turnedOn) {
+    const key = `mark:${P.key}#${node.id}:${flag}`;
+    if (now - hudStartedAt < STARTUP_MS) { feedSeen.add(key); continue; }
+    pushFeed({ id: null, project: P.plan.project }, 'plan', `${P.plan.title}: ${node.id} ${MARK_WORDS[flag]}`, now, key);
   }
 }
 
@@ -1861,10 +2216,13 @@ function snapshot() {
   const today = dayKey(now);
   const tokensToday = zero();
   for (const t of tails.values()) { const d = t.info.byDay.get(today); if (d) addTokens(tokensToday, d); }
-  // Plans carry when their board last changed. Which sessions work in a project is counted by the page (hud-0-3 P3):
-  // nothing in a plan changes with a session, so the stream sends plans only when a board changes.
-  const planList = [...plans.values()].map(v => ({ ...v.plan, touchedAt: Math.round(v.mtime) }))
+  // Plans carry when their board last changed and their last state changes (history). Nothing in a plan changes with a
+  // session, so the stream sends plans only when a board changes (hud-0-3 P3); what links sessions to boards is in
+  // `board`, which goes with every state.
+  const planList = [...plans.values()].map(v => ({ ...v.plan, touchedAt: Math.round(v.mtime), history: planHistory.get(planKeyOf(v.plan)) || [] }))
     .sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
+  const { board, turnedOn } = followBoards(liveAgents(list), planList, { now, track: boardTrack });
+  announceMarks(turnedOn, now);
   return {
     now, uptime: now - hudStartedAt, demo: false, version: VERSION, host: HOSTNAME, hooksInstalled,
     codex: { ...codexMonitoring, directories: CODEX_ROOTS },
@@ -1873,6 +2231,7 @@ function snapshot() {
     externalError,
     projects: projectsView(),
     plans: planList,
+    board,
     feed: feed.slice(-FEED_SNAPSHOT).reverse(),
     account,
     totals: totalsFor(list, planList, tokensToday),
@@ -1977,6 +2336,11 @@ function handle(req, res) {
         let j;
         try { j = JSON.parse(text); } catch { return send(res, 400, 'Bad JSON\n'); }
         if (p === '/event') {
+          // The forwarder omits prompts. Drop them from direct posts too, before recording the event.
+          if (isObj(j)) {
+            delete j.prompt;
+            if (isObj(j.tool_input)) delete j.tool_input.prompt;
+          }
           // HUD_RECORD=<file> (off unless set, D14): each accepted hook event, redacted, as one JSON line, for tests.
           if (process.env.HUD_RECORD) {
             try { fs.appendFileSync(path.resolve(process.env.HUD_RECORD), JSON.stringify(redactDeep(j)) + '\n'); }
@@ -4953,6 +5317,11 @@ function makeDemo(mode) {
   const sessionsList = [];
   const feedList = [];
   const addFeed = (s, kind, text) => { const line = { at: Date.now(), sessionId: s?.id ?? null, project: s?.project ?? null, kind, text }; feedList.push(line); if (feedList.length > FEED_MAX) feedList.shift(); broadcast('event', line); };
+  // Board following (hud-0-3 P4): each agent's made-up evidence beside its label and branch, the marks' clocks, and the
+  // marks already announced. The demo's state goes through the same followBoards() as the real one.
+  const evidence = new Map();   // session or subagent id -> { refs, touched }
+  const track = new Map(), announced = new Set();
+  const WM2_SLUG = 'customer-history-and-change-requests';
 
   function session(o) {
     const model = o.modelRaw || 'claude-opus-5-5';
@@ -4967,6 +5336,7 @@ function makeDemo(mode) {
       _ctx: o.ctx ?? rnd(6, 48),
     };
     if (s.status === 'busy' || s.status === 'needs-you') setTool(s);
+    if (o.refs || o.touched) evidence.set(s.id, { refs: o.refs, touched: o.touched });
     sessionsList.push(s);
     return s;
   }
@@ -4977,24 +5347,30 @@ function makeDemo(mode) {
       state: o.state || 'running', background: !!o.background, startedAt: Date.now() - (o.age || 40) * 1000, endedAt: o.state === 'done' ? Date.now() - 20_000 : null,
       tokens: tok(0.3), context: null, currentTool: null, _ctx: rnd(5, 40) };
     if (a.state === 'running') setTool(a);
+    if (o.refs || o.touched) evidence.set(a.id, { refs: o.refs, touched: o.touched });
     s.subagents.push(a);
     return a;
   }
   function setTool(x) { const [name, summary] = pick(TOOLS); x.currentTool = { name, summary, since: Date.now() - rnd(0, 20) * 1000 }; }
   function grow(x) { x.tokens.output += rnd(20, 400); x.tokens.cacheRead += rnd(2_000, 30_000); x.tokens.cacheWrite += rnd(0, 3_000); x.tokens.input += rnd(0, 3); }
 
-  let coordinator, flipper, cycler = null;
+  // Board links (hud-0-3 P4), one of each kind: the FidiaCRM session by the IDs in its title (R14, so its current chunk
+  // UX-10 too), the coordinator by its title and the board it wrote, its first subagent by the `<slug>/<ID>` of its
+  // prompt, the Codex session by its title (UX-12, started early), the TourCMS waiter by its branch, and its subagent by
+  // its description (P4, worked on while todo: "board not updated").
+  let coordinator, flipper, cycler = null, explore = null, codex = null, waiter = null;
   if (!dense) {
-    session({ project: 'FidiaCRM', title: 'Quotation wizard: totals, VAT rows and the discount line', status: 'needs-you', needsYou: 'Permission: Bash', needsFor: 95, branch: 'ux/R14-quotation-wizard', scale: 2 });
-    coordinator = session({ project: 'WasteManagement2', title: 'Coordinator: customer history plan, phases P2 and P3', status: 'busy', branch: 'customer-history', scale: 4, ctx: 42, age: 5400 });
-    const explore = sub(coordinator, coordinator.id, 1, AGENT_JOBS[0], { age: 120 });
+    session({ project: 'FidiaCRM', title: 'R14 quotation screens: totals, VAT rows and the discount line', status: 'needs-you', needsYou: 'Permission: Bash', needsFor: 95, branch: 'ux/R14-quotation-wizard', scale: 2 });
+    coordinator = session({ project: 'WasteManagement2', title: 'Coordinator: customer history plan, phases P2 and P3', status: 'busy', branch: 'customer-history', scale: 4, ctx: 42, age: 5400,
+      touched: [{ id: 'demo-edit-1', file: `wastemanagement2|docs/plans/${WM2_SLUG}/status.md`, write: true, at: t0 - 600_000 }] });
+    explore = sub(coordinator, coordinator.id, 1, ['general-purpose', 'P2 history tab and header'], { age: 120, refs: [[`${WM2_SLUG}/P2`]] });
     sub(coordinator, explore.id, 2, AGENT_JOBS[1], { age: 50, modelRaw: 'claude-haiku-5-5' });
     cycler = sub(coordinator, coordinator.id, 1, AGENT_JOBS[2], { age: 10, modelRaw: 'claude-haiku-5-5' });
-    session({ project: 'FidiaCRM', agent: 'codex', title: 'Clients: contact length limits (P3-06)', status: 'idle', branch: 'clients/P3-06', quiet: 900, effort: 'medium', modelRaw: 'gpt-6-astra' });
+    codex = session({ project: 'FidiaCRM', agent: 'codex', title: 'Clients: contact length limits (UX-12)', status: 'idle', branch: 'clients/UX-12', quiet: 900, effort: 'medium', modelRaw: 'gpt-6-astra' });
     const ended = session({ project: 'WasteManagement2', title: 'Say hi', status: 'ended', endedAgo: 180, age: 240, effort: 'low', modelRaw: 'claude-haiku-5-5', scale: 0.1 });
     ended.startedBy = coordinator.id;
-    const waiter = session({ project: 'TourCMS', title: 'Booking changes: waiting on the review agent', status: 'idle', quiet: 40, branch: 'booking-changes', modelRaw: 'claude-sonnet-5-5', effort: 'medium' });
-    sub(waiter, waiter.id, 1, ['general-purpose', 'Review the date-change edge cases'], { age: 90, background: true });   // hud-0-3 D6: "Agents working"
+    waiter = session({ project: 'TourCMS', title: 'Booking changes: waiting on the review agent', status: 'idle', quiet: 40, branch: 'booking-changes/P4-price-check', modelRaw: 'claude-sonnet-5-5', effort: 'medium' });
+    sub(waiter, waiter.id, 1, ['general-purpose', 'P4 price check for changed dates'], { age: 90, background: true });   // hud-0-3 D6: "Agents working"
     flipper = session({ project: 'ImPOS-Maui', title: 'Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners', status: 'busy', branch: 'phone-app', modelRaw: 'us.anthropic.claude-sonnet-5-5-v1:0', scale: 2 });
   } else {
     const projects = ['FidiaCRM', 'WasteManagement2', 'ImPOS-Maui', 'TourCMS', 'Aegis', 'fidiagraf.com'];
@@ -5002,8 +5378,12 @@ function makeDemo(mode) {
     for (let i = 0; i < 24; i++) {
       const status = statuses[i % statuses.length];
       const s = session({ project: projects[i % projects.length], title: `${pick(['Fix', 'Build', 'Review', 'Plan', 'Migrate'])} ${pick(['quotation totals', 'the history tab', 'Xiaomi autostart', 'booking changes', 'the tour calendar', 'invoice OCR', 'the deployment guide for the first agency server'])}`,
-        status, needsYou: status === 'needs-you' ? pick(['Permission: Bash', 'Question for you', 'Permission: Edit']) : null, modelRaw: i % 7 === 3 ? 'global.anthropic.claude-opus-5-5-v1:0' : pick(['claude-opus-5-5', 'claude-sonnet-5-5']), quiet: status === 'idle' ? rnd(60, 3000) : 2 });
-      if (status === 'busy' && i % 3 === 1) { const a = sub(s, s.id, 1, pick(AGENT_JOBS)); if (i % 2) sub(s, a.id, 2, pick(AGENT_JOBS)); }
+        status, needsYou: status === 'needs-you' ? pick(['Permission: Bash', 'Question for you', 'Permission: Edit']) : null, modelRaw: i % 7 === 3 ? 'global.anthropic.claude-opus-5-5-v1:0' : pick(['claude-opus-5-5', 'claude-sonnet-5-5']), quiet: status === 'idle' ? rnd(60, 3000) : 2,
+        refs: i === 1 ? [[`${WM2_SLUG}/P2`]] : undefined });
+      if (status === 'busy' && i % 3 === 1) {
+        const a = sub(s, s.id, 1, i === 1 ? ['general-purpose', 'P3 change requests'] : pick(AGENT_JOBS));
+        if (i % 2) sub(s, a.id, 2, pick(AGENT_JOBS));
+      }
       if (i === 3) sub(s, s.id, 1, pick(AGENT_JOBS), { background: true });   // an idle parent waiting on a subagent (D6)
     }
     coordinator = sessionsList[1];
@@ -5018,16 +5398,18 @@ function makeDemo(mode) {
     project: 'WasteManagement2', slug: 'customer-history-and-change-requests', title: 'Customer change history and change requests',
     path: `${repo('WasteManagement2')}\\docs\\plans\\customer-history-and-change-requests\\STATUS.md`,
     phases: [['P1', 'Data and history', 'data', []], ['P2', 'History tab and header', 'history-ui', ['P1']], ['P3', 'Change requests in the service', 'requests', ['P1']], ['P4', 'Verification and cleanup', 'verify', ['P2', 'P3']]]
-      .map(([id, name, agent, waitsFor]) => ({ id, name, agent, state: 'todo', stateRaw: 'todo', since: null, waitsFor, notes: waitsFor.length ? `Waits for ${waitsFor.join(' and ')}` : null, group: 'Board', kind: 'phase', model: 'Opus 5.5', effort: 'high' })),
+      .map(([id, name, agent, waitsFor]) => ({ id, name, agent, state: 'todo', stateRaw: 'todo', since: null, waitsFor, notes: waitsFor.length ? `Waits for ${waitsFor.join(' and ')}` : null, group: 'Board', kind: 'phase', model: 'Opus 5.5', effort: 'high', handoff: false })),
     format: 'standard', size: 'phased', state: 'building', stateDate: null, needsYou: [],
     runs: [], lastLog: ['2026-10-29 · planner · — · Plan written.', '2026-10-29 · planner · P0 · All decisions confirmed. P1 can start.'],
+    touchedAt: t0, history: [],
   };
   const chunkPlan = {
     project: 'FidiaCRM', slug: 'Documentation/Implementation/STATUS', title: 'Implementation', path: `${repo('FidiaCRM')}\\Documentation\\Implementation\\STATUS.md`,
     phases: [
       ...['Spec, tokens, gates', 'Frame and action bars', 'Table system'].map((name, i) => ({ id: `UX-0${i + 1}`, name, agent: null, state: 'done', stateRaw: 'done (2026-10-28)', since: '2026-10-28', waitsFor: i ? [`UX-0${i}`] : [], notes: null, group: 'Phase 12: UI/UX upgrade', kind: 'chunk', model: 'Opus 5.5', effort: 'high' })),
-      ...['Quotation wizard and case wizard', 'Quotations', 'Clients'].map((name, i) => ({ id: `UX-1${i}`, name, agent: null, state: i === 0 ? 'in-progress' : 'todo', stateRaw: i === 0 ? 'in progress (2026-10-29)' : 'todo', since: i === 0 ? '2026-10-29' : null, waitsFor: i === 2 ? ['UX-03', 'O-9'] : ['UX-03'], notes: null, group: 'Phase 12: UI/UX upgrade', kind: 'chunk', model: i ? 'Sonnet 5.5' : 'Opus 5.5', effort: 'high' })),
-      { id: 'UX-20', name: 'Sweep and owner review', agent: null, state: 'todo', stateRaw: 'todo', since: null, waitsFor: ['UX-10', 'UX-11', 'UX-12'], notes: null, group: 'Phase 12: UI/UX upgrade', kind: 'chunk', model: 'Opus 5.5', effort: 'high' },
+      // UX-12 was claimed before the owner input it waits for (started early); UX-13 has had nobody on it for 50 minutes (stalled).
+      ...['Quotation wizard and case wizard', 'Quotations', 'Clients', 'Invoices'].map((name, i) => ({ id: `UX-1${i}`, name, agent: null, state: i === 1 ? 'todo' : 'in-progress', stateRaw: i === 1 ? 'todo' : 'in progress (2026-10-29)', since: i === 1 ? null : '2026-10-29', waitsFor: i === 2 ? ['UX-03', 'O-9'] : ['UX-03'], notes: null, group: 'Phase 12: UI/UX upgrade', kind: 'chunk', model: i % 2 ? 'Sonnet 5.5' : 'Opus 5.5', effort: 'high' })),
+      { id: 'UX-20', name: 'Sweep and owner review', agent: null, state: 'todo', stateRaw: 'todo', since: null, waitsFor: ['UX-10', 'UX-11', 'UX-12', 'UX-13'], notes: null, group: 'Phase 12: UI/UX upgrade', kind: 'chunk', model: 'Opus 5.5', effort: 'high' },
       { id: 'O-9', name: 'Production column sizes for client contacts', agent: null, state: 'todo', stateRaw: 'wanted', since: null, waitsFor: [], notes: null, group: 'Owner inputs', kind: 'input', model: null, effort: null },
     ],
     runs: [
@@ -5037,15 +5419,28 @@ function makeDemo(mode) {
     format: 'legacy', size: 'phased', state: null, stateDate: null,
     needsYou: [{ kind: 'question', id: '3', item: 'UX-12', text: 'Contact names longer than 60 characters: cut them, or widen the column to 120?' }],
     lastLog: [],
+    touchedAt: t0 - 50 * 60_000,
+    history: [{ at: t0 - 50 * 60_000, id: 'UX-13', from: 'todo', to: 'in-progress', sessionId: null, agentId: null },
+      ...(codex ? [{ at: t0 - 20 * 60_000, id: 'UX-12', from: 'todo', to: 'in-progress', sessionId: codex.id, agentId: null }] : [])],
   };
+  // One of each list (D5): P1 waits to be accepted, P2 is ready, O-1 is the owner input P3 waits for. P4 is worked on.
   const smallPlan = {
     project: 'TourCMS', slug: 'booking-changes', title: 'Booking changes', path: `${repo('TourCMS')}\\docs\\plans\\booking-changes.md`,
     format: 'standard', size: 'small', state: 'approved', stateDate: '2026-10-28',
     needsYou: [{ kind: 'decision', id: 'D2', text: 'D2 A changed booking keeps its original price unless the tour price went down ★' }],
-    phases: [['P1', 'Change dates', 'todo'], ['P2', 'Change people', 'todo']].map(([id, name, state], i) => ({ id, name, agent: 'bookings', state, stateRaw: state, since: null, waitsFor: i ? ['P1'] : [], notes: null, group: 'Board', kind: 'item', model: 'Sonnet 5.5', effort: 'high' })),
+    phases: [['P1', 'Change dates', 'handed-off', [], 'bookings'], ['P2', 'Change people', 'todo', ['P1'], 'bookings'], ['P3', 'Refunds for changed bookings', 'todo', ['P1', 'O-1'], 'bookings'],
+      ['O-1', 'Refund policy from the owner', 'todo', [], 'owner'], ['P4', 'Price check for changed dates', 'todo', [], 'pricing']]
+      .map(([id, name, state, waitsFor, agent]) => ({ id, name, agent, state, stateRaw: state, since: state === 'todo' ? null : '2026-10-29', waitsFor, notes: null, group: 'Board', kind: id.startsWith('O-') ? 'input' : 'item',
+        model: agent === 'owner' ? null : 'Sonnet 5.5', effort: agent === 'owner' ? null : 'high', handoff: id === 'P1' })),
     runs: [], lastLog: [],
+    touchedAt: t0 - 2 * 3600_000,
+    history: waiter ? [{ at: t0 - 3 * 3600_000, id: 'P1', from: 'todo', to: 'in-progress', sessionId: waiter.id, agentId: null },
+      { at: t0 - 2 * 3600_000, id: 'P1', from: 'in-progress', to: 'handed-off', sessionId: waiter.id, agentId: null }] : [],
   };
-  for (const n of [...plan.phases, ...chunkPlan.phases, ...chunkPlan.runs, ...smallPlan.phases]) n.waitsForOther = [];
+  for (const n of [...plan.phases, ...chunkPlan.phases, ...chunkPlan.runs, ...smallPlan.phases]) { n.waitsForOther = []; n.handoff ??= false; }
+  // The marks' clocks: P4 has been worked on for 4 minutes, UX-12's Codex session was last busy 15 minutes ago.
+  track.set(`TourCMS|booking-changes#P4`, { ...newTrack(), inFlightSince: t0 - 4 * 60_000 });
+  track.set(`FidiaCRM|${chunkPlan.slug}#UX-12`, { ...newTrack(), lastInFlightAt: t0 - 15 * 60_000 });
   const projectList = [
     { project: 'FidiaCRM', root: repo('FidiaCRM'), headline: null, standard: false, git: null },
     { project: 'ImPOS-Maui', root: repo('ImPOS-Maui'), headline: 'Point of sale for small shops: a MAUI phone app and a Blazor back office.', standard: true, git: 'you commit' },
@@ -5088,9 +5483,17 @@ function makeDemo(mode) {
     if (step !== planStep) {
       PLAN_STEPS[step].forEach((st, i) => {
         const ph = plan.phases[i];
-        if (planStep >= 0 && ph.state !== st) addFeed({ project: plan.project }, 'plan', `${plan.title}: ${ph.id} ${ph.state} → ${st}`);
+        if (planStep >= 0 && ph.state !== st) {
+          // As diffPlan: P2 is written by the coordinator's first subagent, P3 by the coordinator (hud-0-3 P4).
+          const by = !coordinator || ph.id === 'P1' || ph.id === 'P4' ? null : ph.id === 'P2' && explore ? { sessionId: coordinator.id, agentId: explore.id, label: explore.description } : { sessionId: coordinator.id, agentId: null, label: coordinator.title };
+          plan.history.push({ at: now, id: ph.id, from: ph.state, to: st, sessionId: by?.sessionId ?? null, agentId: by?.agentId ?? null });
+          if (plan.history.length > HISTORY_MAX) plan.history.shift();
+          track.set(`${planKeyOf(plan)}#${ph.id}`, { ...newTrack(), ...track.get(`${planKeyOf(plan)}#${ph.id}`), changedAt: now });
+          addFeed({ project: plan.project }, 'plan', by && st === 'in-progress' ? `${plan.title}: ${ph.id} claimed by ${by.label}` : `${plan.title}: ${ph.id} ${ph.state} → ${st}`);
+        }
         ph.state = st; ph.stateRaw = st; ph.since = st === 'todo' ? null : '2026-10-29';
       });
+      plan.touchedAt = now;
       planStep = step;
     }
     acct.fiveHour.pct = Math.min(99, Math.round((acct.fiveHour.pct + 0.03) * 100) / 100);
@@ -5111,9 +5514,26 @@ function makeDemo(mode) {
     }).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
     const tokensToday = list.reduce((acc, s) => addTokens(acc, s.tokensTree), zero());
     const planList = dense ? [plan] : [plan, chunkPlan, smallPlan];
+    const agents = [];
+    for (const s of list) {
+      agents.push({ key: s.id, parent: s.startedBy, sessionId: s.id, agentId: null, view: s, project: s.project,
+        label: s.title, branch: s.branch, active: s.status === 'busy' || s.status === 'needs-you', ...evidence.get(s.id) });
+      for (const a of s.subagents) {
+        agents.push({ key: `${s.id}/${a.id}`, parent: a.parentId === s.id ? s.id : `${s.id}/${a.parentId}`,
+          sessionId: s.id, agentId: a.id, view: a, project: s.project, label: a.description, branch: s.branch,
+          active: a.state === 'running', ...evidence.get(a.id) });
+      }
+    }
+    const { board, turnedOn } = followBoards(agents, planList, { now, track, floor: t0 - 3 * 3600_000 });
+    for (const { P, node, flag } of turnedOn) {
+      const key = `${P.key}#${node.id}:${flag}`;
+      if (announced.has(key)) continue;
+      announced.add(key);
+      addFeed({ project: P.plan.project }, 'plan', `${P.plan.title}: ${node.id} ${MARK_WORDS[flag]}`);
+    }
     return {
       now, uptime: now - t0, demo: dense ? 'dense' : true, version: VERSION, host: 'STARK-01', hooksInstalled: true,   // a made-up machine, so demo screenshots carry no real one
-      sessions: list, external, externalError: null, projects: projectList, plans: planList, feed: feedList.slice(-FEED_SNAPSHOT).reverse(),
+      sessions: list, external, externalError: null, projects: projectList, plans: planList, board, feed: feedList.slice(-FEED_SNAPSHOT).reverse(),
       account: acct, totals: totalsFor(list, planList, tokensToday),
     };
   }
@@ -5765,6 +6185,94 @@ ${BOARD_HEADER}
 `, 'C:/r/docs/plans/booking-changes.md', 'C:/r', 'r');
   check('standard: small plan', [smallStd.slug, smallStd.title, smallStd.size, smallStd.state, smallStd.phases.length], ['booking-changes', 'Booking changes', 'small', 'building', 1]);
   check('plan: no board → no plan', parsePlan('# Status\n| Module | What |\n|---|---|\n| a | b |\n', 'C:/r/docs/status.md', 'C:/r', 'r'), null);
+
+  // hud-0-3 P4: board following (PLAN §4.2). Plans alpha and beta in project r, gamma in project q.
+  const boardMd = (rows, more = '') => `# T: status\n## Board\n\n${BOARD_HEADER}\n|---|---|---|---|---|---|---|---|---|\n${rows.join('\n')}\n${more}`;
+  const row = (id, state, deps = '—', agent = 'a', handoff = '') => `| ${id} | Item ${id} | ${agent} | ${deps} | Opus 5.5 / high | ${state} | | ${handoff} | |`;
+  const RUNS = '\n## Runs\n\n| Run | Items, in order | Model / effort | Lane | Start when | State |\n|---|---|---|---|---|---|\n| R1 | P2 → P3 | Opus 5.5 / high | A | P1 | todo |\n';
+  const alpha = parsePlan(boardMd([row('P0', 'accepted', '—', 'human', '—'), row('P1', 'handed-off', 'P0', 'a', '[P1](handoffs/P1-a.md)'), row('P2', 'todo', 'P1'),
+    row('P3', 'todo', 'P2'), row('P5', 'accepted'), row('P6-02', 'todo')], RUNS), 'C:/r/docs/plans/alpha/STATUS.md', 'C:/r', 'r');
+  const beta = parsePlan(boardMd([row('P5', 'todo'), row('P6-02', 'todo'), row('P7', 'todo')]), 'C:/r/docs/plans/beta/STATUS.md', 'C:/r', 'r');
+  const gamma = parsePlan(boardMd([row('P1', 'todo')]), 'C:/q/docs/plans/gamma/STATUS.md', 'C:/q', 'q');
+  const ix = indexPlans([alpha, beta, gamma]);
+  const work = (ev, parent = null) => resolveWork({ project: 'r', label: null, refs: [], touched: [], branch: null, ...ev }, parent, ix);
+  const A = 'r|alpha', B = 'r|beta', file = slug => `r|docs/plans/${slug}/status.md`;
+  const W = (plan, ...items) => ({ plan, items: items.map(([id, via, p = plan]) => ({ id, via, plan: p })), role: 'worker' });
+  check('board: the Handoff cell is kept as filled or not ("—" is not)', alpha.phases.map(n => [n.id, n.handoff]),
+    [['P0', false], ['P1', true], ['P2', false], ['P3', false], ['P5', false], ['P6-02', false]]);
+  check('board: ID-shaped words, in text order; paths and names are not IDs',
+    idWords('Do `hud-0-3/P4`. Then P1, P2-ish, docs/plans/hud-0-3/P5, P3-stream.md, UX-10 (P6-02) R2 xP9'), ['hud-0-3/P4', 'P1', 'UX-10', 'P6-02', 'R2']);
+  const held = { refs: [] };
+  addPrompt(held, 'Do alpha/P2');
+  addPrompt(held, Array.from({ length: 45 }, (_, i) => `P${i + 10}`).join(' '));
+  check('board: 40 words are kept, bare IDs (mentions) dropped first', [held.refs.flat().length, held.refs[0], held.refs[1][0]], [40, ['alpha/P2'], 'P16']);
+  check('board: system reminders and command output are not prompt text', promptRefs('<system-reminder>Do alpha/P3</system-reminder>hi <bash-stdout>beta/P7</bash-stdout>'), null);
+  // Step 2, the home plan.
+  check('resolve 2.1: the first <slug>/… naming a plan of the project (gamma is another project\'s)', work({ refs: [['P1', 'gamma/P1', 'alpha/P9']] }), W(A));
+  check('resolve 2.1: the newest prompt first', work({ refs: [['alpha/P2'], ['beta/P7']] }), W(B, ['P7', 'ref']));
+  check('resolve 2.2: the plan of the newest touched file', work({ touched: [{ file: file('alpha'), write: false, at: 1000 }, { file: file('beta'), write: true, at: 2000 }] }), W(B));
+  check('resolve 2.2: a write beats a read made within 10 minutes', work({ touched: [{ file: file('alpha'), write: true, at: 0 }, { file: file('beta'), write: false, at: 5 * 60_000 }] }), W(A));
+  check('resolve 2.2: a read 11 minutes after a write wins', work({ touched: [{ file: file('alpha'), write: true, at: 0 }, { file: file('beta'), write: false, at: 11 * 60_000 }] }), W(B));
+  check('resolve 2.2: PLAN.md and handoffs/ belong to the board next to them',
+    [work({ touched: [{ file: 'r|docs/plans/beta/plan.md', write: false, at: 1 }] })?.plan, work({ touched: [{ file: 'r|docs/plans/alpha/handoffs/p1-a.md', write: true, at: 1 }] })?.plan,
+      work({ touched: [{ file: 'r|docs/notes.md', write: true, at: 1 }] })], [B, A, null]);
+  check('resolve 2.3: a branch <slug> or <slug>/…', [work({ branch: 'beta' }), work({ branch: 'beta/feature' })], [W(B), W(B)]);
+  check('resolve 2.4: the parent\'s plan', work({ label: 'P6-02 payments' }, { plan: B }), W(B, ['P6-02', 'name']));
+  check('resolve 2.5: no evidence, no plan', work({}), null);
+  // Step 3, the items.
+  check('resolve 3.1: <slug>/<ID> in the prompt', work({ refs: [['P7', 'alpha/P2']] }), W(A, ['P2', 'ref']));
+  check('resolve 3.1: a run links itself and its current item', work({ refs: [['alpha/R1']] }), W(A, ['R1', 'ref'], ['P2', 'ref']));
+  check('resolve 3.2: a label ID in the home plan', work({ refs: [['alpha/P9']], label: 'P6-02 partial payments' }), W(A, ['P6-02', 'name']));
+  check('resolve 3.2: else the only plan that has it', work({ label: 'P7 tests' }), W(B, ['P7', 'name']));
+  check('resolve 3.2: else the only plan where it is not finished', work({ label: 'P5 cleanup' }), W(B, ['P5', 'name']));
+  check('resolve 3.2: an item outside the home plan keeps its own plan', work({ branch: 'alpha', label: 'P7 tests' }), W(A, ['P7', 'name', B]));
+  check('resolve 3.3: a branch <slug>/<ID>, in any case', work({ branch: 'beta/p7-tests' }), W(B, ['P7', 'branch']));
+  check('resolve 3: at most three items, ref first', work({ refs: [['alpha/R1']], label: 'P1 and P0 review' }), W(A, ['R1', 'ref'], ['P2', 'ref'], ['P1', 'name']));
+  // Links to nothing (D2).
+  check('resolve: nothing for an ID in two plans, both open', work({ label: 'P6-02 partial payments' }), null);
+  check('resolve: nothing for an ID no plan has', work({ label: 'P99 something' }), null);
+  check('resolve: nothing for a bare ID in the prompt (a mention)', work({ refs: [['P7']] }), null);
+  check('resolve: nothing for a prompt that lists six IDs', work({ refs: [['P1', 'P2', 'P3', 'P5', 'P7', 'P6-02']], label: 'Review the board' }), null);
+  check('resolve: nothing for another project\'s <slug>/<ID>', work({ refs: [['gamma/P1']] }), null);
+  check('resolve: a branch with an ID its plan lacks gives the plan only', work({ branch: 'beta/P99' }), W(B));
+  // Step 4, the role, and the marks and lists (§4.2) on a clock that the checks move.
+  const agent = (key, ev) => ({ key, parent: null, sessionId: 's1', agentId: null, view: {}, project: 'r', label: null, refs: [], touched: [], branch: null, active: true, ...ev });
+  const lead = agent('s1', { refs: [['alpha/P2']] }), helper = agent('s1/a1', { parent: 's1', agentId: 'a1', label: 'P3 the next one' });
+  linkAgents([lead, helper], ix);
+  check('resolve 4: a session with a subagent linked in its plan coordinates', [lead.work, helper.work], [{ ...W(A, ['P2', 'ref']), role: 'coordinator' }, W(A, ['P3', 'name'])]);
+  const delta = parsePlan(boardMd([row('P0', 'todo'), row('P1', 'in-progress', 'P0'), row('P2', 'blocked', 'O-1'), row('O-1', 'todo', '—', 'owner')]), 'C:/r/docs/plans/delta/STATUS.md', 'C:/r', 'r');
+  const old = parsePlan(`# Old\n## Board\n| Chunk | Title | Depends on | Status |\n|---|---|---|---|\n| UX-1 | One | — | handed off |\n| UX-2 | Two | UX-1 | todo |\n`, 'C:/r/docs/old/STATUS.md', 'C:/r', 'r');
+  const ix2 = indexPlans([alpha, delta, old]), track = new Map(), limits = { track, unclaimedMs: 1000, stalledMs: 5000, floor: 0 };
+  const one = agent('s2', { refs: [['alpha/P6-02']] });
+  linkAgents([one], ix2);
+  const at = now => boardState([one], ix2, { ...limits, now });
+  const first = at(100), later = at(1200);
+  check('marks: in flight on a todo item, unclaimed only after the limit', [first.board.items['r|alpha#P6-02'].flags, later.board.items['r|alpha#P6-02'].flags, later.turnedOn.map(x => x.flag)], [[], ['unclaimed'], ['unclaimed']]);
+  check('marks: in-progress with a dependency open is early at once, stalled after the limit',
+    [first.board.items['r|delta#P1'].flags, at(5000).board.items['r|delta#P1'].flags], [['early'], ['stalled', 'early']]);
+  check('lists: ready (a run instead of its items; not human rows), awaiting, owner inputs; none for older boards',
+    [later.board.ready, later.board.awaiting, later.board.ownerInputs, later.board.plans],
+    [[{ plan: A, id: 'R1', run: true }, { plan: 'r|delta', id: 'P0', run: false }], [{ plan: A, id: 'P1' }], [{ plan: 'r|delta', id: 'O-1', unlocks: ['P2'] }], { [A]: { active: 1 } }]);
+  one.active = false;
+  check('marks: off when nobody works on it', [at(1300).board.items['r|alpha#P6-02'].flags, at(1300).board.ready.some(x => x.id === 'P6-02')], [[], true]);
+
+  // Cost (§8 hard parts): 14 plans with 300 items and 30 agents, resolved once per snapshot.
+  const many = Array.from({ length: 14 }, (_, k) => parsePlan(boardMd(Array.from({ length: k < 4 ? 30 : 18 }, (_, i) =>
+    row(`P${i + 1}`, ['todo', 'in-progress', 'handed-off', 'accepted'][i % 4], i ? `P${i}` : '—'))), `C:/r/docs/plans/plan-${k}/STATUS.md`, 'C:/r', 'r'));
+  const fleet = () => Array.from({ length: 30 }, (_, i) => agent(i % 3 ? `s${i - (i % 3)}/a${i}` : `s${i}`, {
+    parent: i % 3 ? `s${i - (i % 3)}` : null, agentId: i % 3 ? `a${i}` : null, label: `P${(i % 18) + 1} task ${i}`, branch: i % 2 ? `plan-${i % 14}/P2` : 'main',
+    refs: [['P1', 'P2', `plan-${i % 14}/P${(i % 9) + 1}`], ['P3', 'D4', 'Q1']],
+    touched: Array.from({ length: 20 }, (_, j) => ({ file: `r|docs/plans/plan-${(i + j) % 14}/status.md`, write: j % 3 === 0, at: j * 1000 })) }));
+  const items = many.reduce((n, p) => n + p.phases.length, 0);
+  let ms = 0;
+  const runs = 200, track2 = new Map();
+  for (let k = 0; k < runs; k++) {
+    const list = fleet(), t0 = performance.now();
+    followBoards(list, many, { now: k * 250, track: track2, floor: 0 });
+    ms += performance.now() - t0;
+  }
+  console.log(`      cost: ${(ms / runs).toFixed(3)} ms per snapshot for ${items} items in ${many.length} plans and 30 agents (average of ${runs})`);
+  check('cost: under 5 ms per snapshot for 300 items and 30 agents', [items, ms / runs < 5], [300, true]);
 
   check('install: our group for PreToolUse', ourGroup('PreToolUse'), { matcher: '*', hooks: [{ type: 'command', command: HOOK_COMMAND, timeout: 2, async: true }] });
   check('install: SessionEnd runs synchronously', ourGroup('SessionEnd'), { hooks: [{ type: 'command', command: HOOK_COMMAND, timeout: 2 }] });
