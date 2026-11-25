@@ -145,6 +145,13 @@ As built. Each entry says what the component shows, its states, and which motion
   - **Down:** 10 s after the stream was lost. The light turns red and the bar says "HUD server not answering".
   - **An error in one panel:** shown in that panel only, with its message and Retry.
 
+### Kiosk display
+
+`?kiosk` uses the network view and enlarges body text to 18 px. The top-bar toggles, session view switch and
+feed collapse control are hidden. At TV widths the page fits the viewport and panels handle their own overflow.
+The oldest needs-you session in view is pinned automatically. When it clears, the next waiting session takes
+its place. The screen wake lock is requested while the page is visible where the browser supports it.
+
 ### Top bar
 
 - **Left:** the wordmark with a small reactor glyph that turns (layer 1), then "Claude · *host*".

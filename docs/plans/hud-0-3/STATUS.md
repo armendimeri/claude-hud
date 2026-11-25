@@ -16,7 +16,7 @@ Every agent reads this file first and updates it last.
 | P5 | Board following: the page | `tracker-ui` | P4 | Opus 5.5 / high | accepted | 2026-11-25 | [P5](handoffs/P5-tracker-ui.md) | Selftest, 33 tests and nine browser views rechecked |
 | P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6](handoffs/P6-alerts.md) | Selftest, 39 tests and nine browser views rechecked |
 | P7 | Page extras | `page` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7](handoffs/P7-page.md) | Selftest, 39 Node tests and all Edge smoke checks rechecked |
-| P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | todo | | | |
+| P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | accepted | 2026-11-26 | [P8](handoffs/P8-away.md) | Selftest, 42 Node tests and both kiosk layouts independently verified |
 | P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | todo | | | |
 | P10 | Verify and close | `review` | P9 | Opus 5.5 / high | todo | | — | |
 
@@ -109,6 +109,11 @@ This plan's own rules, on top of the standard.
   tests and Edge smoke passed, including both return paths, all three focus panel sizes and Windows URL encoding.
 - 2026-11-26 · away · P7 · Accepted after selftest, 39 Node tests and Edge smoke covering focus, local VS Code links
   and both away summary triggers.
+- 2026-11-26 · away · P8 · Handed off kiosk mode and phone push after selftest, 42 Node tests, and Edge smoke.
+- 2026-11-26 · coordinator · P8 · Accepted after selftest, 42 Node tests and 11 Edge views, including the kiosk
+  gates at 1920×1080 and 390×844. Loopback push delivery, payload privacy and both rate limits passed.
+  The TV view fit 1920×1080 with 18 px body text and the waiting session pinned. Loopback tests confirmed the
+  payload, rate limits, and error state.
 
 ## Kickoff
 

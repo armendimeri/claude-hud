@@ -1179,7 +1179,9 @@ function finishTurn(s, at, completed = true) {
 }
 function setNeedsYou(s, reason, kind, at, agentId) {
   if (s.needsYou && s.needsYou.reason === reason) return;
+  const first = !s.needsYou;
   s.needsYou = { since: s.needsYou?.since ?? at, reason, kind, agentId: agentId ?? null };
+  if (first && !s.ended && at >= hudStartedAt) void sendPhonePush(s, kind);
 }
 function clearNeedsYou(s, agentId = undefined) {
   if (!s.needsYou) return;
@@ -2329,7 +2331,7 @@ function alertsFor(list, account, now, active, toolFor) {
   return [...next.values()];
 }
 function snapshot() {
-  if (demo) return demo.snapshot();
+  if (demo) return { ...demo.snapshot(), push };
   const now = Date.now();
   const list = codexTree([...sessions.values()]
     .filter(s => (s.shown || s.agent === 'codex') && !endedLongAgo(s, now) && (s.inRegistry || s.tail || s.lastHookAt))
@@ -2354,11 +2356,55 @@ function snapshot() {
     externalError,
     projects: projectsView(),
     plans: planList,
-    board, alerts,
+    board, alerts, push,
     feed: feed.slice(-FEED_SNAPSHOT).reverse(),
     account,
     totals: totalsFor(list, planList, tokensToday),
   };
+}
+
+// Phone push (hud-0-3 D13). Only new needs-you transitions can use this endpoint.
+const push = { enabled: false, lastError: null };
+const pushBySession = new Map(), pushTimes = [];
+let pushUrl = null;
+function configurePhonePush() {
+  const configured = process.env.HUD_PUSH_URL?.trim();
+  if (!configured) return;
+  try {
+    const url = new URL(configured);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+    pushUrl = url;
+    push.enabled = true;
+  } catch {
+    push.lastError = 'HUD_PUSH_URL must be an HTTP or HTTPS URL';
+    console.error(push.lastError + '. Phone push disabled.');
+  }
+}
+async function sendPhonePush(session, kind) {
+  if (!pushUrl || !['permission', 'question', 'input'].includes(kind)) return;
+  const now = performance.now();
+  for (const [id, sent] of pushBySession) if (now - sent >= MINUTE_MS) pushBySession.delete(id);
+  while (pushTimes.length && now - pushTimes[0] >= 60 * MINUTE_MS) pushTimes.shift();
+  if (pushBySession.has(session.id) || pushTimes.length >= 20) return;
+  pushBySession.set(session.id, now);
+  pushTimes.push(now);
+
+  let error = null;
+  try {
+    const res = await fetch(pushUrl, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5000),
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', Title: 'Claude HUD' },
+      body: redact(oneLine(session.project || 'Session')) + ' needs you: ' + kind,
+    });
+    if (!res.ok) error = 'Phone push HTTP ' + res.status;
+    void res.body?.cancel().catch(() => {});
+  } catch (err) {
+    error = err?.name === 'TimeoutError' ? 'Phone push timed out' : 'Phone push request failed';
+  }
+  if (error !== push.lastError) {
+    push.lastError = error;
+    scheduleState();
+  }
 }
 
 // =====================================================================================================================
@@ -3222,6 +3268,24 @@ button.warning-text:hover { text-decoration: underline; }
 .rm .enter { animation: rmfade .2s linear both !important; }
 @keyframes rmfade { from { opacity: 0; } to { opacity: 1; } }
 
+/* ---- kiosk ---- */
+.kiosk body { font-size: 18px; line-height: 26px; }
+.kiosk .top .tgl, .kiosk .p-sess .seg, .kiosk .tk-collapse { display: none; }
+.kiosk .label { font-size: 14px; line-height: 19px; }
+.kiosk :is(.pt, .ps, .card-title, .plan-t, .ban-t, .ban-r) { font-size: 18px; line-height: 24px; }
+.kiosk .clock-t { font-size: 22px; }
+.kiosk .nl1, .kiosk .nl2 { font-size: 13px; }
+.kiosk .net-pin { width: min(500px, 100%); max-height: 100%; overflow-y: auto; }
+.kiosk .ban { flex-shrink: 0; }
+.kiosk .tk { font-size: 16px; }
+@media (min-width: 1440px) {
+  html.kiosk { overflow: hidden; }
+  .kiosk .app { height: 100dvh; grid-template-rows: 64px auto minmax(0, 1fr) auto; }
+  .kiosk .top { height: 64px; }
+  .kiosk .conn { top: 64px; }
+  .kiosk .banners { max-height: 28vh; overflow-y: auto; }
+}
+
 /* ---- gallery (/design) ---- */
 .gallery .app { display: none; }
 .gal { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 24px; padding: 0 24px 48px; max-width: 1600px; margin: 0 auto; }
@@ -4081,7 +4145,7 @@ function hudClient() {
     const el = h('div', { class: 'net' }, sweep, svg, flowLayer, hub, layer, empty, legend, readout, pinBox);
     const nodes = new Map(), edges = new Map(), expanded = new Set();
     let W = 0, H = 0, data = null, cx = {}, hubXY = { x: 0, y: 0 }, drawn = false, tween = 0, sweepAnim = null;
-    let pinnedId = null, pinFor = null, pinCard = null, hoverId = null, rovingId = null, groupSig = '', ringSig = '';
+    let pinnedId = null, pinFor = null, pinCard = null, autoPin = null, hoverId = null, rovingId = null, groupSig = '', ringSig = '';
 
     new ResizeObserver(() => {
       const w = el.clientWidth, hh = el.clientHeight;
@@ -4537,8 +4601,8 @@ function hudClient() {
         pinFor = pinnedId;
         const close = h('button', { class: 'btn', type: 'button' }, icon('close'), 'Unpin');
         close.addEventListener('click', () => { const b = r.btn; unpin(); b.focus(); });
-        const toCards = h('button', { class: 'btn', type: 'button' }, icon('cards'), 'Show in cards');
-        toCards.addEventListener('click', () => api.showCard?.(i.kind === 'session' ? i.id : i.session));
+        const toCards = api.showCard && h('button', { class: 'btn', type: 'button',
+          on: { click: () => api.showCard(i.kind === 'session' ? i.id : i.session) } }, icon('cards'), 'Show in cards');
         if (i.kind === 'session') pinCard = sessionCard(api);
         else { const box = h('div', { class: 'card cutbox' }); pinCard = { el: box, update: ii => box.replaceChildren(nodeCard(ii)) }; }
         pinBox.replaceChildren(pinCard.el, h('div', { class: 'pin-bar' }, toCards, close));
@@ -4605,6 +4669,13 @@ function hudClient() {
       syncEdges(items);
       moveAll();
       if (!drawn) retime(true);
+      // A changed TV target updates the pin after the nodes exist, without taking keyboard focus.
+      const nextPin = cx.autoPin ?? null;
+      if (nextPin !== autoPin) {
+        if (nextPin) { pinnedId = nextPin; show(readout, false); }
+        else if (pinnedId === autoPin) unpin();
+        autoPin = nextPin;
+      }
       if (pinnedId) fillPin();
       if (hoverId && nodes.has(hoverId)) { if (!readout.hidden) showReadout(nodes.get(hoverId)); } else if (hoverId) { hoverId = null; show(readout, false); }
       highlight(); roving();
@@ -5448,7 +5519,8 @@ function hudClient() {
     const bg = h('div', { class: 'bg', 'aria-hidden': 'true' }, h('div', { class: 'bg-grid' }), h('div', { class: 'bg-dots' }), h('div', { class: 'bg-dots d2' }), h('div', { class: 'bg-shim' }), h('div', { class: 'bg-vig' }));
     let project = opts.project || null;
     const matches = item => !project || item?.project === project;
-    const api = { jump: (id, agentId) => jump(id, agentId), showCard: id => { setView('cards', true); jump(id); }, open: id => jump(id),
+    const api = { jump: (id, agentId) => jump(id, agentId),
+      showCard: opts.kiosk ? null : id => { setView('cards', true); jump(id); }, open: id => jump(id),
       project: name => { if (name) setProject(project === name ? null : name); }, focused: () => project };
     const away = awaySummary(() => ban.visibility());
     const top = topBar(api), ban = banners(api, away.el);
@@ -5542,6 +5614,7 @@ function hudClient() {
     let urlView = new URLSearchParams(location.search).get('view');   // ?view=cards|network, until the switch is used
     if (!/^(cards|network)$/.test(urlView || '')) urlView = null;
     function currentView(sessions) {
+      if (opts.kiosk) return 'network';
       if (urlView) return urlView;
       if (prefs.get('view', null)) return prefs.get('view');
       if (!autoNet && sessions.some(x => x.status !== 'ended' && (x.subagents || []).length)) autoNet = true;
@@ -5564,9 +5637,11 @@ function hudClient() {
       target.focus({ preventScroll: true });
     }
     function ctxFor(st, live) {
+      const firstWaiting = opts.kiosk && live.filter(x => x.status === 'needs-you' && x.needsYou)
+        .sort((a, b) => a.needsYou.since - b.needsYou.since)[0];
       return {
         byId: new Map(st.sessions.map(x => [x.id, x])), plans: new Map((st.plans || []).map(p => [boardPlanKey(p), p])), host: st.host,
-        project,
+        project, autoPin: firstWaiting?.id,
         maxTok: Math.max(1, ...live.map(x => headline(x.tokens))), maxCache: Math.max(1, ...live.map(x => x.tokens?.cacheRead || 0)),
       };
     }
@@ -5702,9 +5777,22 @@ function pageMain(H) {
   // kept: the plans and feed of the last message that carried them.
   // last: the last state received, with the kept plans and feed put back.
   let es = null, lastAt = 0, lostAt = 0, retryTimer = 0, kept = null, last = null;
+  const query = new URLSearchParams(location.search), kiosk = query.has('kiosk');
+  document.documentElement.classList.toggle('kiosk', kiosk);
+  if (kiosk) {
+    let lock = null, acquiring = false;
+    async function keepAwake() {
+      if (!navigator.wakeLock || document.hidden || acquiring || (lock && !lock.released)) return;
+      acquiring = true;
+      try { lock = await navigator.wakeLock.request('screen'); } catch {}
+      finally { acquiring = false; }
+    }
+    document.addEventListener('visibilitychange', keepAwake);
+    void keepAwake();
+  }
   const hud = H.createHud(document.body, {
     reconnect: () => connect(),
-    project: new URLSearchParams(location.search).get('project'),
+    kiosk, project: query.get('project'),
     onProject(name) {
       const url = new URL(location.href);
       if (name) url.searchParams.set('project', name);
@@ -6056,6 +6144,12 @@ function designMain(H) {
   const editorCard = H.sessionCard();
   editorCard.update({ ...busy, cwd: 'C:\\Users\\demo\\source\\repos\\Customer Tools' }, cardCtx);
   section('Page extras', null, wide('While you were away', away.el), spec('Project focus', focus.el), spec('VS Code window', editorCard.el));
+
+  const kioskNet = H.network();
+  const kioskPreview = h('div', { class: 'kiosk gal-net', style: 'height:440px' }, kioskNet.el);
+  section('Kiosk display', null, wide('Automatic pin for the oldest request', kioskPreview),
+    spec(null, h('a', { class: 'btn', href: '/?kiosk' }, 'Open kiosk mode')));
+  requestAnimationFrame(() => kioskNet.update([needs, idle], { ...cardCtx, host, autoPin: needs.id }));
 
   // ---- alerts, ticker, externals, states ----
   const b1 = H.banners({}), b4 = H.banners({});
@@ -6417,6 +6511,7 @@ function makeDemo(mode) {
 // Serve
 
 function serve(demoMode) {
+  if (!demoMode) configurePhonePush();
   const server = http.createServer(handle);
   server.on('error', e => {
     console.error(e.code === 'EADDRINUSE' ? `Port ${PORT} is in use: is the HUD already running? (HUD_PORT picks another port)` : `Server error: ${e.message}`);

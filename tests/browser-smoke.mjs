@@ -410,6 +410,46 @@ try {
     console.log('pass SSE reconnect fetches and summarizes the new snapshot', reconnected);
   }
 
+  async function checkKiosk() {
+    const { identifier } = await call('Page.addScriptToEvaluateOnNewDocument', { source: `{
+      window.kioskWakeRequests = [];
+      Object.defineProperty(navigator, 'wakeLock', { value: { request: async kind => {
+        window.kioskWakeRequests.push(kind);
+        if (window.kioskWakeRequests.length === 1) throw new DOMException('Wake lock refused', 'NotAllowedError');
+        return window.kioskLock = { released: false };
+      } } });
+    }` });
+    for (const [width, height] of [[1920, 1080], [390, 844]]) {
+      await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+      await openHud('/?kiosk&view=cards');
+      await until("document.querySelector('.net-pin:not([hidden]) .card[data-s=needs-you]')", 'kiosk pins the waiting demo session');
+      const state = await hud.state();
+      const first = state.sessions.filter(x => x.status === 'needs-you').sort((a, b) => a.needsYou.since - b.needsYou.since)[0];
+      const actual = await evaluate(`(() => {
+        const visible = selector => [...document.querySelectorAll(selector)].some(el => el.getClientRects().length > 0);
+        const root = document.documentElement;
+        return { kiosk: root.classList.contains('kiosk'), size: parseFloat(getComputedStyle(document.body).fontSize),
+          toggles: visible('.top .tgl, .p-sess .seg, .tk-collapse'),
+          width: Math.max(root.scrollWidth, document.body.scrollWidth), height: Math.max(root.scrollHeight, document.body.scrollHeight),
+          pinned: document.querySelector('.net-pin:not([hidden]) .card').dataset.id };
+      })()`);
+      assert.equal(actual.kiosk, true);
+      assert.ok(actual.size >= 18, 'kiosk body type is at least 18 px');
+      assert.equal(actual.toggles, false, 'kiosk hides toggles and the view switch');
+      assert.equal(actual.pinned, first.id, 'kiosk chooses the longest-waiting session');
+      assert.ok(actual.width <= width, 'kiosk has no horizontal page scroll');
+      if (width === 1920) assert.ok(actual.height <= height, 'the TV view fits the screen without page scroll');
+      assert.deepEqual(await evaluate('window.kioskWakeRequests'), ['screen'], 'the page loads despite an initial wake-lock refusal');
+      await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
+      await until('window.kioskLock', 'kiosk requests a wake lock again when visible');
+      await evaluate("window.kioskLock.released = true; document.dispatchEvent(new Event('visibilitychange'))");
+      assert.deepEqual(await evaluate('window.kioskWakeRequests'), ['screen', 'screen', 'screen']);
+      await capture('kiosk', width, height);
+      console.log(`pass kiosk at ${width}x${height}: ${actual.size}px body, display controls hidden, waiting session pinned, wake lock best effort`);
+    }
+    await call('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+  }
+
   await call('Runtime.enable'); await call('Page.enable');
   await call('Page.bringToFront');
   await call('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -484,6 +524,8 @@ try {
         assert.ok(await evaluate(`document.querySelector('.gal-sec .away-summary:not([hidden]) .away-needs li') &&
           document.querySelector('.gal-sec .focus-clear[aria-pressed=true]') &&
           document.querySelector('.gal-sec .window-link[href$="Customer%20Tools"]')`), `${where} shows all page extras`);
+        assert.ok(await evaluate(`document.querySelector('.gal-sec .kiosk .net-pin:not([hidden]) .card[data-s=needs-you]') &&
+          document.querySelector('.gal-sec a[href="/?kiosk"]')`), `${where} shows the kiosk pin and links to the TV view`);
       }
       const overflow = await evaluate('document.documentElement.scrollWidth - innerWidth');
       assert.ok(overflow <= 0, `${where} has no horizontal page scroll (scrollWidth exceeds the window by ${overflow}px)`);
@@ -515,6 +557,7 @@ try {
   await checkProjectFocus();
   await checkWindowLinks();
   await checkAwaySummary();
+  await checkKiosk();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log(`pass browser runtime; ${shots.length} screenshots:\n${shots.map(f => '  ' + f).join('\n')}`);
   await call('Browser.close').catch(() => {});

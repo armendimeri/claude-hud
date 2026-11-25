@@ -70,6 +70,16 @@ it). It then listens on all network interfaces and prints the addresses to open,
 - **Wrong name.** Opening it by a domain name, or by an IP address with a different port, answers 403.
 - **Fonts.** The page loads its fonts from Google Fonts; a device without internet falls back to system fonts.
 
+Add `?kiosk` to the address for a TV display. The HUD enlarges text, hides the display controls, and pins the
+oldest session waiting for you in the network view. It requests to keep the screen awake when the browser supports
+it. On plain HTTP on your LAN, the browser can refuse the request and the HUD continues to update.
+
+For phone alerts, set `HUD_PUSH_URL` to your notification receiver's HTTP or HTTPS URL before starting the HUD.
+On a new needs-you transition it sends a plain-text POST with `Title: Claude HUD` and a body such as
+`Demo Project needs you: permission`. The kind is `permission`, `question`, or `input`. The HUD limits attempts
+to one per session per minute and 20 in a rolling hour. The setting is off by default. Check `push.enabled` and
+`push.lastError` in `/api/state` for configuration and delivery errors.
+
 ## Setting it up
 
 1. `node hud.mjs` (or `node hud.mjs autostart on` to have it start at every logon).
@@ -195,6 +205,7 @@ Completed boards and boards unchanged for 14 days with no active work or owner r
 | `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |
 | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` | Session metadata, short redacted title, model, effort, branch, cumulative tokens, reported context, tool names and short summaries, turn status, and subagent parent IDs. Read incrementally; reasoning, instructions and tool output are discarded. |
+| Optional phone receiver (`HUD_PUSH_URL`) | The HUD sends the project label and request kind in a text POST with a fixed title header. Session titles, paths, commands, and session IDs stay on the HUD. |
 
 It never reads `~/.claude/.credentials.json`, the session `*.key` files, `~/.aws/` or any `AWS_*` environment
 variable. If `CLAUDE_CONFIG_DIR` is set, the HUD looks there instead of `~/.claude`, as Claude Code does.
