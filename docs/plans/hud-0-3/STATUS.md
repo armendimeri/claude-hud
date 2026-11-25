@@ -11,7 +11,7 @@ Every agent reads this file first and updates it last.
 | P0 | Decisions | human | — | — | accepted | 2026-11-25 | — | D1 to D16 |
 | P1 | Test harness and hook replay | `harness` | P0 | Opus 5.5 / medium | accepted | 2026-11-25 | [P1](handoffs/P1-harness.md) | `node --test tests/` runs via tests/run-all.mjs (Node 26) |
 | P2 | Truthful sessions | `engine` | P1 | Opus 5.5 / high | accepted | 2026-11-25 | [P2](handoffs/P2-engine.md) | settle time, placeholders, Agents working, 5.2 windows |
-| P3 | A lighter stream | `stream` | P2 | Opus 5.5 / high | todo | | | |
+| P3 | A lighter stream | `stream` | P2 | Opus 5.5 / high | accepted | 2026-11-25 | [P3](handoffs/P3-stream.md) | later state 24.2 KB (from 36.8) with --demo=dense; `full: true` first state, `plans` event |
 | P4 | Board following: the engine | `tracker` | P3 | Opus 5.5 / xhigh | todo | | | |
 | P5 | Board following: the page | `tracker-ui` | P4 | Opus 5.5 / high | todo | | | |
 | P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | todo | | | |
@@ -89,6 +89,12 @@ This plan's own rules, on top of the standard.
   page check of "Agents working" ran in a scratch copy of the smoke test (out of scope).
 - 2026-11-25 · coordinator · P2 · Accepted: selftest, 22/22 tests, smoke, both 5.2 sources fetched, Agents working seen on the page, scope clean.
 - 2026-11-25 · coordinator · — · The owner asked for a usage check every 5 minutes with no AI tokens, after P10, outside this plan: the HUD reads Claude Code's OAuth token from `~/.claude/.credentials.json` in memory only (an exception the owner granted for that change alone; plan items still never read it), sends it only to api.anthropic.com, never refreshes or writes it, backs off on errors and keeps the cached value. A switch on the page next to the account limits, changeable only from this PC, on by default, kept across restarts, hidden in kiosk.
+- 2026-11-25 · stream · P3 · Handed off: the stream's first state is full (`full: true`), later states carry no plans
+  or feed, a `plans` event on board change; the page keeps them, counts Working itself, skips unchanged need rows and
+  run chips. tests/stream.test.mjs (25/25 tests), tests/tools/stream-size.mjs: later state 36.8 → 24.2 KB
+  (--demo=dense, 30 s). Smoke passes; the 10 s, board-change and reconnect page checks ran in a scratch copy (out of
+  scope).
+- 2026-11-25 · coordinator · P3 · Accepted: selftest, 25/25 tests, smoke, stream size 24.1 KB re-measured, 10 s page check re-run, scope clean.
 
 ## Kickoff
 

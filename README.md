@@ -34,10 +34,16 @@ node --test tests/                run the integration tests: each starts its own
                                  folders (tests/helpers.mjs), posts hook events to it and checks /api/state
 node tests/browser-smoke.mjs      open a --demo HUD of its own in headless Edge at three sizes; fails on a
                                  script error or a sideways page scroll; screenshots go to .hud-tmp/
+node tests/tools/stream-size.mjs <url> | --demo[=dense] [--seconds=30]
+                                 read a HUD's /api/stream for a while (only read: it posts nothing) and print
+                                 the number, size and rate of each event; --demo starts a demo HUD of its own
 ```
 
 Routes: `/` (the page), `/design` (the component gallery), `/api/state` (the full state as JSON), `/api/stream`
-(server-sent events), `/api/health`, and `POST /event`, which the hooks use. Requests whose `Host` header is not
+(server-sent events), `/api/health`, and `POST /event`, which the hooks use. The stream starts each connection with
+the full state (marked `full: true`); after that a `state` event comes on every change but without the plans and the
+feed, a `plans` event comes only when a board changed, and each feed line comes as its own `event`. The page keeps the
+last plans and feed, so an update stays small on a phone or a TV (about 24 KB with `--demo=dense`, from 37 KB). Requests whose `Host` header is not
 `127.0.0.1:<port>` or `localhost:<port>` are refused (with `--lan`, an IP address or this PC's name is accepted too).
 
 ## Viewing it from another device
@@ -129,7 +135,8 @@ never did anything is not listed once it closes. A resumed conversation lists th
 finished long before it was reopened are left out, though their tokens still count in its total.
 
 **Plans** shows the boards of the projects with open sessions: each phase as a hexagon, colour and badge for its
-state, and the questions waiting for you. **Feed** is the live event list: hover to pause it; the chevron
+state, and the questions waiting for you. A board's **Working** chip counts the sessions of its project that are
+busy, need you, or wait on their subagents. **Feed** is the live event list: hover to pause it; the chevron
 collapses it.
 
 **Top bar toggles**, all remembered in the browser:

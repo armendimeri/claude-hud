@@ -1861,10 +1861,9 @@ function snapshot() {
   const today = dayKey(now);
   const tokensToday = zero();
   for (const t of tails.values()) { const d = t.info.byDay.get(today); if (d) addTokens(tokensToday, d); }
-  // A plan is being worked on when a busy session runs in its project; plans also carry when their board last changed.
-  const busyBy = new Map();
-  for (const s of list) if (s.status === 'busy' || s.status === 'needs-you') busyBy.set(s.project, (busyBy.get(s.project) || 0) + 1);
-  const planList = [...plans.values()].map(v => ({ ...v.plan, working: busyBy.get(v.plan.project) || 0, touchedAt: Math.round(v.mtime) }))
+  // Plans carry when their board last changed. Which sessions work in a project is counted by the page (hud-0-3 P3):
+  // nothing in a plan changes with a session, so the stream sends plans only when a board changes.
+  const planList = [...plans.values()].map(v => ({ ...v.plan, touchedAt: Math.round(v.mtime) }))
     .sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
   return {
     now, uptime: now - hudStartedAt, demo: false, version: VERSION, host: HOSTNAME, hooksInstalled,
@@ -1883,19 +1882,30 @@ function snapshot() {
 // =====================================================================================================================
 // HTTP server and server-sent events (PLAN §4.3)
 
+// The stream (hud-0-3 PLAN §4.4). A connection starts with the full state, marked `full: true`. After that, `state`
+// goes out on change without `plans` and `feed`, `plans` goes out as its own event when the boards' JSON changed, and
+// each feed line as an `event` (pushFeed). The page keeps the last plans and feed. /api/state always has everything.
 const clients = new Set();
-let stateTimer = null, lastStateAt = 0, lastStateBody = '';
+let stateTimer = null, lastStateAt = 0, lastStateBody = '', lastPlansBody = '';
 function broadcast(event, data) {
   if (!clients.size) return;
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const c of clients) c.write(msg);
+}
+// Sends `plans` to the connected clients when they differ from the last plans every client has.
+function sendPlans(planList) {
+  const body = JSON.stringify(planList);
+  if (body === lastPlansBody) return;
+  lastPlansBody = body;
+  broadcast('plans', { plans: planList });
 }
 function scheduleState() {
   if (stateTimer || !clients.size) return;
   stateTimer = setTimeout(() => {
     stateTimer = null;
     lastStateAt = Date.now();
-    const snap = redactDeep(snapshot());
+    const { plans: planList, feed: _feed, ...snap } = redactDeep(snapshot());
+    sendPlans(planList);
     const { now, uptime, ...rest } = snap;
     const body = JSON.stringify(rest);
     if (body === lastStateBody) return;
@@ -1988,7 +1998,9 @@ function handle(req, res) {
 function openStream(req, res) {
   res.writeHead(200, { ...BASE_HEADERS, 'content-type': 'text/event-stream; charset=utf-8', connection: 'keep-alive' });
   res.socket?.setNoDelay(true);
-  res.write(`retry: 2000\n\nevent: state\ndata: ${JSON.stringify(redactDeep(snapshot()))}\n\n`);
+  const snap = redactDeep(snapshot());
+  sendPlans(snap.plans);   // the clients already here catch up first, so the next push compares with what everyone has
+  res.write(`retry: 2000\n\nevent: state\ndata: ${JSON.stringify({ ...snap, full: true })}\n\n`);
   clients.add(res);
   req.on('close', () => clients.delete(res));
 }
@@ -4040,13 +4052,15 @@ function hudClient() {
     const title = h('h3', { class: 'plan-t trunc', 'data-tip-if': 'trunc' });
     const graph = planGraph(), needs = h('div'), runs = h('div', { class: 'plan-runs', hidden: true }), log = h('p', { class: 'plan-log', hidden: true });
     const el = h('article', { class: 'plan' }, h('header', { class: 'plan-h' }, proj, live, need, stChip, count), title, graph.el, needs, runs, log);
+    let needSig = null, runSig = null;   // the need rows and run chips are rebuilt only when their text changed
     return {
       el,
-      update(p) {
+      // working: the sessions busy in the plan's project (or waiting on their subagents), counted by the page
+      update(p, working = 0) {
         const all = [...(p.phases || [])];
         txt(proj, p.project || ''); setData(proj, 'tip', p.path ? 'From ' + p.path : null);
         txt(title, p.title || p.slug); title.dataset.tip = p.title || p.slug;
-        show(live, (p.working || 0) > 0); setData(live, 'tip', p.working ? `${p.working} session${p.working > 1 ? 's' : ''} running in ${p.project}` : null);
+        show(live, working > 0); setData(live, 'tip', working ? `${working} session${working > 1 ? 's' : ''} running in ${p.project}` : null);
         show(stChip, !!p.state); txt(stChip, p.state ? p.state + (p.stateDate ? ' ' + p.stateDate : '') : '');
         const done = all.filter(n => DONE_STATES.has(n.state)).length;
         txt(count, `${done}/${all.length}`); setData(count, 'tip', `${done} of ${all.length} done, handed off or accepted`);
@@ -4059,15 +4073,20 @@ function hudClient() {
           ...(p.needsYou || []).map(q => [`${q.kind === 'decision' ? 'Decision' : 'Question'} ${q.id}${q.item ? ' · ' + q.item : ''}`, String(q.text || '').replace(new RegExp('^\\**' + String(q.id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b\\**[\\s:·.–-]*'), '')]),
           ...stuck.map(n => [`${n.state === 'blocked' ? 'Blocked' : 'Bounced'} ${n.id}`, n.notes || n.name || '']),
         ];
-        needs.replaceChildren(...rows.map(([b, t]) => h('div', { class: 'plan-need' }, icon('alert'), h('div', { class: 'plan-need-t', 'data-tip': t }, h('b', { text: b }), t))));
-        const rs = p.runs || [];
+        const ns = JSON.stringify(rows);
+        if (ns !== needSig) { needSig = ns; needs.replaceChildren(...rows.map(([b, t]) => h('div', { class: 'plan-need' }, icon('alert'), h('div', { class: 'plan-need-t', 'data-tip': t }, h('b', { text: b }), t)))); }
+        const rs = (p.runs || []).map(r => [r.id, r.state, [`Run ${r.id}: ${r.name || ''}`, r.lane ? 'lane ' + r.lane : '', r.chunks && r.chunks.length ? 'chunks ' + r.chunks.join(', ') : '', r.startWhen ? 'starts when ' + r.startWhen : ''].filter(Boolean).join(' · ')]);
         show(runs, rs.length > 0);
-        runs.replaceChildren(...rs.map(r => {
-          const tag = h('span', { class: 'chip', 'data-tip': [`Run ${r.id}: ${r.name || ''}`, r.lane ? 'lane ' + r.lane : '', r.chunks && r.chunks.length ? 'chunks ' + r.chunks.join(', ') : '', r.startWhen ? 'starts when ' + r.startWhen : ''].filter(Boolean).join(' · ') });
-          const [gl, wd, c] = STATUS[r.state] || STATUS.unknown;
-          tag.append(h('span', { class: 'c-' + (c === 'dim' ? 'dim' : c), style: 'display:flex' }, glyph(gl)), `${r.id} · ${wd}`);
-          return tag;
-        }));
+        const rsig = JSON.stringify(rs);
+        if (rsig !== runSig) {
+          runSig = rsig;
+          runs.replaceChildren(...rs.map(([id, state, tip]) => {
+            const tag = h('span', { class: 'chip', 'data-tip': tip });
+            const [gl, wd, c] = STATUS[state] || STATUS.unknown;
+            tag.append(h('span', { class: 'c-' + (c === 'dim' ? 'dim' : c), style: 'display:flex' }, glyph(gl)), `${id} · ${wd}`);
+            return tag;
+          }));
+        }
         const last = (p.lastLog || []).filter(l => /^\d{4}-\d\d-\d\d/.test(l)).pop() || (p.lastLog || []).slice(-1)[0];
         show(log, !!last); txt(log, last || ''); setData(log, 'tip', last || null);
       },
@@ -4461,7 +4480,7 @@ function hudClient() {
     const app = h('div', { class: 'app' }, top.el, ban.el, main, tk.el);
     mount.append(bg, app, conn, h('div', { class: 'scanlines', 'aria-hidden': 'true' }));
 
-    let state = null, booted = false, exHidden = null;
+    let state = null, booted = false, exHidden = null, syncedFeed = null;
     const announce = announcer();
 
     function setView(v, remember) {
@@ -4521,11 +4540,16 @@ function hudClient() {
         const plans = (st.plans || []).slice();
         const needs = p => (p.needsYou && p.needsYou.length) || (p.phases || []).some(n => n.state === 'blocked' || n.state === 'bounced');
         const active = p => (p.phases || []).some(n => n.state === 'in-progress');
+        // A plan's "Working" chip counts the sessions of its project that are busy, need you, or wait on running
+        // subagents. Counted here, so plans carry nothing that changes with a session (PLAN hud-0-3 P3).
+        const busyBy = new Map();
+        for (const x of st.sessions || []) if (x.status === 'busy' || x.status === 'needs-you' || (x.status !== 'ended' && x.agentsRunning > 0)) busyBy.set(x.project, (busyBy.get(x.project) || 0) + 1);
+        const working = p => busyBy.get(p.project) || 0;
         // needs you, then a session is working in its project, then a phase in progress, then the board changed most recently
-        plans.sort((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || ((b.working || 0) > 0 ? 1 : 0) - ((a.working || 0) > 0 ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || (b.touchedAt || 0) - (a.touchedAt || 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
+        plans.sort((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || (working(b) > 0 ? 1 : 0) - (working(a) > 0 ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || (b.touchedAt || 0) - (a.touchedAt || 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
         show(plansEmpty, plans.length === 0);
         txt(plSum, plans.length ? [`${plans.length}`, st.totals?.plansInProgress ? `${st.totals.plansInProgress} in progress` : null].filter(Boolean).join(' · ') : '');
-        reconcile(plansBox, planMap, plans, p => p.project + '|' + p.slug, () => planCard(), (c, p) => c.update(p), booted);
+        reconcile(plansBox, planMap, plans, p => p.project + '|' + p.slug, () => planCard(), (c, p) => c.update(p, working(p)), booted);
         const sig = plans.map(p => p.project + '|' + p.slug + (needs(p) ? '!' : '')).join();
         if (sig !== plSig) { plSig = sig; plMore.refresh(); }   // the hint only changes with the boards (scroll and resize repaint it too)
       }, () => renderPlans(st));
@@ -4541,7 +4565,10 @@ function hudClient() {
     }
     function render(st, o = {}) {
       syncClock(st.now);
-      const prev = state; state = st;
+      const prev = state;
+      // A state without plans or feed (the stream's later pushes, PLAN hud-0-3 §4.4) keeps the ones drawn: never clear.
+      if (prev && (!st.plans || !st.feed)) st = Object.assign({}, st, { plans: st.plans || prev.plans, feed: st.feed || prev.feed });
+      state = st;
       const boot = o.boot || (!booted && root.classList.contains('booting'));
       top.update(st);
       ban.update(st.sessions || []);
@@ -4550,7 +4577,9 @@ function hudClient() {
       if (ex.el.hidden !== exHidden) { exHidden = ex.el.hidden; lMore.refresh(); }
       renderSessions(st);
       renderPlans(st);
-      tick.sync(st.feed || []);
+      // The feed is synced once per array: a kept feed put back on a later push is old, and the stream's `event`
+      // lines have already gone past it.
+      if (st.feed && st.feed !== syncedFeed) { syncedFeed = st.feed; tick.sync(st.feed); }
       tick.done(lastFinish(st));
       if (prev) announce(happenings(prev, st), st);
       booted = true;
@@ -4593,7 +4622,9 @@ function pageMain(H) {
   'use strict';
   // lastAt: the last state received (the server sends state only on change, so it can be old on a healthy stream).
   // lostAt: when the stream was lost. Reconnecting (connecting before any state) for 10 s after that, then down.
-  let es = null, lastAt = 0, lostAt = 0, retryTimer = 0;
+  // kept: the plans and feed of the last message that carried them.
+  // last: the last state received, with the kept plans and feed put back.
+  let es = null, lastAt = 0, lostAt = 0, retryTimer = 0, kept = null, last = null;
   const hud = H.createHud(document.body, { reconnect: () => connect() });
   H.boot(hud);
   const setConn = sv => hud.setConn(sv, { lastAt });
@@ -4608,7 +4639,26 @@ function pageMain(H) {
       judge();
       if (es.readyState === 2) retryTimer = setTimeout(connect, 3000);   // closed for good: start a new stream
     };
-    es.addEventListener('state', e => { let st; try { st = JSON.parse(e.data); } catch { return; } lastAt = Date.now(); lostAt = 0; setConn('live'); hud.render(st); });
+    // The first state of a connection is full (`full: true`) and replaces what the page kept; later ones come without
+    // plans and feed, so the kept ones are put back (PLAN hud-0-3 §4.4). A `plans` event replaces the kept plans.
+    es.addEventListener('state', e => {
+      let st; try { st = JSON.parse(e.data); } catch { return; }
+      lastAt = Date.now(); lostAt = 0; setConn('live');
+      if (st.full || !kept) kept = { plans: st.plans || [], feed: st.feed || [] };
+      if (!st.plans) st.plans = kept.plans;
+      if (!st.feed) st.feed = kept.feed;
+      last = st;
+      hud.render(st);
+    });
+    es.addEventListener('plans', e => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (!kept || !last || !Array.isArray(m.plans)) return;
+      kept.plans = m.plans;
+      // The last state again with the new plans; its server time moves on by the time since it came, so the clock
+      // keeps its offset.
+      const dt = Date.now() - lastAt;
+      hud.render(Object.assign({}, last, { plans: m.plans, now: last.now + dt, uptime: last.uptime + dt }));
+    });
     es.addEventListener('event', e => { try { hud.feed(JSON.parse(e.data)); } catch {} });
   }
   connect();
