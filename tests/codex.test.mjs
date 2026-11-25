@@ -1,52 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
-import net from 'node:net';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { Script } from 'node:vm';
+import { startHud, pause, said as saidLine } from './helpers.mjs';
 
-const script = path.resolve('hud.mjs');
-const pause = ms => new Promise(r => setTimeout(r, ms));
 const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 test('Claude and Codex coexist, update incrementally, and survive restart', { timeout: 60000 }, async t => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hud-codex-test-'));
-  const codex = path.join(dir, 'codex'), claude = path.join(dir, 'claude');
+  const hud = await startHud({ start: false });
+  t.after(() => hud.close());
+  const { dir, codex, claude, extraCodex, base, state, until } = hud;
   const logs = path.join(codex, 'sessions', '2026', '11', '04');
   await fs.mkdir(logs, { recursive: true });
-  await fs.mkdir(path.join(claude, 'sessions'), { recursive: true });
-  await fs.mkdir(path.join(claude, 'projects'), { recursive: true });
-  const extraCodex = path.join(dir, 'extra-codex');
-  await fs.mkdir(path.join(extraCodex, 'sessions'), { recursive: true });
-  const server = net.createServer();
-  server.listen(0, '127.0.0.1'); await once(server, 'listening');
-  const port = server.address().port;
-  await new Promise(r => server.close(r));
-  const base = `http://127.0.0.1:${port}`;
-  let child, errors = '';
-  const start = () => {
-    child = spawn(process.execPath, [script], { windowsHide: true, env: { ...process.env,
-      HOME: dir, USERPROFILE: dir, CODEX_HOME: codex, HUD_CODEX_DIRS: extraCodex,
-      CLAUDE_CONFIG_DIR: claude, HUD_CLAUDE_DIRS: '', HUD_NO_AUTOINSTALL: '1',
-      HUD_PORT: String(port), HUD_LAN: '0', HUD_BEDROCK_REGION: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.resume(); child.stderr.on('data', b => { errors += b; });
-  };
-  const stop = async () => {
-    if (child && child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
-  };
-  t.after(async () => { await stop(); await fs.rm(dir, { recursive: true, force: true }); });
-  const state = async () => (await fetch(base + '/api/state')).json();
-  const until = async predicate => {
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline) {
-      try { const s = await state(); if (predicate(s)) return s; } catch {}
-      await pause(100);
-    }
-    assert.fail('State did not converge: ' + errors);
-  };
   const stamp = () => new Date().toISOString();
   const record = (type, payload, timestamp = stamp()) => JSON.stringify({ timestamp, type, payload }) + '\n';
   const meta = (id, source = 'vscode', timestamp = stamp()) => record('session_meta', {
@@ -73,8 +39,7 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
   // Old conversations reopened by the editor: the process and the transcript's mtime are new, the dated lines are not.
   const longAgo = new Date(Date.now() - 10 * 86400000), deadPid = 4194303;
   const convo = path.join(claude, 'projects', 'p');
-  const said = (id, at, extra = {}) => JSON.stringify({ type: 'assistant', sessionId: id, timestamp: at.toISOString(), cwd: dir, ...extra,
-    message: { id: `msg-${id}-${extra.agentId || ''}`, model: 'claude-opus-5-5', usage: { input_tokens: 1, output_tokens: 2 } } }) + '\n';
+  const said = (id, at, extra = {}) => saidLine(id, at, { cwd: dir, ...extra });
   const agent = async (id, agentId, mtime) => {
     const sub = path.join(convo, id, 'subagents');
     await fs.mkdir(sub, { recursive: true });
@@ -93,7 +58,7 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
   await fs.writeFile(path.join(claude, 'sessions', '3.json'), JSON.stringify({ sessionId: 'old-closed', pid: deadPid, cwd: dir, status: 'idle', startedAt: Date.now() }));
   await fs.writeFile(path.join(claude, 'sessions', '4.json'), JSON.stringify({ sessionId: 'recent-closed', pid: deadPid, cwd: dir, status: 'idle', startedAt: Date.now() }));
   await fs.writeFile(path.join(claude, 'sessions', '5.json'), JSON.stringify({ sessionId: 'never-worked', pid: deadPid, cwd: dir, status: 'idle', startedAt: Date.now() }));
-  start();
+  await hud.restart();
   let s = await until(s => s.sessions.some(x => x.id === 'codex:shared-id' && x.subagents.length === 2) && s.sessions.some(x => x.id === 'shared-id') && s.sessions.some(x => x.id === 'codex:extra'));
 
   await t.test('source identity, parent tree, cumulative tokens and privacy', () => {
@@ -128,13 +93,13 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
       for (const match of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) new Script(match[1]);
       assert.ok(html.includes('Codex')); assert.ok(html.includes('OpenAI'));
     }
-    const ac = new AbortController();
+    const stream = await hud.stream();
     try {
-      const res = await fetch(base + '/api/stream', { signal: ac.signal });
-      assert.match(res.headers.get('content-type'), /text\/event-stream/);
-      const { value } = await res.body.getReader().read();
-      assert.match(Buffer.from(value).toString(), /event: state/);
-    } finally { ac.abort(); }
+      assert.match(stream.headers.get('content-type'), /text\/event-stream/);
+      const first = await stream.next();
+      assert.equal(first.event, 'state');
+      assert.ok(Array.isArray(first.data.sessions));
+    } finally { stream.close(); }
   });
   await t.test('split UTF-8 lines, tool output discard, questions and turn completion', async () => {
     const rec = Buffer.from(record('response_item', { type: 'function_call', call_id: 'call2', name: 'exec_command', arguments: JSON.stringify({ cmd: 'echo café' }) }));
@@ -161,11 +126,11 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
   });
   await t.test('usage survives a server restart without duplication', async () => {
     const before = (await state()).totals.tokensToday;
-    await stop(); start();
+    await hud.restart();
     s = await until(s => s.sessions.find(x => x.id === 'codex:shared-id')?.subagents.length === 2 && s.sessions.find(x => x.id === 'codex:stale')?.status === 'busy');
     assert.deepEqual(s.totals.tokensToday, before);
     assert.equal(s.sessions.find(x => x.id === 'codex:shared-id').status, 'idle');
-    assert.equal(errors, '');
+    assert.equal(hud.stderr(), '');
   });
   await t.test('truncated rollouts reset usage and model without losing attachment', async () => {
     await fs.writeFile(main, meta('shared-id') + record('turn_context', { model: 'replacement-model' }) +

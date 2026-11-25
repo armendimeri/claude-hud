@@ -1894,7 +1894,15 @@ function handle(req, res) {
       return readBody(req, res, p === '/event' ? EVENT_BODY_MAX : USAGE_BODY_MAX, text => {
         let j;
         try { j = JSON.parse(text); } catch { return send(res, 400, 'Bad JSON\n'); }
-        if (p === '/event') { if (!demo) onHook(j); return send(res, 204, ''); }
+        if (p === '/event') {
+          // HUD_RECORD=<file> (off unless set, D14): each accepted hook event, redacted, as one JSON line, for tests.
+          if (process.env.HUD_RECORD) {
+            try { fs.appendFileSync(path.resolve(process.env.HUD_RECORD), JSON.stringify(redactDeep(j)) + '\n'); }
+            catch (e) { console.error(`HUD_RECORD: ${e.message}`); }
+          }
+          if (!demo) onHook(j);
+          return send(res, 204, '');
+        }
         const [code, msg] = onUsage(j);
         return send(res, code, msg ? msg + '\n' : '');
       });
@@ -5645,7 +5653,10 @@ const HELP = `Claude HUD ${VERSION}: a live dashboard of Claude Code and Codex s
                                (add --lan to autostart on to start it open to the network)
   node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard
   node hud.mjs selftest        check the model normaliser, redaction and plan parser
-  node hud.mjs hook            the hook forwarder (Claude Code runs this; it prints nothing)`;
+  node hud.mjs hook            the hook forwarder (Claude Code runs this; it prints nothing)
+
+  HUD_RECORD=<file>            while serving, also append each hook event received, redacted, to <file> as one
+                               JSON line (off unless set; for building tests)`;
 
 const ARGS = process.argv.slice(2).filter(a => a !== '--lan');
 const [cmd, arg] = ARGS;

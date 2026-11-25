@@ -9,7 +9,7 @@ Every agent reads this file first and updates it last.
 | ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |
 |---|---|---|---|---|---|---|---|---|
 | P0 | Decisions | human | — | — | accepted | 2026-11-25 | — | D1 to D16 |
-| P1 | Test harness and hook replay | `harness` | P0 | Opus 5.5 / medium | todo | | | |
+| P1 | Test harness and hook replay | `harness` | P0 | Opus 5.5 / medium | accepted | 2026-11-25 | [P1](handoffs/P1-harness.md) | `node --test tests/` runs via tests/run-all.mjs (Node 26) |
 | P2 | Truthful sessions | `engine` | P1 | Opus 5.5 / high | todo | | | |
 | P3 | A lighter stream | `stream` | P2 | Opus 5.5 / high | todo | | | |
 | P4 | Board following: the engine | `tracker` | P3 | Opus 5.5 / xhigh | todo | | | |
@@ -80,6 +80,10 @@ This plan's own rules, on top of the standard.
 - 2026-11-25 · planner · — · Plan written after a review of the live HUD (4 open sessions, 14 boards). The stale
   ended-sessions fix of the same day is in the working tree, uncommitted.
 - 2026-11-25 · coordinator · P0 · The owner took D1 to D16 as recommended. P0 accepted.
+- 2026-11-25 · harness · P1 · Handed off: tests/helpers.mjs, hooks.test.mjs (4 cases + HUD_RECORD), codex test on
+  startHud, browser smoke with its own demo HUD (9 screenshots), HUD_RECORD. `node --test tests/` 14 passed; it
+  failed at the baseline on Node 26 and now runs tests/run-all.mjs.
+- 2026-11-25 · coordinator · P1 · Accepted: selftest, 14/14 tests, smoke and screenshots, HUD_RECORD re-checked, scope clean.
 
 ## Kickoff
 

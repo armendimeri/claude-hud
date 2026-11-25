@@ -30,7 +30,10 @@ node hud.mjs autostart on|off    start the HUD at logon (Task Scheduler, no wind
                                  (`autostart on --lan` starts it open to the network)
 node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard (workflow/STANDARD.md)
 node hud.mjs selftest            check the model normaliser, redaction and plan parser
-node --test tests/codex.test.mjs  run isolated Claude/Codex integration tests
+node --test tests/                run the integration tests: each starts its own HUD on a free port over temp
+                                 folders (tests/helpers.mjs), posts hook events to it and checks /api/state
+node tests/browser-smoke.mjs      open a --demo HUD of its own in headless Edge at three sizes; fails on a
+                                 script error or a sideways page scroll; screenshots go to .hud-tmp/
 ```
 
 Routes: `/` (the page), `/design` (the component gallery), `/api/state` (the full state as JSON), `/api/stream`
@@ -136,7 +139,7 @@ collapses it.
 |---|---|
 | `~/.claude/sessions/<pid>.json` | The list of running sessions: id, folder, name, busy or idle. The `*.key` files next to them are never opened. |
 | `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
-| Hook events (`POST /event`) | What the hooks send: event name, tool name and the few input fields a short summary needs. |
+| Hook events (`POST /event`) | What the hooks send: event name, tool name and the few input fields a short summary needs. With `HUD_RECORD=<file>` set (off by default), each one is also written to that file, redacted. |
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
 | `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |
@@ -166,6 +169,9 @@ the hooks are already there it changes nothing, so no backup piles up. It also r
 `settings.json` that isn't valid JSON is left alone, with a message. `uninstall` removes only the HUD's entries from
 every watched folder; when the result matches a backup, it restores that backup's exact bytes. Because the HUD adds
 the hooks at every start, set `HUD_NO_AUTOINSTALL=1` (and `autostart off`) if you want them to stay removed.
+
+To build tests from real use, start the HUD with `HUD_RECORD=<file>`: it appends each hook event it receives, after
+redaction, to that file as one JSON line. It is off unless set, and the HUD never writes the file otherwise.
 
 ## Bedrock
 

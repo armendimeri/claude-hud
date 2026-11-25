@@ -1,0 +1,5 @@
+{
+  "//": "Lets `node --test tests/` work on Node versions that take a folder argument as a module: it runs run-all.mjs.",
+  "private": true,
+  "main": "run-all.mjs"
+}
