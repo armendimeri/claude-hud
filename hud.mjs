@@ -339,7 +339,7 @@ function newSession(id) {
   return {
     id, agent: 'claude', pid: null, cwd: null, project: null, name: null, entrypoint: null, version: null, kind: null,
     inRegistry: false, regStatus: null, regStatusAt: 0,
-    hookStatus: null, hookStatusAt: 0, lastHookAt: 0, hookModel: null,
+    hookStatus: null, hookStatusAt: 0, lastHookAt: 0, lastWorkAt: 0, hookModel: null,
     needsYou: null, currentTool: null, hookTools: new Set(), doneTools: new Set(),
     startedAt: null, ended: false, endedAt: null, endReason: null,
     startedBy: null, chainChecked: false,
@@ -1058,6 +1058,7 @@ function onHook(p) {
     reopenSession(s);
   }
   s.lastHookAt = Math.max(s.lastHookAt, at);
+  if (ev !== 'SessionStart' && ev !== 'SessionEnd') s.lastWorkAt = Math.max(s.lastWorkAt, at);   // opening or closing is not work
   if (typeof p.cwd === 'string' && !s.cwd) setCwd(s, p.cwd);
   if (typeof p.transcript_path === 'string') attachSessionTranscript(s, p.transcript_path);
   const sub = typeof p.agent_id === 'string' && p.agent_id ? subForAgent(s, p.agent_id, str(p.agent_type)) : null;
@@ -1662,6 +1663,21 @@ function pollCloudWatch() {
 function lastActivity(s) {
   return Math.max(s.tail?.info.lastTs || 0, s.lastHookAt || 0, s.regStatusAt || 0) || null;
 }
+/**
+ * When the session last did something: a dated transcript line or a hook other than SessionStart / SessionEnd.
+ * Opening an old conversation (the VS Code extension does it for a moment when a window opens) starts a process and
+ * touches the registry and the transcript, but writes no dated line, so it does not count.
+ */
+function lastWork(s) {
+  return Math.max(s.tail?.info.lastTs || 0, s.lastWorkAt || 0);
+}
+/**
+ * An ended session is shown for ENDED_KEEP_MS after it last worked, not after its process exited: a conversation
+ * from last week that was opened and closed again is not "just ended". One that never worked is never shown as ended.
+ */
+function endedLongAgo(s, now) {
+  return s.ended && now - Math.min(s.endedAt || 0, lastWork(s)) > ENDED_KEEP_MS;
+}
 function sessionStatus(s, now) {
   if (s.ended) return 'ended';
   if (s.needsYou) return 'needs-you';
@@ -1714,9 +1730,13 @@ function sessionView(s, now) {
     tool = s.currentTool;
     if (!tool) { const open = latestOpenTool(info); if (open && now - open.since < 30 * 60_000) tool = open; }
   }
-  const subagents = [...s.subs].map(sub => subView(s, sub, now)).filter(x => x.id).sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  const everySub = [...s.subs].map(sub => subView(s, sub, now)).filter(x => x.id);
   const tokens = info ? { ...info.tokens } : zero();
-  const tokensTree = subagents.reduce((acc, x) => addTokens(acc, x.tokens), { ...tokens });
+  const tokensTree = everySub.reduce((acc, x) => addTokens(acc, x.tokens), { ...tokens });   // the whole conversation, like `tokens`
+  // A resumed conversation lists the subagents of this run. Those that finished well before its process started
+  // (`startedAt` is the process start, from the registry) belong to an earlier run and are not drawn.
+  const runStart = s.startedAt ? s.startedAt - ENDED_KEEP_MS : 0;
+  const subagents = everySub.filter(a => !(a.state === 'done' && a.endedAt && a.endedAt < runStart)).sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
   let tools = s.hookTools.size;
   if (info) { tools = info.toolIds.size; for (const id of s.hookTools) if (!info.toolIds.has(id)) tools++; }
   return {
@@ -1763,7 +1783,7 @@ function snapshot() {
   if (demo) return demo.snapshot();
   const now = Date.now();
   const list = codexTree([...sessions.values()]
-    .filter(s => !(s.ended && now - s.endedAt > ENDED_KEEP_MS) && (s.inRegistry || s.tail || s.lastHookAt))
+    .filter(s => !endedLongAgo(s, now) && (s.inRegistry || s.tail || s.lastHookAt))
     .map(s => sessionView(s, now))
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0)));
   const today = dayKey(now);

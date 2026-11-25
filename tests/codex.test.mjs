@@ -70,6 +70,29 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
   await fs.writeFile(path.join(logs, 'rollout-internal.jsonl'), meta('internal', { subagent: { other: 'guardian' } }) + token);
   await fs.writeFile(path.join(extraCodex, 'sessions', 'rollout-extra.jsonl'), meta('extra') + record('event_msg', { type: 'task_complete' }));
   await fs.writeFile(path.join(claude, 'sessions', `${process.pid}.json`), JSON.stringify({ sessionId: 'shared-id', pid: process.pid, cwd: dir, status: 'idle' }));
+  // Old conversations reopened by the editor: the process and the transcript's mtime are new, the dated lines are not.
+  const longAgo = new Date(Date.now() - 10 * 86400000), deadPid = 4194303;
+  const convo = path.join(claude, 'projects', 'p');
+  const said = (id, at, extra = {}) => JSON.stringify({ type: 'assistant', sessionId: id, timestamp: at.toISOString(), cwd: dir, ...extra,
+    message: { id: `msg-${id}-${extra.agentId || ''}`, model: 'claude-opus-5-5', usage: { input_tokens: 1, output_tokens: 2 } } }) + '\n';
+  const agent = async (id, agentId, mtime) => {
+    const sub = path.join(convo, id, 'subagents');
+    await fs.mkdir(sub, { recursive: true });
+    const metaFile = path.join(sub, `agent-${agentId}.meta.json`);
+    await fs.writeFile(metaFile, JSON.stringify({ toolUseId: `tu-${agentId}`, agentType: 'general-purpose', description: agentId, spawnDepth: 1, finished: true }));
+    await fs.utimes(metaFile, mtime, mtime);
+  };
+  await fs.mkdir(convo, { recursive: true });
+  await fs.writeFile(path.join(convo, 'old-closed.jsonl'), said('old-closed', longAgo) + '{"type":"cost-state"}\n');
+  await fs.writeFile(path.join(convo, 'old-open.jsonl'), said('old-open', longAgo) + '{"type":"cost-state"}\n');
+  await fs.writeFile(path.join(convo, 'recent-closed.jsonl'), JSON.stringify({ type: 'user', sessionId: 'recent-closed', timestamp: stamp(), message: { content: 'hi' } }) + '\n');
+  await agent('old-open', 'last-week', longAgo);
+  await fs.writeFile(path.join(convo, 'old-open', 'subagents', 'agent-last-week.jsonl'), said('old-open', longAgo, { agentId: 'last-week' }));
+  await agent('old-open', 'this-run', new Date());
+  await fs.writeFile(path.join(claude, 'sessions', '2.json'), JSON.stringify({ sessionId: 'old-open', pid: process.pid, cwd: dir, status: 'idle', startedAt: Date.now() }));
+  await fs.writeFile(path.join(claude, 'sessions', '3.json'), JSON.stringify({ sessionId: 'old-closed', pid: deadPid, cwd: dir, status: 'idle', startedAt: Date.now() }));
+  await fs.writeFile(path.join(claude, 'sessions', '4.json'), JSON.stringify({ sessionId: 'recent-closed', pid: deadPid, cwd: dir, status: 'idle', startedAt: Date.now() }));
+  await fs.writeFile(path.join(claude, 'sessions', '5.json'), JSON.stringify({ sessionId: 'never-worked', pid: deadPid, cwd: dir, status: 'idle', startedAt: Date.now() }));
   start();
   let s = await until(s => s.sessions.some(x => x.id === 'codex:shared-id' && x.subagents.length === 2) && s.sessions.some(x => x.id === 'shared-id') && s.sessions.some(x => x.id === 'codex:extra'));
 
@@ -88,6 +111,15 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
     assert.equal(s.sessions.some(x => ['codex:child', 'codex:grandchild', 'codex:internal'].includes(x.id)), false);
     assert.equal(s.sessions.find(x => x.id === 'codex:stale').status, 'ended');
     for (const secret of ['PRIVATE_INSTRUCTIONS', 'PRIVATE_REASONING', 'secret-title', 'secret-tool']) assert.ok(!JSON.stringify(s).includes(secret), secret);
+  });
+  await t.test('conversations and subagents from long ago are not shown as just ended', async () => {
+    s = await until(s => s.sessions.find(x => x.id === 'recent-closed')?.status === 'ended' && s.sessions.find(x => x.id === 'old-open')?.subagents.length);
+    assert.equal(s.sessions.some(x => x.id === 'old-closed'), false, 'last worked 10 days ago, process closed just now');
+    assert.equal(s.sessions.some(x => x.id === 'never-worked'), false, 'no transcript and no work');
+    const open = s.sessions.find(x => x.id === 'old-open');
+    assert.equal(open.status, 'idle');
+    assert.deepEqual(open.subagents.map(a => a.id), ['this-run'], 'the subagent of an earlier run is not listed');
+    assert.deepEqual(open.tokensTree, { input: 2, output: 4, cacheRead: 0, cacheWrite: 0 }, 'its tokens still count');
   });
   await t.test('HTTP, SSE and generated browser scripts', async () => {
     assert.equal((await (await fetch(base + '/api/health')).json()).version, '0.2.0');

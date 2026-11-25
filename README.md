@@ -111,6 +111,12 @@ Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
   turn into one-line rows. When a panel has more than fits, a bar at its bottom says what is out of sight; click it
   to scroll there.
 
+An ended session stays on the page for a while: 15 minutes in the network, up to 2 hours in cards. The 2 hours count
+from when it last did something, not from when its process closed. So an old conversation that the editor opens for
+a moment (the VS Code extension does this when a window opens) does not come back as "just ended", and a session that
+never did anything is not listed once it closes. A resumed conversation lists the subagents of this run; the ones that
+finished long before it was reopened are left out, though their tokens still count in its total.
+
 **Plans** shows the boards of the projects with open sessions: each phase as a hexagon, colour and badge for its
 state, and the questions waiting for you. **Feed** is the live event list: hover to pause it; the chevron
 collapses it.
