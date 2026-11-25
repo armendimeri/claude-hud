@@ -16,7 +16,10 @@ import { isDeepStrictEqual } from 'node:util';
 // Settings
 
 // Context window per model, in tokens (D13). A model missing here gets `context: null`: never a guess.
+// The 5.2 rows: platform.claude.com/docs/en/models/fable-5-2/overview and .../mythos-5-2/overview ("Context window: 1M").
 const CONTEXT_WINDOWS = {
+  'claude-fable-5-2': 1_000_000,
+  'claude-mythos-5-2': 1_000_000,
   'claude-fable-5-1': 1_000_000,
   'claude-mythos-5-1': 1_000_000,
   'claude-fable-5': 1_000_000,
@@ -92,6 +95,9 @@ const KEEPALIVE_MS = 15_000;
 const POLL_MS = 3_000;
 const SILENT_SUBAGENT_MS = 120_000;      // fallback close for a subagent nobody reported done
 const SILENT_SESSION_MS = 10 * 60_000;   // a session outside the registry counts as ended after this much silence
+const SETTLE_MS = 8_000;                 // hud-0-3 D7: a session with no work yet is shown after this long
+const SETTLE_WORK_MS = 60_000;           // work this long before the HUD first saw a session still counts as its first work
+const STARTUP_MS = 5_000;                // sessions found this soon after the HUD starts are shown at once
 const EXTERNAL_ROWS_MAX = 200;
 const CLOUDWATCH_EVERY_MS = 60_000;
 const ACCEPT_USAGE = process.env.HUD_ACCEPT_USAGE === '1';           // D12 (a), off by default
@@ -345,12 +351,61 @@ function newSession(id) {
     startedBy: null, chainChecked: false,
     tail: null, transcriptPath: null, lastFind: 0, root: null,
     subs: new Set(), byToolUse: new Map(), byAgent: new Map(),
+    seenAt: Date.now(), shown: false, pendingLine: null, resumeAt: 0,
   };
 }
 function getSession(id) {
   let s = sessions.get(id);
-  if (!s) { s = newSession(id); sessions.set(id, s); }
+  if (!s) {
+    s = newSession(id); sessions.set(id, s);
+    if (s.seenAt - hudStartedAt < STARTUP_MS) s.shown = true;
+    else setTimeout(() => settle(s), SETTLE_MS + 20);
+  }
   return s;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Settle time (hud-0-3 D7). When a VS Code window opens, old conversations get a process for a few seconds. A session
+// is therefore shown only at its first work (a hook other than SessionStart / SessionEnd, or a dated transcript line)
+// or SETTLE_MS after the HUD first saw it, and an ended session reopens the same way. Its "Session started" or
+// "Session resumed" line waits until then; "Session ended" is written only for a session that was shown.
+
+const workedSince = (s, at) => lastWork(s) >= at - SETTLE_WORK_MS;
+function sessionLine(s, text, at, key) {
+  if (s.shown && !s.ended) { pushFeed(s, 'session', text, at, key); return; }
+  if (!s.pendingLine || (text === 'Session resumed' && s.pendingLine.text !== text)) s.pendingLine = { text, at, key };
+}
+/** `worked`: a hook of work (anything but SessionStart / SessionEnd) has just arrived, whatever its own timestamp. */
+function settle(s, now = Date.now(), worked = false) {
+  if (s.agent === 'codex') { s.shown = true; s.pendingLine = null; s.resumeAt = 0; return; }
+  if (s.resumeAt) {
+    const alive = !s.inRegistry || pidAlive(s.pid);
+    if (!s.ended || !alive) s.resumeAt = 0;
+    else if (worked || now - s.resumeAt >= SETTLE_MS || workedSince(s, s.resumeAt)) {
+      const at = s.resumeAt;
+      s.resumeAt = 0;
+      reopenSession(s);
+      s.chainChecked = false;
+      queueChain(s);
+      s.pendingLine = null;
+      if (s.shown) pushFeed(s, 'session', 'Session resumed', at, `resume:${s.id}:${at}`);
+      else s.pendingLine = { text: 'Session resumed', at, key: `resume:${s.id}:${at}` };
+      scheduleState();
+    }
+  }
+  if (s.shown || s.ended) return;      // a session that ended before it was shown stays hidden
+  if (!worked && now - s.seenAt < SETTLE_MS && !workedSince(s, s.seenAt)) return;
+  s.shown = true;
+  const line = s.pendingLine;
+  s.pendingLine = null;
+  if (line) pushFeed(s, 'session', line.text, line.at, line.key);
+  scheduleState();
+}
+/** An ended session asks to run again (a new process, or a SessionStart hook): it reopens once it settles. */
+function askResume(s, at) {
+  if (!s.ended) return;
+  if (!s.resumeAt) { s.resumeAt = at; setTimeout(() => settle(s), Math.max(0, at + SETTLE_MS + 20 - Date.now())); }
+  settle(s);
 }
 
 function pushFeed(s, kind, text, at = Date.now(), dedupeKey = null) {
@@ -480,7 +535,12 @@ function processLine(t, line) {
   if (typeof j.sessionId === 'string') info.sessionId ??= j.sessionId;
   if (typeof j.agentId === 'string') info.agentId ??= j.agentId;
   const ts = typeof j.timestamp === 'string' ? Date.parse(j.timestamp) || 0 : 0;
-  if (ts) { if (ts > info.lastTs) info.lastTs = ts; if (!info.firstTs) info.firstTs = ts; }
+  if (ts) {
+    if (ts > info.lastTs) info.lastTs = ts;
+    if (!info.firstTs) info.firstTs = ts;
+    const o = t.owner;
+    if (o && !o.agentId && (!o.session.shown || o.session.resumeAt)) settle(o.session);   // a dated line is work (D7)
+  }
   if (typeof j.customTitle === 'string' && j.customTitle) info.customTitle = j.customTitle;
   if (j.type === 'ai-title' && typeof j.aiTitle === 'string') info.title = j.aiTitle;
   else if (j.type === 'summary' && typeof j.summary === 'string') info.title ??= j.summary;
@@ -705,6 +765,7 @@ function codexTree(list) {
       type: source.kind || 'Codex', state: child.status === 'busy' || child.status === 'needs-you' ? 'running' : 'done',
       endedAt: child.status === 'idle' ? child.lastActivityAt : child.endedAt, background: false });
     addTokens(root.tokensTree, child.tokens);
+    if (child.status === 'busy' || child.status === 'needs-you') root.agentsRunning = (root.agentsRunning || 0) + 1;
     hidden.add(child.id);
   }
   return list.filter(s => !hidden.has(s.id));
@@ -807,12 +868,18 @@ function replayAgentCalls(t) {
   if (!t.owner) return;
   for (const [toolUseId, call] of t.info.agentCalls) applyAgentCall(t.owner.session, t, toolUseId, call);
 }
+/**
+ * A subagent only a hook has named (an agent_id, no agent_type, no Agent call, no transcript, no meta.json yet) is a
+ * placeholder: it is not shown and writes no feed line (hud-0-3 D7). It stays in `s.subs`, so a meta.json or an Agent
+ * call that arrives later still completes it.
+ */
+function isPlaceholder(sub) { return !sub.toolUseId && !sub.tail && !sub.type && !sub.description; }
 function closeSub(s, sub, at = Date.now()) {
   if (sub.state === 'done') return;
   sub.state = 'done';
   sub.endedAt = at;
   sub.currentTool = null;
-  if (at >= hudStartedAt - 2000) {
+  if (at >= hudStartedAt - 2000 && !isPlaceholder(sub)) {
     pushFeed(s, 'done', `Agent done · ${[sub.type, sub.description].filter(Boolean).join(': ')}`, at, `done:${sub.toolUseId || sub.agentId}`);
   }
 }
@@ -910,8 +977,9 @@ function endSession(s, at, reason) {
   s.endReason = reason;
   s.currentTool = null;
   s.needsYou = null;
+  s.pendingLine = null; s.resumeAt = 0;
   for (const sub of s.subs) closeSub(s, sub, at);
-  if (at >= hudStartedAt - 2000) pushFeed(s, 'session', `Session ended${reason ? ` (${reason})` : ''}`, at, `end:${s.id}`);
+  if (s.shown && at >= hudStartedAt - 2000) pushFeed(s, 'session', `Session ended${reason ? ` (${reason})` : ''}`, at, `end:${s.id}`);
   scheduleState();
 }
 function reopenSession(s) {
@@ -952,21 +1020,17 @@ async function scanRegistry() {
         const at = num(j.statusUpdatedAt) || num(j.updatedAt) || Date.now();
         if (at >= s.regStatusAt) { s.regStatus = j.status; s.regStatusAt = at; }
       }
-      if (relaunched) {
-        reopenSession(s);
-        s.chainChecked = false;
-        queueChain(s);
-        pushFeed(s, 'session', 'Session resumed', Date.now(), `resume:${s.id}:${pid}`);
-      }
+      if (relaunched) askResume(s, Date.now());     // reopens once it works or has run for SETTLE_MS (D7)
       if (!pidAlive(pid)) endSession(s, Date.now(), 'process gone');
       if (isNew) {
         attachSessionTranscript(s);
         queueChain(s);
-        if (Date.now() - hudStartedAt > 5000) pushFeed(s, 'session', 'Session started', Date.now(), `start:${s.id}`);
+        if (Date.now() - hudStartedAt > STARTUP_MS) sessionLine(s, 'Session started', Date.now(), `start:${s.id}`);
       }
+      settle(s);
     }
     for (const s of sessions.values()) {
-      if (s.inRegistry && !s.ended && !seen.has(s.id)) endSession(s, Date.now(), 'closed');
+      if (s.inRegistry && !seen.has(s.id)) { s.resumeAt = 0; if (!s.ended) endSession(s, Date.now(), 'closed'); }
     }
   } finally { registryScanning = false; }
   scheduleState();
@@ -1055,12 +1119,17 @@ function onHook(p) {
     // Only new work reopens a session (a resume, or activity after a silence). Async hooks of a session that is
     // exiting (Stop, PostToolUse, SessionEnd) can arrive after its registry file is gone: they change nothing.
     if (!REOPEN_EVENTS.has(ev) || at <= (s.endedAt || 0) || (s.inRegistry && !pidAlive(s.pid))) return;
-    reopenSession(s);
+    // A SessionStart is not work: the session reopens once it works or has run for SETTLE_MS (D7).
+    if (ev === 'SessionStart') { if (typeof p.model === 'string') s.hookModel = p.model; askResume(s, at); scheduleState(); return; }
+    if (s.resumeAt) settle(s, now, true);    // a pending resume: reopens, with its "Session resumed" line
+    if (s.ended) { s.resumeAt = 0; reopenSession(s); }
   }
   s.lastHookAt = Math.max(s.lastHookAt, at);
-  if (ev !== 'SessionStart' && ev !== 'SessionEnd') s.lastWorkAt = Math.max(s.lastWorkAt, at);   // opening or closing is not work
+  const work = ev !== 'SessionStart' && ev !== 'SessionEnd';   // opening or closing is not work
+  if (work) s.lastWorkAt = Math.max(s.lastWorkAt, at);
   if (typeof p.cwd === 'string' && !s.cwd) setCwd(s, p.cwd);
   if (typeof p.transcript_path === 'string') attachSessionTranscript(s, p.transcript_path);
+  settle(s, now, work);                               // before this event's own feed lines, so "Session started" comes first
   const sub = typeof p.agent_id === 'string' && p.agent_id ? subForAgent(s, p.agent_id, str(p.agent_type)) : null;
   if (sub) sub.lastHookAt = at;
   const id = str(p.tool_use_id);
@@ -1069,8 +1138,8 @@ function onHook(p) {
     case 'SessionStart':
       setHookStatus(s, 'idle', at);
       if (typeof p.model === 'string') s.hookModel = p.model;
-      if (p.source === 'resume') pushFeed(s, 'session', 'Session resumed', at, `resume:${s.id}:${at}`);
-      else if (!p.source || p.source === 'startup') pushFeed(s, 'session', 'Session started', at, `start:${s.id}`);   // the registry may have said so already
+      if (p.source === 'resume') sessionLine(s, 'Session resumed', at, `resume:${s.id}:${at}`);
+      else if (!p.source || p.source === 'startup') sessionLine(s, 'Session started', at, `start:${s.id}`);   // the registry may have said so already
       break;
     case 'UserPromptSubmit':
       clearNeedsYou(s);
@@ -1144,6 +1213,7 @@ function onHook(p) {
       pushFeed(s, 'session', `Compacting context${p.trigger ? ` (${p.trigger})` : ''}`, at);
       break;
   }
+  settle(s, now, work);
   scheduleState();
 }
 
@@ -1199,6 +1269,7 @@ async function scanRecentTranscripts() {
           // Not in the registry, which lists every running session: it has ended (a later hook reopens it).
           // Without a readable registry, fall back to silence.
           const ns = getSession(id);
+          ns.shown = true;                       // found at start-up: shown at once (D7)
           attachSessionTranscript(ns, f);
           if (registryReadable || Date.now() - t.info.lastTs > SILENT_SESSION_MS) endSession(ns, t.info.lastTs, null);
         }
@@ -1730,7 +1801,7 @@ function sessionView(s, now) {
     tool = s.currentTool;
     if (!tool) { const open = latestOpenTool(info); if (open && now - open.since < 30 * 60_000) tool = open; }
   }
-  const everySub = [...s.subs].map(sub => subView(s, sub, now)).filter(x => x.id);
+  const everySub = [...s.subs].filter(sub => !isPlaceholder(sub)).map(sub => subView(s, sub, now)).filter(x => x.id);
   const tokens = info ? { ...info.tokens } : zero();
   const tokensTree = everySub.reduce((acc, x) => addTokens(acc, x.tokens), { ...tokens });   // the whole conversation, like `tokens`
   // A resumed conversation lists the subagents of this run. Those that finished well before its process started
@@ -1753,6 +1824,7 @@ function sessionView(s, now) {
     tokens, tokensTree,
     context: contextFor(mi.model, info?.lastUsed, info?.contextWindow),
     subagents,
+    agentsRunning: subagents.filter(a => a.state === 'running').length,   // hud-0-3 D6: an idle parent with these reads "Agents working"
   };
 }
 const STATUS_ORDER = { 'needs-you': 0, busy: 1, idle: 2, ended: 3 };
@@ -1783,7 +1855,7 @@ function snapshot() {
   if (demo) return demo.snapshot();
   const now = Date.now();
   const list = codexTree([...sessions.values()]
-    .filter(s => !endedLongAgo(s, now) && (s.inRegistry || s.tail || s.lastHookAt))
+    .filter(s => (s.shown || s.agent === 'codex') && !endedLongAgo(s, now) && (s.inRegistry || s.tail || s.lastHookAt))
     .map(s => sessionView(s, now))
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0)));
   const today = dayKey(now);
@@ -2086,7 +2158,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 /* ---- session card ---- */
 .cards { display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; container-type: inline-size; }
 .card { position: relative; padding: 16px 20px; flex: none; background-color: rgba(8, 17, 28, .62); --sc: var(--arc); transition: --hl .3s var(--ease), --sc .3s var(--ease), opacity .3s var(--ease); }
-.card[data-s=busy] { --sc: var(--amber); }
+.card[data-s=busy] { --sc: var(--amber); } .card[data-s=agents] { --sc: var(--agent); }
 .card[data-s=needs-you] { --sc: var(--alert); --hl: rgba(255, 77, 94, .7); }
 .card[data-s=ended] { --hl: rgba(214, 243, 255, .14); background-color: rgba(8, 17, 28, .3); }
 .card[data-s=ended] .card-title { color: var(--ink-2); font-weight: 400; }
@@ -2121,7 +2193,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .now[data-k=needs] .now-n { font: 600 13px/20px var(--f-body); letter-spacing: 0; }
 .now[data-k=needs] .now-t { color: var(--alert); }
 .now[data-k=idle], .now[data-k=ended], .now[data-k=think] { color: var(--ink-2); }
-.now[data-k=fresh] { color: var(--ok); }
+.now[data-k=fresh] { color: var(--ok); } .now[data-k=agents] { color: var(--agent); }
 .now[data-k=fresh] .ic { color: var(--ok); }
 .card .meters { margin-top: 8px; }
 .subs { margin-top: 12px; padding-top: 8px; border-top: 1px solid rgba(41, 230, 255, .12); display: flex; flex-direction: column; }
@@ -2157,7 +2229,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .cards.compact { gap: 0; }
 .crow { position: relative; display: grid; grid-template-columns: 104px 112px minmax(0, 1fr) 64px 24px minmax(0, 168px) 48px 40px 28px; gap: 8px; align-items: center; height: 32px; padding: 0 12px; border-bottom: 1px solid rgba(41, 230, 255, .08); --sc: var(--arc); transition: --sc .3s, opacity .3s, background-color .3s; }
 .crow:hover { background: var(--arc-06); }
-.crow[data-s=busy] { --sc: var(--amber); }
+.crow[data-s=busy] { --sc: var(--amber); } .crow[data-s=agents] { --sc: var(--agent); }
 .crow[data-s=needs-you] { --sc: var(--alert); background: rgba(255, 77, 94, .08); }
 .crow[data-s=needs-you]::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; background: var(--alert); animation: breathe 1.6s ease-in-out infinite; }
 .crow[data-s=ended] .cr-t { color: var(--ink-2); font-weight: 400; }
@@ -2296,7 +2368,7 @@ button.chip:hover { border-color: var(--arc-35); color: var(--ink); }
 .nf-spark { border: 1.5px solid var(--sc); }
 .nf-ping { border: 1px solid var(--arc); box-shadow: 0 0 12px rgba(41, 230, 255, .4); display: none; }
 .na[data-s=busy] .nn { --sc: var(--amber); } .na[data-s=needs-you] .nn { --sc: var(--alert); }
-.na[data-s=running] .nn { --sc: var(--agent); } .na[data-s=done] .nn { --sc: var(--ok); }
+.na[data-s=running] .nn, .na[data-s=agents] .nn { --sc: var(--agent); } .na[data-s=done] .nn { --sc: var(--ok); }
 .na[data-s=ended] .nn { --sc: rgba(214, 243, 255, .5); } .na[data-s=sat] .nn { --sc: var(--agent); }
 .na[data-s=done] :is(.nf-hex, .nf-inner, .nf-glyph, .nf-ctx-t, .nf-ctx) { opacity: .8; }
 .na[data-s=ended] :is(.nf-hex, .nf-inner, .nf-glyph, .nf-ctx-t, .nf-ctx) { opacity: .5; }
@@ -2706,6 +2778,9 @@ function hudClient() {
   }
   // Sessions the network draws and the vitals count: open ones, plus ended ones for 15 minutes (or while a session
   // they launched is still open).
+  // hud-0-3 D6: an idle session with a running subagent is not waiting for you. The page shows it as "Agents working"
+  // (a display state only: the API keeps its four statuses and adds `agentsRunning`).
+  const viewStatus = x => x.status === 'idle' && x.agentsRunning > 0 ? 'agents' : x.status;
   function shownSessions(sessions) {
     const t = now(), live = sessions.filter(x => x.status !== 'ended');
     return sessions.filter(x => x.status !== 'ended' || live.some(l => l.startedBy === x.id) || (x.endedAt && t - x.endedAt < 15 * 60_000));
@@ -2794,7 +2869,7 @@ function hudClient() {
   // state -> [glyph, word, colour]: status is always a word, a shape and a colour.
   const STATUS = {
     'needs-you': ['needs', 'Needs you', 'alert'], busy: ['busy', 'Busy', 'amber'], idle: ['idle', 'Idle', 'arc'], ended: ['ended', 'Ended', 'dim'],
-    running: ['running', 'Running', 'agent'], done: ['done', 'Done', 'ok'],
+    agents: ['running', 'Agents working', 'agent'], running: ['running', 'Running', 'agent'], done: ['done', 'Done', 'ok'],
     todo: ['todo', 'Todo', 'dim'], 'in-progress': ['inprog', 'In progress', 'arc'], 'handed-off': ['handoff', 'Handed off', 'ok'], accepted: ['done', 'Accepted', 'ok'],
     blocked: ['needs', 'Blocked', 'alert'], bounced: ['bounced', 'Bounced', 'alert'], partial: ['partial', 'Partial', 'amber'], unknown: ['unknown', 'Unknown', 'dim'],
   };
@@ -3001,6 +3076,8 @@ function hudClient() {
           k = 'tool'; setIcon(toolIcon(tool.name)); n = tool.name; ss = tool.summary || ''; since(tm, tool.since);
         } else if (x.status === 'busy') {
           k = 'think'; setIcon('clock'); n = 'Working'; ss = 'between tools';
+        } else if (viewStatus(x) === 'agents') {
+          k = 'agents'; setIcon('agent'); n = 'Agents working'; ss = plural(x.agentsRunning, 'subagent running', 'subagents running');
         } else if (x.status === 'idle') {
           const fresh = x.lastActivityAt && t - x.lastActivityAt < 90_000;
           k = fresh ? 'fresh' : 'idle'; setIcon(fresh ? 'check' : 'clock'); n = fresh ? 'Just finished' : 'Idle';
@@ -3096,10 +3173,11 @@ function hudClient() {
     return {
       el,
       update(x, c = {}) {
-        if (st && st !== x.status) glitch(el);
-        st = x.status; setData(el, 's', st); setData(el, 'id', x.id);
+        const vs = viewStatus(x);
+        if (st && st !== vs) glitch(el);
+        st = vs; setData(el, 's', st); setData(el, 'id', x.id);
         txt(projName, x.project || 'Unknown project'); projLbl.dataset.tip = x.project || 'Unknown project';
-        tag.set(x.status);
+        tag.set(vs);
         const t = x.title || x.name || 'Untitled session';
         txt(title, t); title.dataset.tip = t;
         txt(mChip, [x.agent === 'codex' ? 'Codex' : 'Claude Code', shortModel(x.model) || 'model unknown', x.effort].filter(Boolean).join(' · '));
@@ -3134,9 +3212,10 @@ function hudClient() {
     return {
       el,
       update(x) {
-        if (st && st !== x.status) glitch(el);
-        st = x.status; setData(el, 's', x.status); setData(el, 'id', x.id);
-        tag.set(x.status);
+        const vs = viewStatus(x);
+        if (st && st !== vs) glitch(el);
+        st = vs; setData(el, 's', vs); setData(el, 'id', x.id);
+        tag.set(vs);
         txt(p, x.project || '—'); setData(p, 'tip', x.project);
         const title = x.title || x.name || 'Untitled session'; txt(t, title); t.dataset.tip = title;
         txt(m, (x.agent === 'codex' ? 'Codex · ' : '') + shortModel(x.model)); setData(m, 'tip', x.modelRaw);
@@ -3146,6 +3225,7 @@ function hudClient() {
         let tipW = '';
         if (x.status === 'needs-you') { ic = 'alert'; tipW = x.needsYou?.reason || 'Needs you'; w = shortReason(tipW); since(wTm, x.needsYou?.since); }
         else if (x.currentTool) { ic = toolIcon(x.currentTool.name); w = `${x.currentTool.name} · ${x.currentTool.summary || ''}`; }
+        else if (vs === 'agents') { ic = 'agent'; w = plural(x.agentsRunning, 'subagent running', 'subagents running'); }
         else if (x.status === 'idle') age(wTm, x.lastActivityAt, 'for ');   // the status tag already says idle / ended
         else if (x.status === 'ended') { ic = 'close'; age(wTm, x.endedAt, '', ' ago'); }
         if (ic !== icName) { icName = ic; wIc.replaceChildren(icon(ic)); }
@@ -3212,7 +3292,7 @@ function hudClient() {
         const mode = totals.needsYou > 0 ? 'alert' : running > 0 ? 'live' : live.length ? 'calm' : 'idle';
         setData(el, 'mode', mode);
         const rank = { 'needs-you': 0, busy: 1, idle: 2 };
-        const list = live.map(x => x.status).sort((a, b) => rank[a] - rank[b]);
+        const list = live.map(x => viewStatus(x) === 'agents' ? 'busy' : x.status).sort((a, b) => rank[a] - rank[b]);   // a waiting parent counts with busy (D6)
         if (list.join() !== sig) {
           sig = list.join();
           const n = list.length, gap = n > 1 ? Math.min(6, 90 / n) : 0, seg = n ? (360 - n * gap) / n : 0;
@@ -3252,9 +3332,9 @@ function hudClient() {
       update(st, o = {}) {
         const t = st.totals || {}, from = o.boot ? { from: 0 } : undefined;
         const live = (st.sessions || []).filter(x => x.status !== 'ended');
-        const idle = live.filter(x => x.status === 'idle').length;
+        const idle = live.filter(x => viewStatus(x) === 'idle').length, waiting = live.filter(x => viewStatus(x) === 'agents').length;
         S.n.set(String(t.sessions || 0), from);
-        txt(S.sub, `${t.busy || 0} busy · ${idle} idle`);
+        txt(S.sub, `${(t.busy || 0) + waiting} busy · ${idle} idle`);   // a parent waiting on its subagents counts with busy (D6)
         const doneSubs = shownSessions(st.sessions || []).reduce((n, x) => n + (x.subagents || []).filter(a => a.state === 'done').length, 0);   // the same sessions the network draws
         A.n.set(String(t.subagentsRunning || 0), from);
         txt(A.sub, `running · ${doneSubs} finished`);
@@ -3343,7 +3423,7 @@ function hudClient() {
       if (!shown.some(x => x.status !== 'ended')) return [];
       let items = [];
       for (const x of shown) {
-        items.push({ id: x.id, kind: 'session', parent: null, depth: 0, x, state: x.status, tokens: headline(x.tokens), project: x.project || 'Unknown', startedAt: x.startedAt || 0 });
+        items.push({ id: x.id, kind: 'session', parent: null, depth: 0, x, state: viewStatus(x), tokens: headline(x.tokens), project: x.project || 'Unknown', startedAt: x.startedAt || 0 });
         const ids = new Set((x.subagents || []).map(a => a.id));
         for (const a of x.subagents || []) items.push({ id: a.id, kind: 'sub', parent: ids.has(a.parentId) ? a.parentId : x.id, session: x.id, depth: 1, x: a, state: a.state === 'done' ? 'done' : 'running', tokens: headline(a.tokens), startedAt: a.startedAt || 0 });
       }
@@ -3461,7 +3541,7 @@ function hudClient() {
       const hw = hubLabel.textContent.length * CHAR.label / 2 + 6;
       placed.push({ x0: hubXY.x - hw, x1: hubXY.x + hw, y0: hubXY.y + 26, y1: hubXY.y + 44 }, { x0: hubXY.x - 24, x1: hubXY.x + 24, y0: hubXY.y - 24, y1: hubXY.y + 24 });
       const discs = items.map(i => ({ id: i.id, x0: i.px - i.r - 9, x1: i.px + i.r + 9, y0: i.py - i.r - 9, y1: i.py + i.r + 9 }));
-      const prio = i => i.state === 'needs-you' ? 0 : i.kind === 'session' ? (i.state === 'busy' ? 1 : i.state === 'idle' ? 2 : 6) : i.kind === 'sub' ? (i.state === 'running' ? 3 : 4) : 5;
+      const prio = i => i.state === 'needs-you' ? 0 : i.kind === 'session' ? (i.state === 'busy' || i.state === 'agents' ? 1 : i.state === 'idle' ? 2 : 6) : i.kind === 'sub' ? (i.state === 'running' ? 3 : 4) : 5;
       const inPanel = b => b.x0 >= 2 && b.x1 <= W - 2 && b.y0 >= 2 && b.y1 <= H - (W >= 560 ? 26 : 2);
       for (const i of items.slice().sort((a, b) => prio(a) - prio(b) || b.r - a.r)) {
         const r = nodes.get(i.id), outward = i.py < hubXY.y - 4 ? 't' : 'b', other = outward === 't' ? 'b' : 't';
@@ -3500,7 +3580,7 @@ function hudClient() {
       btn.addEventListener('click', () => { if (r.item.kind === 'sat') { expanded.add(r.item.parent); render(); } else togglePin(r.id); });
       return r;
     }
-    const FACE_GLYPH = { 'needs-you': 'needs', busy: 'busy', idle: 'idle', ended: 'ended', running: 'running', done: 'done' };
+    const FACE_GLYPH = { 'needs-you': 'needs', busy: 'busy', idle: 'idle', ended: 'ended', agents: 'running', running: 'running', done: 'done' };
     function drawFace(r, i) {
       const R = Math.round(i.r * 2) / 2, x = i.x, prov = x ? x.provider : null, ringOn = !i.lbl || i.lbl.mode !== 'none';
       const pct = x && x.context && ringOn ? x.context.pct : null;
@@ -4276,7 +4356,7 @@ function hudClient() {
     return { el, refresh: later };
   }
   // Hidden cards or rows, counted by state ("1 busy · 2 idle"): a word and its colour.
-  const COUNT_C = { 'needs-you': 'alert', busy: 'amber', idle: 'arc', ended: 'ink2' };
+  const COUNT_C = { 'needs-you': 'alert', busy: 'amber', agents: 'agent', idle: 'arc', ended: 'ink2' };
   function stateCounts(els) {
     const c = {}; for (const e of els) c[e.dataset.s] = (c[e.dataset.s] || 0) + 1;
     return Object.keys(COUNT_C).filter(k => c[k]).map(k => h('span', { class: 'c-' + COUNT_C[k], text: `${c[k]} ${STATUS[k][1].toLowerCase()}` }));
@@ -4572,7 +4652,10 @@ function designMain(H) {
   const idle = sess({ project: 'ImPOS-Maui', status: 'idle', currentTool: null, lastActivityAt: t - 17 * 60e3, title: 'Receipt printer: retry after paper out', model: 'claude-sonnet-5-5', effort: 'medium', branch: 'main', context: ctx(12), tokens: tok(12000, 64000, 40, 900000), startedBy: busy.id });
   const ended = sess({ project: 'WasteManagement2', status: 'ended', endedAt: t - 3 * 60e3, lastActivityAt: t - 3 * 60e3, currentTool: null, title: 'Say hi', model: 'claude-haiku-5-5', effort: 'low', branch: 'customer-history', tokens: tok(120, 3000, 8, 0), context: ctx(2, 200000), startedBy: busy.id, tools: 0 });
   const long = sess({ project: 'ImPOS-Maui', title: 'Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners', branch: 'phone-app/xiaomi-autostart-and-battery-whitelist-runbook', model: 'claude-mythos-9-9', modelRaw: 'claude-mythos-9-9', context: null, provider: 'unknown', currentTool: { name: 'mcp__browser__screenshot', summary: 'https://localhost:5001/settings/battery?device=xiaomi-13t-pro&mode=strict', since: t - 3e3 } });
-  const all = [needs, busy, fresh, idle, ended, long];
+  const waiting = sess({ project: 'TourCMS', status: 'idle', currentTool: null, lastActivityAt: t - 40e3, title: 'Booking changes: waiting on the review agent', model: 'claude-sonnet-5-5', effort: 'medium', branch: 'booking-changes', context: ctx(24), tokens: tok(18000, 52000, 30, 1200000),
+    subagents: [sub({ type: 'general-purpose', description: 'Review the date-change edge cases', background: true, startedAt: t - 90e3 })] });
+  waiting.agentsRunning = 1;
+  const all = [needs, busy, waiting, fresh, idle, ended, long];
   const byId = new Map(all.map(x => [x.id, x]));
   const cardCtx = { byId, host, maxTok: Math.max(...all.map(x => H.headline(x.tokens))), maxCache: Math.max(...all.map(x => x.tokens.cacheRead)) };
   const totals = list => {
@@ -4628,7 +4711,7 @@ function designMain(H) {
   // ---- icons, status, chips, controls ----
   section('Icons and status', 'Icons: 24-unit grid, 1.5 px stroke. Status is always a word, a shape and a colour.',
     spec('Icons', h('div', { class: 'icons' }, Object.keys(H.ICONS).filter(n => n !== 'slash').map(n => h('div', { class: 'icon-c' }, icon(n), h('span', { class: 'mono', text: n }))))),
-    spec('Session and subagent states', h('div', { class: 'col' }, ['needs-you', 'busy', 'idle', 'ended', 'running', 'done'].map(st => { const g = H.statusTag(); g.set(st, st === 'needs-you' ? '1:35' : st === 'running' ? '0:42' : null); return g.el; }))),
+    spec('Session and subagent states', h('div', { class: 'col' }, ['needs-you', 'busy', 'agents', 'idle', 'ended', 'running', 'done'].map(st => { const g = H.statusTag(); g.set(st, st === 'needs-you' ? '1:35' : st === 'running' ? '0:42' : null); return g.el; }))),
     spec('Plan states', h('div', { class: 'col' }, ['todo', 'in-progress', 'handed-off', 'accepted', 'blocked', 'bounced', 'partial', 'unknown'].map(st => { const g = H.statusTag(); g.set(st); return g.el; }))),
     spec('Chips and badges', h('div', { class: 'row' }, (() => {
       const pa = H.provBadge(), pb = H.provBadge(), pu = H.provBadge(); pa.set('anthropic', 'claude-opus-5-5'); pb.set('bedrock', 'us.anthropic.claude-opus-5-5'); pu.set('unknown');
@@ -4669,7 +4752,7 @@ function designMain(H) {
     return out;
   })() });
   section('Session card', 'Comfortable cards up to 8 live sessions; above that, compact rows switch on by themselves.',
-    card('Busy, with a nested subagent tree', busy), card('Needs you', needs), card('Idle, just finished, on Bedrock, context 92%', fresh), card('Idle, launched from the coordinator’s shell', idle), card('Ended (started by the coordinator)', ended),
+    card('Busy, with a nested subagent tree', busy), card('Needs you', needs), card('Agents working: idle, with a subagent still running', waiting), card('Idle, just finished, on Bedrock, context 92%', fresh), card('Idle, launched from the coordinator’s shell', idle), card('Ended (started by the coordinator)', ended),
     card('Long title, long branch, unknown model and context window', long), card('Subagent folding: depth over 3, more than 4 finished', deep),
     wide('Compact rows (more than 8 sessions)', rows));
 
@@ -4860,6 +4943,8 @@ function makeDemo(mode) {
     session({ project: 'FidiaCRM', agent: 'codex', title: 'Clients: contact length limits (P3-06)', status: 'idle', branch: 'clients/P3-06', quiet: 900, effort: 'medium', modelRaw: 'gpt-6-astra' });
     const ended = session({ project: 'WasteManagement2', title: 'Say hi', status: 'ended', endedAgo: 180, age: 240, effort: 'low', modelRaw: 'claude-haiku-5-5', scale: 0.1 });
     ended.startedBy = coordinator.id;
+    const waiter = session({ project: 'TourCMS', title: 'Booking changes: waiting on the review agent', status: 'idle', quiet: 40, branch: 'booking-changes', modelRaw: 'claude-sonnet-5-5', effort: 'medium' });
+    sub(waiter, waiter.id, 1, ['general-purpose', 'Review the date-change edge cases'], { age: 90, background: true });   // hud-0-3 D6: "Agents working"
     flipper = session({ project: 'ImPOS-Maui', title: 'Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung and the support notes for the shop owners', status: 'busy', branch: 'phone-app', modelRaw: 'us.anthropic.claude-sonnet-5-5-v1:0', scale: 2 });
   } else {
     const projects = ['FidiaCRM', 'WasteManagement2', 'ImPOS-Maui', 'TourCMS', 'Aegis', 'fidiagraf.com'];
@@ -4869,6 +4954,7 @@ function makeDemo(mode) {
       const s = session({ project: projects[i % projects.length], title: `${pick(['Fix', 'Build', 'Review', 'Plan', 'Migrate'])} ${pick(['quotation totals', 'the history tab', 'Xiaomi autostart', 'booking changes', 'the tour calendar', 'invoice OCR', 'the deployment guide for the first agency server'])}`,
         status, needsYou: status === 'needs-you' ? pick(['Permission: Bash', 'Question for you', 'Permission: Edit']) : null, modelRaw: i % 7 === 3 ? 'global.anthropic.claude-opus-5-5-v1:0' : pick(['claude-opus-5-5', 'claude-sonnet-5-5']), quiet: status === 'idle' ? rnd(60, 3000) : 2 });
       if (status === 'busy' && i % 3 === 1) { const a = sub(s, s.id, 1, pick(AGENT_JOBS)); if (i % 2) sub(s, a.id, 2, pick(AGENT_JOBS)); }
+      if (i === 3) sub(s, s.id, 1, pick(AGENT_JOBS), { background: true });   // an idle parent waiting on a subagent (D6)
     }
     coordinator = sessionsList[1];
   }
@@ -4969,6 +5055,7 @@ function makeDemo(mode) {
       delete out._ctx;
       out.context = contextFor(s.model, Math.round(s._ctx / 100 * (CONTEXT_WINDOWS[s.model] || 0)));
       out.tokensTree = out.subagents.reduce((acc, a) => addTokens(acc, a.tokens), { ...s.tokens });
+      out.agentsRunning = out.subagents.filter(a => a.state === 'running').length;
       if (out.status === 'busy' || out.status === 'needs-you') out.lastActivityAt = now;
       return out;
     }).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0));

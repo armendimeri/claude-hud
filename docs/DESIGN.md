@@ -164,7 +164,8 @@ As built. Each entry says what the component shows, its states, and which motion
 ### Arc reactor and vitals
 
 - **Reactor** (232 px; 200 px on screens under 960 px tall):
-  - the outer ring has one segment per open session, coloured by state, needs-you first;
+  - the outer ring has one segment per open session, coloured by state, needs-you first; a session that reads
+    "Agents working" counts with busy (amber);
   - the inner ring has 12 slots that fill with running subagents;
   - the centre number is the agents working (busy and needs-you sessions plus running subagents), rolling.
   - **Modes:** idle (no sessions, 50%), calm (sessions open, none working), live, alert (red, breathing 1.6 s).
@@ -172,7 +173,7 @@ As built. Each entry says what the component shows, its states, and which motion
     running, and none during an alert.
 - **Vitals:** a label over a number, with a line under it.
   - Need you: red above 0, and "+ 2 plans" when plan boards wait too.
-  - Sessions: busy · idle.
+  - Sessions: busy · idle. A session that reads "Agents working" counts as busy.
   - Subagents: running · finished. Finished counts the sessions the network draws (open ones, plus ended ones for
     15 minutes).
   - Plans: in progress, of the total.
@@ -196,7 +197,8 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
   - the needs-you reason in red with its timer;
   - "Working between tools";
   - "Idle for 17m";
-  - "Just finished", in green for 90 s.
+  - "Just finished", in green for 90 s;
+  - "Agents working · 1 subagent running", in violet with the agent icon.
 - **Meters:**
   - tokens: output, cache write and input segments, the number, and "incl. subagents";
   - cache read, kept apart;
@@ -206,6 +208,10 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
   - busy: an amber scan line runs along the top edge (layer 2);
   - needs you: a red frame and a breathing inner glow (layer 3);
   - idle;
+  - agents working: idle, with a subagent still running. The status tag reads AGENTS WORKING with the running
+    glyph, in violet (`--agent`), and the card's accent is violet. It is a page state only: the API keeps its four
+    statuses and adds `agentsRunning`, and the page shows this wherever it would say Idle (card, compact row, node,
+    node card);
   - ended: collapsed to its header, title and a one-line summary, and sorted last.
 - **Motion:**
   - enter: scale from 0.98 with a 220 ms fade, plus a short glitch (layer 1);
@@ -228,7 +234,8 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
   - project;
   - title (the widest column);
   - provider letter (A, B dashed, ?);
-  - what it is doing: the tool and summary, the short needs-you reason, "for 17m" when idle, "5m ago" when ended;
+  - what it is doing: the tool and summary, the short needs-you reason, "1 subagent running" when its agents are
+    working, "for 17m" when idle, "5m ago" when ended;
   - tokens;
   - context %;
   - "+n" running subagents.
@@ -267,6 +274,7 @@ Shown only when there are rows. Each row: the provider badge, the app or model, 
   - busy: amber, with a spinner;
   - needs you: red, with a breathing glow (layer 3);
   - idle: cyan;
+  - agents working (an idle session with a running subagent): violet, with the running glyph and no spinner;
   - ended: dashed and dimmed, with the letter still readable;
   - running subagent: violet, with a spinner;
   - finished subagent: green, at 80%;

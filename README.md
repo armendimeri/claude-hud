@@ -114,6 +114,14 @@ Open `http://127.0.0.1:7777`. The page answers three questions, in this order:
   turn into one-line rows. When a panel has more than fits, a bar at its bottom says what is out of sight; click it
   to scroll there.
 
+A session that has finished its turn but still has a subagent running reads **Agents working**, in violet, where it
+would say Idle: it isn't waiting for you. The reactor's ring counts it with the busy ones.
+
+A session that hasn't done anything yet appears after 8 seconds, or as soon as it works (a prompt, a tool, a new
+transcript line), so an old conversation that the editor opens for a moment never shows up, writes no feed line and
+plays no sound. An ended conversation that gets a new process reopens the same way. A subagent that only a hook has
+named (no type, no Agent call, no transcript yet) isn't drawn until something says what it is.
+
 An ended session stays on the page for a while: 15 minutes in the network, up to 2 hours in cards. The 2 hours count
 from when it last did something, not from when its process closed. So an old conversation that the editor opens for
 a moment (the VS Code extension does this when a window opens) does not come back as "just ended", and a session that
