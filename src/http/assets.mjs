@@ -8,12 +8,15 @@ const JS = 'text/javascript; charset=utf-8';
 const TYPES = new Map([
   [ASSET_PREFIX + 'entry.mjs', JS],
   [ASSET_PREFIX + 'design.mjs', JS],
+  [ASSET_PREFIX + 'view-registry.mjs', JS],
+  [ASSET_PREFIX + 'views/activity.mjs', JS],
   [ASSET_PREFIX + 'legacy-hud.mjs', JS],
   [ASSET_PREFIX + 'data/away.mjs', JS],
   [ASSET_PREFIX + 'data/selectors.mjs', JS],
   [ASSET_PREFIX + 'data/store.mjs', JS],
   [ASSET_PREFIX + 'data/transport.mjs', JS],
   [ASSET_PREFIX + 'styles/hud.css', 'text/css; charset=utf-8'],
+  [ASSET_PREFIX + 'styles/activity.css', 'text/css; charset=utf-8'],
 ]);
 
 export async function readPublicAsset(target) {

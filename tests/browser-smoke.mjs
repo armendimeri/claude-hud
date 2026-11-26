@@ -473,6 +473,186 @@ try {
     console.log('pass one stream across view and project changes, feed deduplication and hover grouping, connection indicators and manual retry');
   }
 
+  async function checkActivityLayouts() {
+    const dense = await startHud({ demo: 'dense' });
+    try {
+      for (const [name, base] of [['activity', hud.base], ['activity-dense', dense.base]]) {
+        for (const [width, height] of [SIZES[0], SIZES[2]]) {
+          const previous = await evaluate('performance.timeOrigin');
+          await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+          await call('Page.navigate', { url: base + '/?view=activity' });
+          await until(`performance.timeOrigin !== ${previous} && document.querySelector('.activity-connection[data-status=live]')
+            && document.styleSheets.length >= 2 && document.querySelector('.activity-sessions li')`, `${name} renders at ${width}×${height}`);
+          const actual = await evaluate(`(() => {
+            const column = document.querySelector('.activity-columns');
+            return {
+              sessions: document.querySelectorAll('.activity-sessions li').length,
+              feed: document.querySelectorAll('.activity-feed li').length,
+              columns: getComputedStyle(column).gridTemplateColumns.split(' ').length,
+              display: getComputedStyle(column).display,
+              overflow: document.documentElement.scrollWidth - innerWidth,
+              dashboard: Boolean(document.querySelector('.app')),
+              work: document.querySelector('.activity-work')?.textContent,
+              attention: [...document.querySelectorAll('.activity-page .stag')].some(el => el.textContent === 'Needs you'),
+            };
+          })()`);
+          assert.ok(actual.sessions >= (name === 'activity-dense' ? 12 : 4), 'preview renders the demo sessions');
+          assert.ok(actual.feed > 0, 'preview renders the recent feed');
+          assert.equal(actual.display, 'grid', 'preview stylesheet loads');
+          assert.equal(actual.columns, width < 600 ? 1 : 2, 'preview layout responds to width');
+          assert.ok(actual.overflow <= 0, 'preview has no horizontal page overflow');
+          assert.equal(actual.dashboard, false, 'only the page outlet mounts');
+          if (name === 'activity') {
+            assert.match(actual.work, /Booking changes|Implementation|Customer change history/);
+            assert.ok(actual.attention, 'demo preview shows attention status');
+          }
+          await capture(name, width, height);
+          console.log(`pass ${name} at ${width}x${height}: ${actual.sessions} sessions, ${actual.feed} recent events, ${actual.columns} columns`);
+        }
+      }
+    } finally {
+      await dense.close();
+    }
+  }
+
+  async function openGatedActivity(base, storedView) {
+    const previous = await evaluate('performance.timeOrigin');
+    const { identifier } = await call('Page.addScriptToEvaluateOnNewDocument', { source: `{
+      localStorage.setItem('hud.view', JSON.stringify(${JSON.stringify(storedView)}));
+      window.activityStreams = [];
+      window.EventSource = class extends EventSource {
+        constructor(url) {
+          super(url);
+          window.activityStreams.push(this);
+          this.addEventListener('state', event => {
+            if (event.isTrusted) {
+              const state = JSON.parse(event.data);
+              if (state.full) window.activityFirstState = state;
+              event.stopImmediatePropagation();
+            }
+          });
+          for (const type of ['plans', 'event']) {
+            this.addEventListener(type, event => { if (event.isTrusted) event.stopImmediatePropagation(); });
+          }
+        }
+      };
+      window.activityFrame = (type, value) => window.activityStreams[0].dispatchEvent(
+        new MessageEvent(type, { data: JSON.stringify(value) }));
+    }` });
+    try {
+      await call('Page.navigate', { url: base + '/?view=activity' });
+      await until(`performance.timeOrigin !== ${previous} && window.activityFirstState`, 'the browser receives a real first full frame');
+    } finally {
+      await call('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    }
+    assert.deepEqual(await evaluate(`({
+      text: document.querySelector('.stream').textContent,
+      dashboard: Boolean(document.querySelector('.app')),
+      preview: Boolean(document.querySelector('.activity-page')),
+      streams: window.activityStreams.length,
+      connected: window.activityStreams[0].readyState === EventSource.OPEN,
+    })`), { text: 'Connecting', dashboard: false, preview: false, streams: 1, connected: true });
+  }
+
+  async function checkActivityFrames() {
+    await openGatedActivity(hud.base, 'network');
+    await evaluate(`{
+      const full = window.activityFirstState;
+      const project = 'Fixture project';
+      const plan = { project, slug: 'fixture', title: 'Fixture plan', phases: [{ id: 'P4', name: 'First item' }] };
+      const session = { ...full.sessions[0], id: 'activity-fixture', project, status: 'busy', title: 'Fixture session',
+        needsYou: null, work: { plan: project + '|fixture', items: [{ id: 'P4' }] } };
+      window.activityFixture = { ...full, sessions: [session], projects: [{ project }], plans: [plan], feed: [] };
+      window.activityFrame('state', window.activityFixture);
+    }`);
+    assert.equal(await evaluate("document.querySelector('.activity-session-head h3').textContent"), 'Fixture session');
+    assert.equal(await evaluate("document.querySelector('.activity-work').textContent"), 'P4 · Fixture plan · First item');
+    assert.ok(await evaluate("document.querySelector('.activity-feed + p:not([hidden])')"));
+    assert.equal(await evaluate("JSON.parse(localStorage.getItem('hud.view'))"), 'network');
+
+    await evaluate(`{
+      const { full, plans, feed, ...partial } = window.activityFixture;
+      const session = { ...partial.sessions[0], title: 'Updated session', status: 'needs-you', needsYou: { reason: 'Review the changes' } };
+      window.activityFrame('state', { ...partial, sessions: [session] });
+      const plan = { ...plans[0], phases: [{ id: 'P4', name: 'Updated item' }] };
+      window.activityFrame('plans', { plans: [plan] });
+      window.activityFrame('event', { kind: 'tool', at: Date.now(), sessionId: session.id,
+        project: session.project, text: '<b>Fixture output</b>' });
+    }`);
+    assert.equal(await evaluate("document.querySelector('.activity-session-head h3').textContent"), 'Updated session');
+    assert.equal(await evaluate("document.querySelector('.activity-page .stag').textContent"), 'Needs you');
+    assert.equal(await evaluate("document.querySelector('.activity-attention').textContent"), 'Review the changes');
+    assert.equal(await evaluate("document.querySelector('.activity-work').textContent"), 'P4 · Fixture plan · Updated item');
+    assert.equal(await evaluate("document.querySelector('.activity-feed li p').textContent"), '<b>Fixture output</b>');
+    assert.equal(await evaluate("document.querySelector('.activity-feed b') === null"), true, 'feed text stays text');
+
+    await evaluate(`{
+      const selector = document.querySelector('#activity-project');
+      selector.value = 'Fixture project';
+      selector.dispatchEvent(new Event('change', { bubbles: true }));
+      window.activityFrame('state', { ...window.activityFixture, sessions: [], projects: [] });
+    }`);
+    assert.equal(await evaluate("new URL(location.href).searchParams.get('project')"), 'Fixture project');
+    assert.equal(await evaluate("document.querySelector('#activity-project').value"), 'Fixture project');
+    assert.ok(await evaluate("document.querySelector('.activity-sessions + p:not([hidden])')"));
+    assert.equal(await evaluate('window.activityStreams.length'), 1, 'project focus shares the page stream');
+
+    await evaluate("window.activityStreams[0].dispatchEvent(new Event('error'))");
+    assert.ok(await evaluate("document.querySelector('.activity-connection[data-status=reconnecting]')"));
+    assert.ok(await evaluate("document.querySelector('.activity-retry:not([hidden])')"));
+    await evaluate(`{
+      window.activityStreams[0].dispatchEvent(new Event('open'));
+      window.activityFrame('state', window.activityFixture);
+    }`);
+    assert.ok(await evaluate("document.querySelector('.activity-connection[data-status=live]')"));
+    assert.ok(await evaluate("document.querySelector('.activity-retry[hidden]')"));
+    assert.equal(await evaluate("document.querySelector('.activity-session-head h3').textContent"), 'Fixture session');
+
+    const disconnected = await evaluate(`(() => {
+      const root = document.querySelector('.activity-page');
+      const select = root.querySelector('select');
+      const before = root.textContent;
+      root.querySelector('.activity-back').click();
+      window.activityFrame('state', { ...window.activityFixture, sessions: [] });
+      select.value = '';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return {
+        mounted: root.isConnected,
+        frozen: before === root.textContent,
+        network: document.querySelector('.p-sess .seg button:last-child').getAttribute('aria-pressed'),
+        view: new URL(location.href).searchParams.get('view'),
+        project: new URL(location.href).searchParams.get('project'),
+        streams: window.activityStreams.length,
+        stored: JSON.parse(localStorage.getItem('hud.view')),
+      };
+    })()`);
+    assert.deepEqual(disconnected, { mounted: false, frozen: true, network: 'true',
+      view: null, project: 'Fixture project', streams: 1, stored: 'network' },
+    'leaving cleans up the view and its listeners while preserving project, preference and stream');
+    console.log('pass Activity trace: one stream, first-frame gate, project focus, session/plan/feed updates, disconnect/resume and cleanup on return');
+  }
+
+  async function checkActivityLiveFallback() {
+    const live = await startHud();
+    try {
+      await openGatedActivity(live.base, 'network');
+      assert.equal(await evaluate('window.activityFirstState.demo'), false);
+      await evaluate("window.activityFrame('state', window.activityFirstState)");
+      assert.ok(await evaluate("document.querySelector('.p-sess .seg button:last-child[aria-pressed=true]')"));
+      assert.equal(await evaluate("document.querySelector('.activity-page')"), null);
+      assert.equal(await evaluate("JSON.parse(localStorage.getItem('hud.view'))"), 'network');
+
+      const previous = await evaluate('performance.timeOrigin');
+      await call('Page.navigate', { url: live.base + '/?view=not-registered' });
+      await until(`performance.timeOrigin !== ${previous} && document.querySelector('.p-sess .seg button:last-child[aria-pressed=true]')`,
+        'an unknown view uses the stored dashboard preference');
+      assert.equal(await evaluate("JSON.parse(localStorage.getItem('hud.view'))"), 'network');
+      console.log('pass Activity on isolated live HUD and unknown-view fallback with stored Network preference');
+    } finally {
+      await live.close();
+    }
+  }
+
   async function checkKiosk() {
     const { identifier } = await call('Page.addScriptToEvaluateOnNewDocument', { source: `{
       window.kioskWakeRequests = [];
@@ -622,6 +802,10 @@ try {
   await checkAwaySummary();
   await checkStreamAndFeed();
   await checkKiosk();
+  await checkActivityLayouts();
+  await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await checkActivityFrames();
+  await checkActivityLiveFallback();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log(`pass browser runtime; ${shots.length} screenshots:\n${shots.map(f => '  ' + f).join('\n')}`);
   await call('Browser.close').catch(() => {});
