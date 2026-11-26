@@ -273,3 +273,31 @@ test('CLI help, errors and settings round trip are compatible', async t => {
   assert.match(invalid.err, /is not valid JSON/);
   assert.equal(await fs.readFile(settings, 'utf8'), '{ broken');
 });
+
+test('HTTP guard responses preserve host, origin, content type and separate ingress limits', async t => {
+  const hud = await startHud({ env: { HUD_ACCEPT_USAGE: '1' } });
+  t.after(() => hud.close());
+  async function write(route, status, body, headers = {}) {
+    const response = await fetch(hud.base + route, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body,
+    });
+    assert.equal(response.status, status);
+    await response.arrayBuffer();
+  }
+  const badHost = await new Promise((resolve, reject) => {
+    get(hud.base, { headers: { host: 'fixture.invalid:' + hud.port } }, response => {
+      response.resume();
+      response.on('end', () => resolve(response.statusCode));
+      response.on('error', reject);
+    }).on('error', reject);
+  });
+  assert.equal(badHost, 403);
+  await write('/event', 403, '{}', { origin: 'http://fixture.invalid' });
+  await write('/event', 415, '{}', { 'content-type': 'text/plain' });
+  await write('/event', 400, '{');
+  await write('/event', 413, JSON.stringify('x'.repeat(256 << 10)));
+  await write('/usage', 413, JSON.stringify('x'.repeat(16 << 10)));
+  await write('/usage', 204, JSON.stringify({ app: 'fixture', model: 'fixture-model', input: 5 }),
+    { origin: 'http://localhost:' + hud.port });
+  assert.deepEqual((await hud.state()).external.map(row => row.tokens.input), [5]);
+});

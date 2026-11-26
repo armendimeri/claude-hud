@@ -31,6 +31,13 @@ test('context warnings latch at 80% and 90%, and clear below 75% and 85%', async
   };
   const first = warning(await readPct(80), 'context', id);
   assert.ok(first.id.endsWith(':80'));
+  const readers = await Promise.all([hud.stream(), hud.stream()]);
+  t.after(() => readers.forEach(stream => stream.close()));
+  for (const stream of readers) {
+    assert.deepEqual(warning((await stream.next()).data, 'context', id), first);
+  }
+  assert.deepEqual(warning(await hud.state(), 'context', id), first);
+  assert.equal((await fetch(hud.base + '/api/health').then(response => response.json())).sessions, 1);
   assert.deepEqual(contextSteps(await readPct(89.9), id), [80]);
   assert.deepEqual(contextSteps(await readPct(90), id), [80, 90]);
   assert.deepEqual(contextSteps(await readPct(85), id), [80, 90]);
