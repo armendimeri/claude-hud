@@ -138,4 +138,22 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
     assert.equal(parent.tools, 1); assert.equal(parent.currentTool.summary, 'Apply file changes');
     assert.ok(!JSON.stringify(s).includes('PRIVATE_PATCH'));
   });
+
+  await t.test('a larger rotated rollout discards the old partial line and replays from byte zero', async () => {
+    const partial = record('response_item', { type: 'function_call', call_id: 'unfinished', name: 'exec_command', arguments: '{}' }).trimEnd();
+    await fs.appendFile(main, record('turn_context', { model: 'before-rotation' }) + partial);
+    await until(s => s.sessions.find(x => x.id === 'codex:shared-id')?.model === 'before-rotation');
+    const oldSize = (await fs.stat(main)).size;
+    const replacement = path.join(logs, 'replacement.tmp');
+    const contents = meta('shared-id') + record('turn_context', { model: 'rotated-model' }) + token +
+      record('response_item', { type: 'function_call_output', call_id: 'unfinished', output: 'PRIVATE_ROTATED_OUTPUT'.repeat(100) });
+    assert.ok(Buffer.byteLength(contents) > oldSize);
+    await fs.writeFile(replacement, contents);
+    await fs.rename(replacement, main);
+    s = await until(s => s.sessions.find(x => x.id === 'codex:shared-id')?.model === 'rotated-model');
+    const parent = s.sessions.find(x => x.id === 'codex:shared-id');
+    assert.deepEqual(parent.tokens, { input: 300, output: 100, cacheRead: 700, cacheWrite: 0 });
+    assert.equal(parent.tools, 0);
+    assert.ok(!JSON.stringify(s).includes('PRIVATE_ROTATED_OUTPUT'));
+  });
 });

@@ -18,6 +18,10 @@ function createLifetime() {
     return promise;
   }
 
+  function watch(file, options, listener) {
+    if (!signal.aborted) return fs.watch(file, { ...options, signal }, listener);
+  }
+
   return {
     signal,
     task: fn => (...args) => signal.aborted ? Promise.resolve() : track(fn(...args)),
@@ -37,8 +41,9 @@ function createLifetime() {
       clearTimeout(timer);
       timers.delete(timer);
     },
-    watch(file, options, listener) {
-      if (!signal.aborted) return fs.watch(file, { ...options, signal }, listener);
+    watch,
+    watchDirectory(dir, options, listener) {
+      try { watch(dir, options, listener)?.on('error', () => {}); } catch {}
     },
     watchFile(file, options, listener) {
       if (signal.aborted) return;
@@ -59,7 +64,7 @@ function createLifetime() {
   };
 }
 
-/** Connects legacy collectors to an instance-local publisher, writer and lifecycle. */
+/** Connects the application engine to an instance-local publisher, writer and lifecycle. */
 export function createRuntime(createEngine) {
   const lifetime = createLifetime();
   const publisher = createPublisher(now => engine.project(now));

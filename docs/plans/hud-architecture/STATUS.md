@@ -12,7 +12,7 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 | P3 | Extract the browser store | `client-data` | P2 | Opus 5.5 / high | accepted | 2026-11-26 | [P3-client-data](handoffs/P3-client-data.md) | 55 Node tests and 11 Edge layouts passed |
 | P4 | Prove a new full-page view | `activity` | P3 | Sonnet 5.5 / high | accepted | 2026-11-26 | [P4-activity](handoffs/P4-activity.md) | 55 Node tests and 15 Edge layouts passed |
 | P5 | Separate HTTP from the application runtime | `runtime` | P4 | Opus 5.5 / xhigh | accepted | 2026-11-26 | [P5-runtime](handoffs/P5-runtime.md) | 60 Node tests and 15 Edge layouts passed |
-| P6 | Extract session and transcript sources | `sessions` | P5 | Opus 5.5 / high | todo | | | Lane A |
+| P6 | Extract session and transcript sources | `sessions` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6-sessions](handoffs/P6-sessions.md) | Lane A, port 7791. 61 Node tests and 15 Edge layouts passed. |
 | P7 | Extract projects, boards, usage and alerts | `boards` | P6 | Opus 5.5 / high | todo | | | Lane A |
 | P8 | Factor the dashboard into reusable components | `components` | P5 | Sonnet 5.5 / high | todo | | | Lane B |
 | P9 | Finish CLI, demos and packaging | `packaging` | P7, P8 | Sonnet 5.5 / high | todo | | | Verify standalone hook and install layout |
@@ -61,8 +61,12 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 - 2026-11-26 · runtime · P4 · Accepted after five browser-store tests and all 15 isolated Edge layouts passed, including Activity lifecycle and live fallback.
 
 - 2026-11-26 · runtime · P5 · Handed off the runtime and HTTP split after 60 Node tests and 15 Edge layouts passed. Verified two-instance teardown and a 29,018 B maximum steady state dense-demo frame.
-- 2026-11-26 ? sessions ? P5 ? Accepted after all 12 runtime, stream and public contract checks passed.
+- 2026-11-26 · sessions · P5 · Accepted after all 12 runtime, stream and public contract checks passed.
 
+
+- 2026-11-26 · sessions · P6 · Handed off the session and transcript sources after 61 Node tests, a matching 24-session replay and the comparative P1 benchmark.
+
+- 2026-11-26 · boards · P6 · Accepted after all 25 Codex and hook checks passed.
 
 ## Kickoff
 

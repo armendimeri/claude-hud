@@ -1,6 +1,6 @@
 # Status
 
-*Last rewritten 2026-11-26 after handing off the HTTP and application runtime split.*
+*Last rewritten 2026-11-26 after handing off the session and transcript sources.*
 
 ## The project in one paragraph
 
@@ -9,17 +9,19 @@ live or synthetic state over HTTP and SSE.
 
 ## Where things stand
 
-- The architecture worktree is `../claude-hud-arch`. P4 is accepted at `db8f01f`. P5 is handed off for review.
+- P5 is accepted at `252af2e`. P6 is accepted in `../claude-hud-arch`.
   The deployed HUD runs from the original `hud-0-3` checkout.
-- HTTP and SSE consume snapshots from an instance-local publisher. Health, state and stream setup read the
-  same projection. The runtime advances marks and alerts even without connected clients.
-  [P5 handoff](plans/hud-architecture/handoffs/P5-runtime.md)
-- The self-test, 60 Node tests and 15 Edge layouts passed. The largest steady state frame
-  in the 30-second dense demo measurement was 29,018 B.
+- Claude registry entries, Claude transcripts, Codex rollouts and hook events have dedicated input adapters.
+  The shared reader tracks file identity and resumes from byte offsets. The session and subagent rules
+  use the same published shapes. [P6 handoff](plans/hud-architecture/handoffs/P6-sessions.md)
+- The CLI self-test and all 61 Node tests passed. Edge covered 15 layouts across two runs. A replay matched 24 public
+  sessions and daily token totals. Against an archived P1 build rerun in this session, P6 was 51.06 ms slower
+  to the first full frame and used 1.71% more peak RSS. The original P1 record and the new readings are in
+  the handoff.
 
 ## Active plans
 
-- HUD architecture has P0 through P4 accepted. P5 awaits independent review before P6 and P8.
+- HUD architecture has P0 through P6 accepted. P8 can start in Lane B on port 7792.
   [HUD architecture](plans/hud-architecture/STATUS.md)
 - HUD 0.3 release verification is deferred with the last live memory gate open.
   [HUD 0.3](plans/hud-0-3/STATUS.md)
@@ -28,10 +30,8 @@ live or synthetic state over HTTP and SSE.
 
 ## What is next
 
-- P6 extracts session and transcript collectors in lane A on port 7791.
-  [P6 plan](plans/hud-architecture/PLAN.md#10-p6-extract-session-and-transcript-sources)
-- P8 factors the dashboard into reusable browser components in lane B on port 7792.
-  [P8 plan](plans/hud-architecture/PLAN.md#12-p8-factor-the-dashboard-into-reusable-components)
+- P7 reviews P6 and extracts projects, boards, usage and alerts in Lane A on port 7791.
+  [P7 plan](plans/hud-architecture/PLAN.md#11-p7-extract-projects-boards-usage-and-alerts)
 
 ## Waiting on you
 
@@ -40,5 +40,5 @@ live or synthetic state over HTTP and SSE.
 
 ## The last session
 
-P5 accepted P4, separated HTTP from the runtime, and verified feed ordering, ingress restrictions, timed
-transitions and independent teardown with synthetic profiles. [P5 handoff](plans/hud-architecture/handoffs/P5-runtime.md)
+P6 accepted P5 and extracted the source adapters, Windows process lookup and session rules. It verified
+larger-file rotation, lifecycle ordering and parity with the public snapshots. [P6 handoff](plans/hud-architecture/handoffs/P6-sessions.md)
