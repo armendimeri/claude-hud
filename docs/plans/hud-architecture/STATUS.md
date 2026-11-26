@@ -6,8 +6,8 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 
 | ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |
 |---|---|---|---|---|---|---|---|---|
-| P0 | Decisions | human | — | — | todo | | — | |
-| P1 | Capture the baseline | `baseline` | P0 | Opus 5.5 / high | todo | | | Include the local Windows PID fix |
+| P0 | Decisions | human | — | — | accepted | 2026-11-26 | — | D1–D7 accepted and Q4 answered |
+| P1 | Capture the baseline | `baseline` | P0 | Opus 5.5 / high | todo | | | Runs in the worktree after the D7 setup |
 | P2 | Serve native browser assets | `assets` | P1 | Opus 5.5 / high | todo | | | Preserve existing routes and rendering |
 | P3 | Extract the browser store | `client-data` | P2 | Opus 5.5 / high | todo | | | Shared data, connection and selectors |
 | P4 | Prove a new full-page view | `activity` | P3 | Sonnet 5.5 / high | todo | | | First milestone |
@@ -20,32 +20,52 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 
 ## Decisions (P0)
 
-- [ ] **D1** Keep Node 22 and native ES modules with no build step.
-- [ ] **D2** Preserve the existing JSON and SSE contract through the move.
-- [ ] **D3** Use a shared browser store with registered session and full-page views.
-- [ ] **D4** Add a demo-only Activity preview as the first proof.
-- [ ] **D5** Distribute the complete module and asset tree while keeping the current root entry paths.
-- [ ] **D6** Start from the patched checkout, keep the 0.3 release independently deployable, and compare performance against its baseline.
+- [x] **D1** Keep Node 22 and native ES modules with no build step, bundler or framework.
+- [x] **D2** Preserve the existing JSON and SSE contract through the move.
+- [x] **D3** Use a shared browser store with registered session and full-page views.
+- [x] **D4** ★ Add a demo-only Activity preview at `?view=activity` as the first proof. It comes only from the URL and is never saved as the view preference.
+- [x] **D5** ★ Distribute the complete module and asset tree while keeping the current root entry paths. Do all work in `../claude-hud-arch`. The live task and hook paths stay on the original checkout until an owner-approved switchover after P10.
+- [x] **D6** Start from the patched checkout, keep the 0.3 release independently deployable, and compare performance against its baseline.
+- [x] **D7** Use the committed PID fix and existing branches. Commit P0 on `hud-architecture`, return the original checkout to `hud-0-3`, then add the architecture worktree. Make one commit per accepted item. No pushes or merges into `hud-0-3` or `main` without the owner.
 
 ## Always
 
-- Treat port 7777 and the **Claude HUD** scheduled task as the owner's running dashboard. Test on isolated ports with `HUD_NO_AUTOINSTALL=1`. Use temp profiles for setup tests and fixture data for any recorded output.
-- Record the source revision and the Windows PID fix before starting. Preserve that fix through the move. Keep refactor changes separate from unrelated work in the working tree and stash.
+- Treat port 7777, the **Claude HUD** scheduled task and the original checkout (`hud-0-3`) as the owner's running dashboard. After kickoff, leave that checkout on `hud-0-3` and work only in `../claude-hud-arch`.
+- Start every test instance with `HUD_NO_AUTOINSTALL=1`. Without it, an instance started from the worktree would rewrite Claude Code's hook paths to point at the worktree. Use temp profiles for setup tests and fixture data for any recorded output.
+- Preserve the Windows PID fix through the move. Keep refactor changes separate from unrelated work, including the stash on `main`.
 - Use the OS-assigned test ports from [the existing helpers](../../../tests/helpers.mjs). For manual isolated instances use 7791 for lane A and 7792 for lane B. The final read-only comparison uses 7790.
-- P6/P7 and P8 may run together after P5 with the disjoint scopes in the plan. Coordinate changes to shared contract tests before merging.
+- P6/P7 and P8 may run together after P5 in the same worktree with the disjoint scopes in the plan. Coordinate changes to shared contract tests before committing.
 - Use `handoffs/<ID>-<agent>.md` for exit-gate evidence, including any owner checks. Follow the plan's deployment verification before an owner-approved live switchover.
 
 ## Questions
 
 | # | Item | Question | Recommended | Answer |
 |---|---|---|---|---|
+| Q1 | D5 | How do we protect the live HUD, which runs from this checkout? | Refactor in a worktree and leave the task alone | 2026-11-26: as recommended |
+| Q2 | D7 | Where does the uncommitted PID fix go? | Commit it to `hud-0-3`, then branch `hud-architecture` from there | 2026-11-26: as recommended |
+| Q3 | D4 | How is the Activity preview selected? | `?view=activity`, URL-only, never saved to preferences | 2026-11-26: as recommended |
+| Q4 | D7 | D7 and the Kickoff setup are stale. `hud-0-3` and `hud-architecture` both point at `a3605d9`, which already holds the PID fix (`73c0351`). This checkout, which the live task runs from, is on `hud-architecture`. How should D7 read? | Switch this checkout back to `hud-0-3` and add the worktree from the existing `hud-architecture` branch | 2026-11-26: as recommended. Commit only the architecture plan on `hud-architecture` before switching. |
 
 ## Log
 
 - 2026-11-26 · planner · — · Drafted the phase plan from the `hud-0-3` checkout and the local Windows PID fix.
+- 2026-11-26 · planner · — · Review applied. Added the live-deployment finding, D7 (git and worktree), the URL rules for the Activity preview, Out of scope, and numeric startup, memory and hook gates. Owner answered Q1–Q3 as recommended. D1–D7 still await P0.
+- 2026-11-26 · planner · — · During the review, `73c0351` and `a3605d9` landed and this checkout moved to `hud-architecture`. `docs/plans/hud-0-3/` is deleted in the working tree but not committed. D7 and the Kickoff setup no longer match (Q4, deferred by the owner). Resolve Q4 before P0 is accepted.
+- 2026-11-26 · human · P0 · Accepted D1–D7 and answered Q4 as recommended. Commit only the architecture plan on `hud-architecture`, switch the original checkout to `hud-0-3`, and add the worktree from the existing `hud-architecture` branch.
 
 ## Kickoff
 
-Use the repository root as the working directory. Model and effort are in the board.
+Run this one-time setup from the original checkout on `hud-architecture` after P0 is accepted (D7). Both branches start at `a3605d9` and include the PID fix in `73c0351`.
 
-> Do `hud-architecture/P1`. Follow `workflow/skills/workflow-run/SKILL.md`. Start from this board and carry forward the local Windows PID fix when capturing the baseline.
+```
+git commit -m "[P0] Accept HUD architecture decisions" -- docs/plans/hud-architecture/
+git switch hud-0-3
+git worktree add ../claude-hud-arch hud-architecture
+```
+
+Start P1 from `../claude-hud-arch`.
+
+| ID | Folder | Prompt |
+|---|---|---|
+| P1 | `../claude-hud-arch` | Do hud-architecture/P1. Follow the workflow-run skill. |
+| P2–P10 | `../claude-hud-arch` | Do hud-architecture/&lt;ID&gt;. Follow the workflow-run skill. |

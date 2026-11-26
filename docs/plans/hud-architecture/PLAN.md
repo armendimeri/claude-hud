@@ -1,12 +1,14 @@
 # Claude HUD architecture and refactor plan
 
-Status: **proposed** · Written 2026-11-26 · Checked against the code 2026-11-26 · [Implementation board](STATUS.md)
+Status: **accepted** · Written 2026-11-26 · Checked against the code 2026-11-26 · [Implementation board](STATUS.md)
 
 ## 1. Goal
 
 A developer can build a new full-page HUD view by adding a browser module, registering it, and using the same live session, board, alert, and feed data that powers the current dashboard. They can also reuse pieces of the existing UI and test the view against fixtures. The first working example arrives at P4, while the existing server engine is still in place.
 
 Split the server in the same direction. Runtime modules own collection and state, a single projection produces the public snapshot, and HTTP and browser code consume that snapshot. Keep Node 22, native ES modules, the existing commands, and a single local server. The migration proceeds in small, runnable steps so the dashboard stays usable as the code moves.
+
+**Out of scope:** new public snapshot fields or wire changes (D2); performance tuning beyond keeping parity with P1 (D6); a production Activity view or any other new production layout; frameworks, bundlers or a build step (D1); new 0.3 features or fixes to its open live memory gate; moving the owner's live HUD to the refactored code, which stays an owner-approved switchover after P10.
 
 ## 2. What exists
 
@@ -18,18 +20,20 @@ Split the server in the same direction. Runtime modules own collection and state
 | Public reads | `snapshot()` formats sessions, builds the Codex tree, calculates totals, checks alerts, and can push a feed event through `announceMarks`. HTTP health, state, and SSE can each invoke it. | Put alert and board transitions in the application update path. Serve one coherent, redacted snapshot without changing state merely because a client reads it. |
 | Browser data | `pageMain()` owns EventSource, reconnection, missing-field merges, and the away-summary fetch. `createHud()` also fills missing fields, and `ticker()` separately maintains feed history. | Give each page one store for complete snapshots, connection state, and recent feed. Reuse it across views and retain the ticker's visual behavior. |
 | Browser views | `hudPage()` serializes `hudClient`, `pageMain`, and `designMain` into inline scripts and embeds `HUD_CSS`. `createHud()` owns the DOM shell, hard-coded Cards/Network selection, focus, and panel rendering. `designMain()` reuses components with separate specimens. | Serve native browser modules and CSS as assets. Give each view an explicit mount and cleanup lifecycle and keep the gallery on shared components. |
+| Live deployment | The **Claude HUD** scheduled task runs `node.exe "<original checkout>\hud.mjs" --lan` with the original checkout as its working directory. At P0, `hud-0-3` and `hud-architecture` shared base `a3605d9`, which includes the Windows PID fix in `73c0351`. | Return the original checkout to `hud-0-3` during kickoff and use the separate architecture worktree for the refactor (D7). The original checkout is the rollback target until a switchover. |
 | Test and release baseline | [Integration tests](../../../tests/) exercise the real CLI against temporary profiles. [Browser smoke](../../../tests/browser-smoke.mjs) uses isolated demo data. The live checkout also contains the Windows `procStart` fix in `hud.mjs` and its regression test. The [0.3 verification board](../hud-0-3/STATUS.md) still records a failed live memory gate. | Start from the exact patched checkout, preserve those checks, and measure before moving code. Treat resource performance as its own verification gate. |
 
 ## 3. Decisions
 
 | ID | Topic | Proposal and rationale |
 |---|---|---|
-| D1 | Runtime and tools | Use Node 22 built-ins and native ESM on both sides. Add JSDoc for boundary types and fixtures for their behavior. The existing app runs directly on Node, and native browser modules provide the import boundaries needed here. |
+| D1 | Runtime and tools | Use Node 22 built-ins and native ESM on both sides, with no build step, bundler or framework. Add JSDoc for boundary types and fixtures for their behavior. The existing app runs directly on Node, and native browser modules provide the import boundaries needed here. |
 | D2 | Public data | Preserve the existing JSON and SSE formats through the refactor. Define the public snapshot in one place. Future additive fields can go through that contract when a view has a documented need. |
 | D3 | View design | Use one declarative view registry with two outlets. Cards and Network fill the session panel. A full-page layout can fill the page outlet and use the same browser store and services. |
 | D4 | ★ Example view | Build an Activity preview at `/?view=activity` in demo mode. It shows sessions, project filtering, attention state, linked work, and the recent feed. This proves a distinct layout can run from the reusable interface. |
-| D5 | ★ Deployment | Ship the full checkout or an archive with the entry scripts, modules, and assets together. Preserve the executable paths used by Task Scheduler and by Claude Code. Update the setup instructions as soon as external assets are required. |
+| D5 | ★ Deployment | Ship the full checkout or an archive with the entry scripts, modules, and assets together. Preserve the executable paths used by Task Scheduler and by Claude Code. Update the setup instructions as soon as external assets are required. All refactor work happens in the worktree `../claude-hud-arch`. The live task and Claude Code's hook paths stay on this checkout, unchanged, until an owner-approved switchover after P10. |
 | D6 | Delivery and performance | Keep the existing PID fix in the baseline and leave the 0.3 work independently releasable. Compare resource use on the same workload, and carry forward the existing live and stream budgets. Measure the effect of the refactor separately from any subsequent performance tuning. |
+| D7 | Git | Both existing branches start at `a3605d9`, with the Windows PID fix already committed in `73c0351`. In the original checkout on `hud-architecture`, commit only `docs/plans/hud-architecture/` for P0. Switch that checkout to `hud-0-3`, then run `git worktree add ../claude-hud-arch hud-architecture`. Use `../claude-hud-arch` for P1 onward and make one commit per accepted item on `hud-architecture`. Keep the original checkout on `hud-0-3` after kickoff. No pushes or merges into `hud-0-3` or `main` without the owner. |
 
 ## 4. Architecture and contracts
 
@@ -110,19 +114,20 @@ Selectors take complete snapshots and plain inputs. Start with session and plan 
 
 - Preserve the CLI commands, legacy `node hud.mjs hook` alias, `hud-hook.mjs` path, settings round trips, Task Scheduler task, LAN/default bind behavior, and environment options. Keep production startup using the full distribution with assets resolved from the installed files.
 - Preserve Cards and Network selection, URL and preference priority, `?project`, kiosk's forced Network view and wake-lock behavior, `/design`, and the existing visual and keyboard behavior. The gallery shares components while running from fixtures.
-- Cut over each phase as a runnable change. Test deployment from a complete staged copy before any owner-approved switchover. Roll back by switching to the last verified full deployment and restarting the same HUD task. If installer behavior changed during a later release, use the installer's settings backups and verify the restored settings and hook paths. Keep versioned assets and their CLI from the same revision.
+- Cut over each phase as a runnable change on `hud-architecture`. Until the switchover, the task keeps pointing at the original checkout on `hud-0-3`. Test deployment from a complete staged copy before any owner-approved switchover. Roll back by pointing the task back at the original checkout (the last verified full deployment) and restarting the same HUD task. If installer behavior changed during a later release, use the installer's settings backups and verify the restored settings and hook paths. Keep versioned assets and their CLI from the same revision.
 
 ## 5. P1 Capture the baseline
 
 **Scope:** `tests/helpers.mjs`, `tests/fixtures/contract/`, `tests/public-contract.test.mjs`, `tests/tools/stream-size.mjs` if needed for comparable measurements, and the handoff.
 
-Record the Git base and the local PID fix, commands and settings behavior, live/demo payload examples from synthetic inputs, stream ordering, and Edge screenshots at the existing viewports. Add contract coverage for CLI output and API shapes using temp directories, fixture process IDs, and a controlled clock where a timestamp matters. Compare field names, types and semantic ordering wherever IDs or times vary. Record cold startup, first full frame, later stream size, and process resource use on a fixed candidate workload.
+Record the Git base and the committed PID fix, commands and settings behavior, live/demo payload examples from synthetic inputs, stream ordering, and Edge screenshots at the existing viewports. Add contract coverage for CLI output and API shapes using temp directories, fixture process IDs, and a controlled clock where a timestamp matters. Compare field names, types and semantic ordering wherever IDs or times vary. Record cold startup, first full frame, later stream size, and process resource use on a fixed candidate workload.
 
 **Exit gate**
 
 - [ ] `node hud.mjs selftest`, `node --test tests/`, and `node tests/browser-smoke.mjs` pass. Record counts and screenshot locations.
 - [ ] The Windows PID-reuse test passes and its change is accounted for in the integration baseline. Contract fixtures contain synthetic data only.
-- [ ] A reproducible measurement records Node version, workload, sampling interval, CPU denominator, peak RSS, stream bytes, and time to first full frame. Record existing gate failures as the baseline.
+- [ ] A reproducible measurement records Node version, workload, sampling interval, CPU denominator, peak RSS, stream bytes, and median time to first full frame. It also records 30-run p95 values for `node -e ""`, `node hud.mjs hook` and `node hud-hook.mjs`. Record existing gate failures as the baseline.
+- [ ] The handoff records the `hud-0-3` commit holding the PID fix, the `hud-architecture` branch base, and the worktree path (D7). `git -C <this checkout> status` shows the live checkout unchanged by P1.
 
 ## 6. P2 Serve native browser assets
 
@@ -150,12 +155,19 @@ Move protocol handling out of `pageMain()` and remove partial-frame reconstructi
 
 **Scope:** `src/web/entry.mjs`, `src/web/view-registry.mjs`, `src/web/views/activity.mjs`, `src/web/data/selectors.mjs`, `src/web/styles/activity.css`, browser smoke/store tests, and `docs/adding-a-view.md`.
 
-Register the demo-only Activity preview. Check demo eligibility from the first store snapshot and use the normal dashboard fallback when the preview is unavailable. Render sessions, project focus, attention status, a linked plan/item label, and the recent feed with a different layout. Cover loading, empty, disconnected, and resumed data. Write the short guide around the actual change set and publish the result for review in the handoff. The store contract should be sufficient for a later production view with a different visual design.
+Register the demo-only Activity preview. Select it with `?view=activity`, alongside the existing `cards` and `network` values:
+
+- A page-outlet view comes only from the URL. It is never written to the stored `view` preference, and the Cards/Network switch keeps its current preference behavior.
+- Until the first full frame arrives, the page outlet shows the existing connecting state and mounts neither the preview nor the dashboard. This avoids a flash and a double mount.
+- If the first snapshot is not demo, or the value is unknown, mount the normal dashboard with the stored Cards/Network choice and leave that preference unchanged.
+
+Render sessions, project focus, attention status, a linked plan/item label, and the recent feed with a different layout. Cover loading, empty, disconnected, and resumed data. Write the short guide around the actual change set and publish the result for review in the handoff. The store contract should be sufficient for a later production view with a different visual design.
 
 **Exit gate**
 
 - [ ] Demo and dense demo render the preview at desktop and phone widths. A fixture test then drives session, plan and feed changes through the same browser store, with no edits to ingestion or the HTTP API.
 - [ ] A browser trace shows one live stream entering the preview, cleanup when leaving it, and no duplicate stream when navigating. The guide explains where view code, styles, and tests belong.
+- [ ] With `view=network` stored, `?view=activity` against a live (non-demo) HUD shows Network, and the stored preference is still `network` afterwards. Neither view mounts before the first full frame.
 
 ## 9. P5 Separate HTTP from the application runtime
 
@@ -177,7 +189,7 @@ Move the buffered byte reader first and keep per-file offsets, incomplete lines,
 **Exit gate**
 
 - [ ] Registry/hook/Claude/Codex tests pass for reused PIDs, resumes, quiet and vanished sessions, subagent parenting, partially written input, transcript rotation, and no raw output in public data.
-- [ ] A before/after replay gives matching public sessions and token totals. Compare startup and memory on the same fixture to catch duplicate file reads or retained buffers.
+- [ ] A before/after replay gives matching public sessions and token totals. On the P1 fixture workload, median time to first full frame stays within 10% or 100 ms of P1 (whichever is larger), and peak RSS stays within 10% of P1. Exceeding either sends the item back to look for duplicate file reads or retained buffers.
 
 ## 11. P7 Extract projects, boards, usage and alerts
 
@@ -213,14 +225,14 @@ Move install/uninstall, Windows autostart, workflow lint, self-test, and demo ge
 **Exit gate**
 
 - [ ] CLI behavior, exit statuses, install idempotence, and byte-for-byte settings migration/restore tests pass against temporary settings. The scheduled task action still resolves the root path and retains its LAN arguments.
-- [ ] Run the standalone and legacy hook paths, both demos, lint, self-test, and an alternate-working-directory start from the staged distribution. Compare startup timings and confirm the forwarder stays within the existing hook budget.
+- [ ] Run the standalone and legacy hook paths, both demos, lint, self-test, and an alternate-working-directory start from the staged distribution. Server startup meets the P6 tolerance against P1. Over 30 interleaved runs each of `node -e ""`, `node hud.mjs hook` and `node hud-hook.mjs` on identical synthetic input, the standalone forwarder's p95 stays within 15 ms of bare Node (the 0.3 P9 gate). It stays silent with exit 0 and keeps its 400 ms give-up. Report all three p95 values.
 
 ## 14. P10 Verify and close
 
 **Scope:** `tests/`, `README.md`, `docs/adding-a-view.md`, `docs/ARCHITECTURE.md`, and the closeout handoff. Route any behavior regression back to its owning phase.
 
 - [ ] Run `node hud.mjs selftest`, `node --test tests/`, and `node tests/browser-smoke.mjs`. Report counts and review screenshots. Lint the new plan and report existing repository lint findings separately.
-- [ ] Run `node tests/tools/stream-size.mjs --demo=dense --seconds=30` and confirm steady state frames stay below 30 KB. Compare startup and hook overhead with P1 and retain the 0.3 standalone hook gate.
+- [ ] Run `node tests/tools/stream-size.mjs --demo=dense --seconds=30` and confirm steady state frames stay below 30 KB. Startup and peak RSS on the P1 fixture workload meet the P6 tolerance against P1. The standalone hook's p95 stays within 15 ms of bare Node over 30 runs.
 - [ ] Run the existing ten-minute live-read verification on an isolated port with `HUD_NO_AUTOINSTALL=1`. Compare equivalent workloads and report peak RSS, mean single-core CPU, and peak rolling 30-second CPU. Carry forward the 150 MB and 1% targets. Check session settling and expiring, board links, and feed behavior. If the starting build already misses a target, document the delta and leave the release performance gate open for review.
 - [ ] Show the new view change set. It should contain a view module, its registration, and any view-specific styling and tests. Demonstrate the fixture transport and the real SSE transport against a demo HUD, including reconnect. Record the checked deployment and rollback commands in `docs/ARCHITECTURE.md`.
 
@@ -228,4 +240,4 @@ Move install/uninstall, Windows autostart, workflow lint, self-test, and demo ge
 
 P1 → P2 → P3 → P4 is the shortest route to new views. P5 creates the server seam. P6 and P7 then move the collectors and rules in sequence because both edit `hud.mjs` and runtime wiring. P8 can run alongside P6/P7 after P5, with its own browser files and test scope. P9 integrates the completed runtime and converts the root CLI into an entry point. P10 verifies the combined result.
 
-Keep each phase independently reviewable. Pair a move with its parity tests, then remove the temporary compatibility wrapper as soon as its callers have migrated. The durable architecture guide should describe the resulting module ownership and view recipe so a later contributor can start from the finished structure.
+All items run in the `../claude-hud-arch` worktree on `hud-architecture` (D7). Lanes A and B share that worktree and keep to their disjoint file scopes. Keep each phase independently reviewable. Pair a move with its parity tests, then remove the temporary compatibility wrapper as soon as its callers have migrated. The durable architecture guide should describe the resulting module ownership and view recipe so a later contributor can start from the finished structure.
