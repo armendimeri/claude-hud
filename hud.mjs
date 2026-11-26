@@ -91,6 +91,7 @@ const ENDED_KEEP_MS = 2 * 3600_000;      // D7
 const STATE_MIN_INTERVAL_MS = 250;       // at most 4 state pushes a second
 const KEEPALIVE_MS = 15_000;
 const POLL_MS = 3_000;
+const PLAN_POLL_MS = 10_000;             // recover missed file events and documentation folders created later
 const SILENT_SUBAGENT_MS = 120_000;      // fallback close for a subagent nobody reported done
 const MINUTE_MS = 60_000;
 const PULSE_MINUTES = 30;
@@ -1423,6 +1424,7 @@ function poll() {
   }
   for (const [key, r] of roots) {
     if (![...sessions.values()].some(s => s.project === r.project)) dropRoot(key);
+    else if (now - r.lastScanAt >= PLAN_POLL_MS) scanRoot(key);
   }
   scheduleState();
   if (!clients.size) snapshot();   // the marks' clocks and feed lines (hud-0-3 D4) run with no page open too
@@ -1434,26 +1436,26 @@ function dropSession(s) {
 }
 
 // =====================================================================================================================
-// Plans: every STATUS.md / *-STATUS.md / HANDOFF.md under docs/ or Documentation/ of a project the HUD sees, plus
+// Plans: status, plan, rollout and handoff boards under docs/ or Documentation/ of a project the HUD sees, plus
 // small plans (docs/plans/<slug>.md). A "board" is any table with an id column first and a State or Status column.
 // Covers the standard's board (workflow/STANDARD.md §5: ID | Item | Agent | Depends on | Model / effort | State |
 // Since | Handoff | Notes, with Runs, Decisions (P0) and Questions), and the formats in use before it: the
 // WasteManagement2 board ("Waits for" in Notes), FidiaCRM's chunk board and the ImPOS-Maui Phase | State tables.
 
 const PLAN_TOP_DIRS = ['docs', 'Documentation', 'doc'];
-const PLAN_FILE_RE = /^(?:.*[-_])?status\.md$|^handoff\.md$/i;
-const PLAN_SKIP_DIRS = new Set(['_template', 'node_modules', 'bin', 'obj', 'handoffs', '.git']);
+const PLAN_FILE_RE = /^(?:.*[-_])?(?:status|plan)\.md$|^(?:handoff|rollout)\.md$/i;
+const PLAN_SKIP_DIRS = new Set(['_template', 'node_modules', 'bin', 'obj', 'handoff', 'handoffs', 'archive', 'archives', '.git']);
 const BOARD_HEADER = '| ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |';
 const COLUMN_ROLES = [
   ['id', /^(phase|chunk|run|step|slice|stage|id|#|task|milestone|item)$/],
-  ['name', /^(title|name|what|input|goal|summary|part|item)$/],
+  ['name', /^(title|name|what|what it is|input|goal|summary|part|item|job|work|description)$/],
   ['agent', /^(agent|owner|who|assignee)$/],
   ['state', /^(state|status)$/],
   ['since', /^(since|started|date)$/],
   ['deps', /^(depends on|dependencies|waits for|after|requires|prerequisites|blocked by|start when|needs)$/],
   ['notes', /^(notes?|comments?)$/],
   ['handoff', /^handoffs?$/],
-  ['modelEffort', /^model\s*\/\s*effort$/],
+  ['modelEffort', /^model\s*[/,·]\s*effort$/],
   ['model', /^model$/],
   ['effort', /^effort$/],
   ['chunks', /^(chunks?|items?)(,? in order)?$/],
@@ -1495,17 +1497,17 @@ function normalizeState(raw) {
   if (/\bblocked\b/.test(t)) return 'blocked';
   if (/\baccepted\b/.test(t)) return 'accepted';
   if (/\bhanded[- ]?off\b/.test(t)) return 'handed-off';
-  if (/\bin[- ]progress\b|^(started|working|building|active|running)\b/.test(t)) return 'in-progress';
+  if (/\bin[- ]progress\b|^(started|working|building|active|running|doing)\b/.test(t)) return 'in-progress';
   if (/\bpartial(ly)?\b/.test(t)) return 'partial';
   if (/^(done|complete|completed|finished|built|merged|shipped|confirmed|in)\b/.test(t)) return 'done';
-  if (/^(todo|to do|not started|planned|pending|open|waiting|next|later)\b/.test(t)) return 'todo';
+  if (/^(todo|to do|not started|planned|pending|open|waiting|ready|next|later)\b/.test(t)) return 'todo';
   if (/\bdone\b/.test(t)) return 'partial';
   return 'unknown';
 }
 function splitModelEffort(v) {
   const t = cleanCell(v);
-  if (!t || /^[—-]$/.test(t)) return { model: null, effort: null };
-  const [m, e] = t.split('/').map(x => x.trim());
+  if (!t || /^(?:[—-]|owner|human)$/i.test(t)) return { model: null, effort: null };
+  const [m, e] = t.split(/[/,·]/).map(x => x.trim());
   return { model: m || null, effort: e || null };
 }
 function extractRefs(text, known, self) {
@@ -1536,7 +1538,7 @@ function planHeader(text) {
 }
 
 function parsePlan(text, file, root, project, planText = null) {
-  const lines = text.split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   let title = null, section = '', fence = false, inLog = false, standard = false;
   const tables = [], log = [], decisions = [];
   for (let i = 0; i < lines.length; i++) {
@@ -1583,6 +1585,9 @@ function parsePlan(text, file, root, project, planText = null) {
   for (const tb of tables) {
     const col = {};
     tb.header.forEach((h, k) => { for (const [role, re] of COLUMN_ROLES) if (re.test(h) && col[role] === undefined && (role !== 'id' || k === 0)) col[role] = k; });
+    // Numbered rollout boards have both a step reference and a human-readable job.
+    const job = tb.header.indexOf('job'), step = tb.header.indexOf('step');
+    if (job >= 0) col.name = job;
     if (col.id !== 0 || /^questions\b/i.test(tb.section)) continue;
     const head = tb.header[0];
     const tableKind = head === 'run' ? 'run' : head === 'chunk' ? 'chunk' : /^(phase|step|stage|slice)$/.test(head) ? 'phase'
@@ -1600,7 +1605,7 @@ function parsePlan(text, file, root, project, planText = null) {
       const since = cell(col.since) || (/(\d{4}-\d{2}-\d{2})/.exec(stateRaw) || [])[1] || null;
       const node = {
         id: idc.id,
-        name: truncate(cell(col.name) || idc.rest || idc.id, 140),
+        name: truncate([step > 0 ? cell(step) : '', cell(col.name) || idc.rest || idc.id].filter(Boolean).join(' · '), 140),
         agent: cell(col.agent) || null,
         state: normalizeState(stateRaw),
         stateRaw: truncate(stateRaw, 160),
@@ -1623,7 +1628,7 @@ function parsePlan(text, file, root, project, planText = null) {
   }
   const rel = path.relative(root, file).replace(/\\/g, '/');
   const small = /^docs\/plans\/[^/]+\.md$/i.test(rel);
-  const header = planHeader(small ? text : planText ?? '');
+  const header = planHeader(text) ?? planHeader(planText ?? '');
   if (!phases.length && !runs.length && !(small && header)) return null;
   for (const e of enrich) { const n = byId.get(e.id); if (n) { n.model ??= e.model; n.effort ??= e.effort; } }
   const known = [...byId.keys()];
@@ -1662,18 +1667,20 @@ const planKeyOf = p => `${p.project}|${p.slug}`;   // PLAN hud-0-3 §4.1, the ke
 function ensureRoot(root, project) {
   const key = root.toLowerCase();
   if (roots.has(key)) return;
-  const rec = { root, project, watchers: [], timer: null };
+  const rec = { root, project, watchers: new Map(), timer: null, scanning: false, scanAgain: false, lastScanAt: 0 };
   roots.set(key, rec);
+  scanRoot(key);
+}
+function watchPlanDirs(key, rec) {
   for (const top of PLAN_TOP_DIRS) {
-    const dir = path.join(root, top);
-    if (!fs.existsSync(dir)) continue;
+    const dir = path.join(rec.root, top);
+    if (rec.watchers.has(dir) || !fs.existsSync(dir)) continue;
     try {
-      const w = fs.watch(dir, { recursive: true }, (e, f) => { if (!f || /\.md$/i.test(f)) scheduleRootScan(key); });
-      w.on('error', () => {});
-      rec.watchers.push(w);
+      const w = fs.watch(dir, { recursive: true }, (e, f) => { if (e === 'rename' || !f || /\.md$/i.test(f)) scheduleRootScan(key); });
+      w.on('error', () => { w.close(); rec.watchers.delete(dir); });
+      rec.watchers.set(dir, w);
     } catch {}
   }
-  scanRoot(key);
 }
 function scheduleRootScan(key) {
   const rec = roots.get(key);
@@ -1683,7 +1690,7 @@ function scheduleRootScan(key) {
 function dropRoot(key) {
   const rec = roots.get(key);
   if (!rec) return;
-  for (const w of rec.watchers) try { w.close(); } catch {}
+  for (const w of rec.watchers.values()) try { w.close(); } catch {}
   clearTimeout(rec.timer);
   roots.delete(key);
   for (const [k, v] of plans) if (v.rootKey === key) plans.delete(k);
@@ -1691,6 +1698,18 @@ function dropRoot(key) {
 async function scanRoot(key) {
   const rec = roots.get(key);
   if (!rec) return;
+  if (rec.scanning) { rec.scanAgain = true; return; }
+  rec.scanning = true;
+  try {
+    watchPlanDirs(key, rec);
+    await readRootPlans(key, rec);
+  } finally {
+    rec.lastScanAt = Date.now();
+    rec.scanning = false;
+    if (rec.scanAgain && roots.get(key) === rec) { rec.scanAgain = false; scheduleRootScan(key); }
+  }
+}
+async function readRootPlans(key, rec) {
   const files = [];
   const walk = async (dir, depth) => {
     let ents;
@@ -1702,20 +1721,36 @@ async function scanRoot(key) {
     }
   };
   for (const top of PLAN_TOP_DIRS) await walk(path.join(rec.root, top), 0);
-  rec.info = await projectInfo(rec.root);
-  const found = new Set();
+  const info = await projectInfo(rec.root);
+  const candidates = new Map();
   for (const f of files) {
     let st, text, planText = null;
     try { st = await fsp.stat(f); text = await fsp.readFile(f, 'utf8'); } catch { continue; }
     if (/status\.md$/i.test(f)) { try { planText = await fsp.readFile(path.join(path.dirname(f), 'PLAN.md'), 'utf8'); } catch {} }
     const plan = parsePlan(text, f, rec.root, rec.project, planText);
-    if (!plan) continue;
-    const pkey = `${rec.project}|${path.relative(rec.root, f)}`.toLowerCase();
+    if (plan) candidates.set(f.toLowerCase(), { plan, mtime: st.mtimeMs, text });
+  }
+  // A STATUS board takes precedence over its companion design plan. An explicit supersession only
+  // hides a board when its replacement was actually read and contains a usable board.
+  const hidden = new Set();
+  for (const [file, candidate] of candidates) {
+    if (/[/\\]plan\.md$/i.test(file) && candidates.has(path.join(path.dirname(file), 'STATUS.md').toLowerCase())) hidden.add(file);
+    const replacement = /\bsuperseded by\s+(?:\*\*)?\[([^\]]+)\]\(([^)]+)\)/i.exec(candidate.text);
+    if (!replacement) continue;
+    const target = path.resolve(path.dirname(file), replacement[2].split('#')[0]).toLowerCase();
+    if (target !== file && candidates.has(target)) hidden.add(file);
+  }
+  if (roots.get(key) !== rec) return;   // a dropped root cannot publish the result of an old scan
+  rec.info = info;
+  const found = new Set();
+  for (const [file, { plan, mtime }] of candidates) {
+    if (hidden.has(file)) continue;
+    const pkey = `${rec.project}|${path.relative(rec.root, plan.path)}`.toLowerCase();
     found.add(pkey);
     const prev = plans.get(pkey);
-    if (prev && prev.rootKey !== key && prev.mtime > st.mtimeMs) continue;   // a newer copy in another worktree
+    if (prev && prev.rootKey !== key && prev.mtime > mtime) continue;   // a newer copy in another worktree
     if (prev) diffPlan(prev.plan, plan);
-    plans.set(pkey, { plan, mtime: st.mtimeMs, rootKey: key });
+    plans.set(pkey, { plan, mtime, rootKey: key });
   }
   for (const [k, v] of plans) if (v.rootKey === key && !found.has(k)) plans.delete(k);
   scheduleState();

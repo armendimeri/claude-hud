@@ -32,6 +32,7 @@ node hud.mjs lint [repo] [--json]  check a repository against the agent workflow
 node hud.mjs selftest            check the model normaliser, redaction and plan parser
 node --test tests/                run the integration tests: each starts its own HUD on a free port over temp
                                  folders (tests/helpers.mjs), posts hook events to it and checks /api/state
+node --test tests/plans.test.mjs  check plan discovery, replacement boards and live updates
 node tests/browser-smoke.mjs      open a --demo HUD of its own in headless Edge at three sizes; fails on a
                                  script error or a sideways page scroll; screenshots go to .hud-tmp/
 node tests/tools/stream-size.mjs <url> | --demo[=dense] [--seconds=30]
@@ -191,6 +192,13 @@ Completed boards and boards unchanged for 14 days with no active work or owner r
 
 **Feed** is the live event list. Hover to pause it or use the chevron to collapse it.
 
+Boards can live in `STATUS.md`, `PLAN.md`, `IMPLEMENTATION_PLAN.md`, `ROLLOUT.md`, `HANDOFF.md`, or a small
+`docs/plans/*.md` file. They need an ID column first and a `State` or `Status` column. A status board takes precedence
+over its companion `PLAN.md`; a board explicitly marked "Superseded by [replacement](...)" is hidden when the
+replacement has a readable board. Archive and handoff directories are skipped. File events refresh plans promptly;
+a periodic scan recovers missed events and discovers documentation folders created after the HUD starts, within
+about 12 seconds.
+
 **Top bar toggles**, all remembered in the browser:
 - **Effects:** the ambient motion (rotating reactor, radar, floating nodes) and live item pulses in Plans. Your
   system's reduced-motion setting turns these off too.
@@ -205,10 +213,10 @@ Completed boards and boards unchanged for 14 days with no active work or owner r
 
 | Source | What the HUD takes from it |
 |---|---|
-| `~/.claude/sessions/<pid>.json` | The list of running sessions: id, folder, name, busy or idle, and the entrypoint used to show the local VS Code link. The `*.key` files next to them are never opened. |
+| `~/.claude/sessions/<pid>.json` | Session ID, folder, name, busy or idle status, and the entrypoint used to show the local VS Code link. On Windows the HUD compares `procStart`, when present, with the process creation time to catch a reused PID. The `*.key` files next to the registry entries are never opened. |
 | `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, message IDs and times for usage deduplication and activity, tool names and input summaries, provider, and subagents (their `meta.json` gives the parent). For board links, it extracts ID-shaped words from user and Agent prompts and keeps only those words in memory. It also reads the paths of `Read`, `Edit`, `Write` and `MultiEdit` calls for Markdown files under `docs/`, `Documentation/` or `doc/`. Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
 | Hook events (`POST /event`) | Event name and time, tool name and the input fields used for short summaries and board-file evidence. Prompt and Stop hooks time Claude turns, and the background flag keeps background tools out of the long-tool warnings. The forwarder omits prompt bodies and the receiver drops them from direct posts. With `HUD_RECORD=<file>` set (off by default), the redacted event is also written to that file. |
-| `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
+| Status, plan, rollout and handoff Markdown boards under `docs/`, `Documentation/` or `doc/`, plus `docs/plans/*.md`, in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
 | `~/.claude/settings.json` (and each other watched folder's) | The Bedrock flag `env.CLAUDE_CODE_USE_BEDROCK` and whether the HUD's hooks are installed. The installer backs up the file before adding or migrating HUD hook entries. The uninstall command removes those entries. |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |
 | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` | Session metadata, short redacted title, model, effort, branch, cumulative tokens, reported context, tool names and short summaries, turn status, and subagent parent IDs. Read incrementally; reasoning, instructions and tool output are discarded. |
