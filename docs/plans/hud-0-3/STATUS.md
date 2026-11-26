@@ -17,7 +17,7 @@ Every agent reads this file first and updates it last.
 | P6 | Warnings and the activity line | `alerts` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6](handoffs/P6-alerts.md) | Selftest, 39 tests and nine browser views rechecked |
 | P7 | Page extras | `page` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7](handoffs/P7-page.md) | Selftest, 39 Node tests and all Edge smoke checks rechecked |
 | P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | accepted | 2026-11-26 | [P8](handoffs/P8-away.md) | Selftest, 42 Node tests and both kiosk layouts independently verified |
-| P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | todo | | | |
+| P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | accepted | 2026-11-26 | [P9](handoffs/P9-hooks.md) | 43 tests, byte-exact migration and 5.60 ms p95 overhead independently verified |
 | P10 | Verify and close | `review` | P9 | Opus 5.5 / high | todo | | — | |
 
 Every item changes `hud.mjs`, so they run one after another. The chain in "Depends on" is that order.
@@ -110,10 +110,15 @@ This plan's own rules, on top of the standard.
 - 2026-11-26 · away · P7 · Accepted after selftest, 39 Node tests and Edge smoke covering focus, local VS Code links
   and both away summary triggers.
 - 2026-11-26 · away · P8 · Handed off kiosk mode and phone push after selftest, 42 Node tests, and Edge smoke.
-- 2026-11-26 · coordinator · P8 · Accepted after selftest, 42 Node tests and 11 Edge views, including the kiosk
-  gates at 1920×1080 and 390×844. Loopback push delivery, payload privacy and both rate limits passed.
   The TV view fit 1920×1080 with 18 px body text and the waiting session pinned. Loopback tests confirmed the
   payload, rate limits, and error state.
+- 2026-11-26 · coordinator · P8 · Accepted after selftest, 42 Node tests and 11 Edge views, including the kiosk
+  gates at 1920×1080 and 390×844. Loopback push delivery, payload privacy and both rate limits passed.
+- 2026-11-26 · hooks · P9 · Handed off the standalone forwarder. Selftest and 43 Node tests passed.
+  Both 30-run batches met the startup gate, the migration fixture round-tripped byte for byte, and the owner
+  settings hashes matched.
+- 2026-11-26 · coordinator · P9 · Accepted after selftest, 43 Node tests and independent migration and 30-run timing
+  checks. The forwarder measured 44.79 ms p95, 5.60 ms above bare Node. The owner settings hash still matched.
 
 ## Kickoff
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Claude HUD: one live dashboard for Claude Code and Codex sessions on this PC.
-// One file, Node 22 built-ins only, no build step. `node hud.mjs help` lists the commands; README.md has the rest.
+// Node 22 built-ins only and no build step. `node hud.mjs help` lists the commands; README.md has the rest.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -11,6 +11,7 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { HOOK_FIELDS, LOOPBACK, TOOL_INPUT_FIELDS, TOOL_RESPONSE_FIELDS, portFrom, runHook, slimHookPayload } from './hud-hook.mjs';
 
 // =====================================================================================================================
 // Settings
@@ -39,7 +40,6 @@ const VERSION = '0.2.0';
 const HOSTNAME = os.hostname();          // labels the hub of the network view
 const PORT = portFrom(process.env.HUD_PORT) ?? 7777;
 const LAN = process.argv.includes('--lan') || process.env.HUD_LAN === '1';   // D15, off by default
-const LOOPBACK = '127.0.0.1';            // where the hook forwarder connects
 const HOST = LAN ? '0.0.0.0' : LOOPBACK; // what the server listens on
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
@@ -83,8 +83,6 @@ const ROOTS = (() => {
 })();
 const rootOf = file => { const k = file.toLowerCase(); return ROOTS.find(r => k.startsWith(r.projects.toLowerCase() + path.sep)) ?? null; };
 
-const HOOK_BUDGET_MS = 400;              // the forwarder gives up after this (PLAN §4.2)
-const HOOK_STDIN_MAX = 32 << 20;
 const EVENT_BODY_MAX = 256 << 10;
 const USAGE_BODY_MAX = 16 << 10;
 const FEED_MAX = 500;                    // D7
@@ -115,9 +113,9 @@ const CLOUDWATCH_EVERY_MS = 60_000;
 const ACCEPT_USAGE = process.env.HUD_ACCEPT_USAGE === '1';           // D12 (a), off by default
 const BEDROCK_REGION = (process.env.HUD_BEDROCK_REGION || '').trim(); // D12 (b), off by default
 
-// Hooks (PLAN §4.2, D3). Our entries are recognised by this exact command string.
-const HOOK_COMMAND = `node "${SCRIPT.replace(/\\/g, '/')}" hook`;
-const OUR_HOOK_RE = /^node "[^"]*\/hud\.mjs" hook$/;
+// Recognise both hook commands even if the HUD folder has moved.
+const HOOK_COMMAND = `node "${fileURLToPath(new URL('./hud-hook.mjs', import.meta.url)).replace(/\\/g, '/')}"`;
+const OUR_HOOK_RE = /^node "[^"]*[\\/]hud(?:\.mjs" hook|-hook\.mjs")$/;
 const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
   'Notification', 'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact'];
 const MATCHER_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
@@ -131,7 +129,6 @@ const NEEDS_INPUT_TOOLS = { AskUserQuestion: 'Question for you', ExitPlanMode: '
 // =====================================================================================================================
 // Small helpers
 
-function portFrom(v) { const n = Number(v); return Number.isInteger(n) && n > 0 && n < 65536 ? n : null; }
 function num(v) { return Number.isFinite(v) && v > 0 ? v : 0; }
 function str(v) { return typeof v === 'string' ? v : ''; }
 function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
@@ -282,60 +279,6 @@ function summarizeTool(name, input, cwd) {
     case 'TodoWrite': out = 'to-do list'; break;
   }
   return truncate(redact(oneLine(out)), 80);
-}
-
-// =====================================================================================================================
-// Hook forwarder: `node hud.mjs hook`. Reads the event on stdin and posts a slimmed copy to /event.
-// It never writes to stdout or stderr and always exits 0, whether the HUD runs or not (PLAN §4.2).
-
-const HOOK_FIELDS = ['session_id', 'transcript_path', 'cwd', 'hook_event_name', 'permission_mode', 'tool_name', 'tool_use_id',
-  'agent_id', 'agent_type', 'agent_transcript_path', 'notification_type', 'message', 'title', 'source', 'reason', 'trigger',
-  'session_title', 'is_interrupt'];
-const TOOL_INPUT_FIELDS = ['command', 'description', 'file_path', 'notebook_path', 'path', 'pattern', 'glob', 'url', 'query',
-  'subagent_type', 'run_in_background', 'model', 'skill', 'name'];
-const TOOL_RESPONSE_FIELDS = ['agentId', 'status', 'isAsync', 'resolvedModel', 'interrupted'];
-
-function pickFields(src, keys, max) {
-  const out = {};
-  for (const k of keys) {
-    const v = src[k];
-    if (typeof v === 'string') out[k] = v.slice(0, max);
-    else if (typeof v === 'number' || typeof v === 'boolean') out[k] = v;
-  }
-  return out;
-}
-function slimHookPayload(p, at) {
-  const out = { hud_at: at, ...pickFields(p, HOOK_FIELDS, 1000) };
-  if (typeof p.model === 'string') out.model = p.model.slice(0, 200);
-  else if (isObj(p.model) && typeof p.model.id === 'string') out.model = p.model.id.slice(0, 200);
-  if (isObj(p.tool_input)) out.tool_input = pickFields(p.tool_input, TOOL_INPUT_FIELDS, 300);
-  if (isObj(p.tool_response)) out.tool_response = pickFields(p.tool_response, TOOL_RESPONSE_FIELDS, 200);
-  return out;
-}
-
-function runHook() {
-  const quiet = () => true;
-  process.stdout.write = quiet;
-  process.stderr.write = quiet;
-  process.on('uncaughtException', () => process.exit(0));
-  process.on('unhandledRejection', () => process.exit(0));
-  process.removeAllListeners('warning');
-  setTimeout(() => process.exit(0), HOOK_BUDGET_MS);
-  const at = Date.now();
-  const chunks = [];
-  let size = 0;
-  process.stdin.on('data', c => { size += c.length; if (size <= HOOK_STDIN_MAX) chunks.push(c); });
-  process.stdin.on('error', () => process.exit(0));
-  process.stdin.on('end', () => {
-    let body;
-    try { body = JSON.stringify(slimHookPayload(JSON.parse(Buffer.concat(chunks).toString('utf8')), at)); } catch { process.exit(0); }
-    const req = http.request({
-      host: LOOPBACK, port: PORT, path: '/event', method: 'POST', agent: false,
-      headers: { host: `${LOOPBACK}:${PORT}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
-    }, res => { res.resume(); res.on('end', () => process.exit(0)); res.on('error', () => process.exit(0)); });
-    req.on('error', () => process.exit(0));
-    req.end(body);
-  });
 }
 
 // =====================================================================================================================
@@ -6656,7 +6599,7 @@ function install() {
 
 /**
  * Run when the HUD starts, so the hooks need no command: a folder without them (a new `~/.claude-*`, or a moved
- * hud.mjs) gets them now. Only at start, so `uninstall` on a running HUD sticks. HUD_NO_AUTOINSTALL=1 turns it off.
+ * HUD) gets them now. Older command hooks are replaced here too. HUD_NO_AUTOINSTALL=1 turns it off.
  */
 function autoInstall() {
   if (process.env.HUD_NO_AUTOINSTALL === '1') return;
@@ -7240,8 +7183,45 @@ ${BOARD_HEADER}
 
   check('install: our group for PreToolUse', ourGroup('PreToolUse'), { matcher: '*', hooks: [{ type: 'command', command: HOOK_COMMAND, timeout: 2, async: true }] });
   check('install: SessionEnd runs synchronously', ourGroup('SessionEnd'), { hooks: [{ type: 'command', command: HOOK_COMMAND, timeout: 2 }] });
-  check('install: removeOurs keeps other hooks', removeOurs([{ matcher: '*', hooks: [{ type: 'command', command: 'echo hi' }, ourGroup('Stop').hooks[0]] }, ourGroup('Stop')]),
+  const oldHook = { type: 'command', command: 'node "C:/previous folder/hud.mjs" hook', timeout: 2, async: true };
+  check('install: recognises the legacy command in another folder', isOurHook(oldHook), true);
+  check('install: recognises a moved forwarder', isOurHook({ type: 'command', command: 'node "C:/previous folder/hud-hook.mjs"' }), true);
+  check('install: removeOurs keeps other hooks', removeOurs([{ matcher: '*', hooks: [{ type: 'command', command: 'echo hi' }, oldHook, ourGroup('Stop').hooks[0]] }, ourGroup('Stop')]),
     [{ matcher: '*', hooks: [{ type: 'command', command: 'echo hi' }] }]);
+
+  const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-selftest-'));
+  try {
+    const fixture = path.join(fixtureDir, 'settings.json');
+    const original = '\ufeff{\r\n\t"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo keep"}]}]}\r\n}\r\n';
+    const settings = parseSettings(original, fixture);
+    settings.hooks.Stop.push({ hooks: [oldHook] });
+    const legacy = formatLike(original, settings);
+    fs.writeFileSync(fixture, legacy);
+    backupSettings(original, fixture);
+    check('install: migrates the legacy entry', installInto(fixture).changed, true);
+    const upgraded = fs.readFileSync(fixture, 'utf8');
+    const upgradedHooks = parseSettings(upgraded, fixture).hooks;
+    check('install: preserves other hooks and installs the new command', upgradedHooks.Stop, [
+      { hooks: [{ type: 'command', command: 'echo keep' }] }, ourGroup('Stop'),
+    ]);
+    check('install: respects the migrated settings', installInto(fixture).changed, false);
+    check('uninstall: restores the original bytes after migration', [uninstallFrom(fixture).removed, fs.readFileSync(fixture, 'utf8')],
+      [HOOK_EVENTS.length, original]);
+    fs.writeFileSync(fixture, legacy);
+    check('uninstall: also removes the legacy command directly', [uninstallFrom(fixture).removed, fs.readFileSync(fixture, 'utf8')],
+      [1, original]);
+  } finally {
+    fs.rmSync(fixtureDir, { recursive: true, force: true });
+  }
+
+  const exampleFields = keys => Object.fromEntries(keys.map(key => [key, 'x'.repeat(1200)]));
+  const slim = slimHookPayload({ ...exampleFields(HOOK_FIELDS), prompt: 'private', model: { id: 'test-model' },
+    tool_input: { ...exampleFields(TOOL_INPUT_FIELDS), prompt: 'private' },
+    tool_response: { ...exampleFields(TOOL_RESPONSE_FIELDS), output: 'private' } }, 123);
+  check('hook: preserves only the shared fields and caps their sizes', [
+    slim.hud_at, slim.model, Object.keys(slim), Object.keys(slim.tool_input), Object.keys(slim.tool_response),
+    slim.cwd.length, slim.tool_input.command.length, slim.tool_response.agentId.length,
+  ], [123, 'test-model', ['hud_at', ...HOOK_FIELDS, 'model', 'tool_input', 'tool_response'], TOOL_INPUT_FIELDS, TOOL_RESPONSE_FIELDS, 1000, 300, 200]);
   console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
   process.exit(failed ? 1 : 0);
 }
@@ -7262,7 +7242,7 @@ const HELP = `Claude HUD ${VERSION}: a live dashboard of Claude Code and Codex s
                                (add --lan to autostart on to start it open to the network)
   node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard
   node hud.mjs selftest        check the model normaliser, redaction and plan parser
-  node hud.mjs hook            the hook forwarder (Claude Code runs this; it prints nothing)
+  node hud-hook.mjs             the silent hook forwarder (node hud.mjs hook still works)
 
   HUD_RECORD=<file>            while serving, also append each hook event received, redacted, to <file> as one
                                JSON line (off unless set; for building tests)`;

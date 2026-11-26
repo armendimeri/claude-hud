@@ -8,8 +8,8 @@ every project:
 - the boards of the plans in those projects;
 - your account's 5-hour and weekly usage, as Claude Code itself last cached it.
 
-It's one file, `hud.mjs`, using Node 22 built-ins only: there's no `npm install` and no build step. It makes no model
-or API calls, so it costs no Claude usage. It listens on 127.0.0.1 only, unless you start it with `--lan` (see
+The dashboard runs from `hud.mjs` and its hook forwarder from `hud-hook.mjs`. Both run directly on Node 22 using
+built-ins and consume no Claude usage. The dashboard listens on 127.0.0.1 unless you start it with `--lan` (see
 [Viewing it from another device](#viewing-it-from-another-device)).
 
 ![Claude HUD: the network view. A coordinator session has started subagents three levels deep; two sessions are waiting for you; plan boards on the right, the live feed below.](docs/screenshots/hero-network.png)
@@ -220,16 +220,18 @@ key are replaced with `•••`.
 
 `install` (and the HUD at start) adds one entry for each of these events: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse,
 PostToolUse, PostToolUseFailure, Notification, Stop, SubagentStart, SubagentStop and PreCompact. Each runs
-`node "<path>/hud.mjs" hook`. That command reads the event, posts it to the HUD, and:
+`node "<path>/hud-hook.mjs"`. The command reads the event from stdin and posts the fields the HUD uses:
 - **prints nothing**, so nothing is added to Claude's context;
 - **always exits 0**, so it can never block a tool or show an error;
-- gives up after 400 ms, so a HUD that isn't running costs about 70 ms a call;
+- gives up after 400 ms;
 - runs `async` (except SessionEnd), so Claude Code doesn't wait for it.
 
-It writes a backup (`settings.json.hud-backup-<date>`) first and leaves every other setting and hook as it was. When
-the hooks are already there it changes nothing, so no backup piles up. It also repairs them if `hud.mjs` moved. A
-`settings.json` that isn't valid JSON is left alone, with a message. `uninstall` removes only the HUD's entries from
-every watched folder; when the result matches a backup, it restores that backup's exact bytes. Because the HUD adds
+The installer backs up the settings to `settings.json.hud-backup-<date>` before changing the HUD's hooks.
+When the current hooks are already there, it skips the write and backup. An install or restart upgrades
+hooks using `node "<path>/hud.mjs" hook` to the standalone forwarder. The old invocation also works. Keep the two
+scripts together when moving the HUD. Invalid JSON produces a message and leaves the file as it was.
+`uninstall` removes both command formats from every watched folder. When the result matches a backup, it
+restores that backup's exact bytes. Because the HUD adds
 the hooks at every start, set `HUD_NO_AUTOINSTALL=1` (and `autostart off`) if you want them to stay removed.
 
 To build tests from real use, start the HUD with `HUD_RECORD=<file>`: it appends each hook event it receives, after
