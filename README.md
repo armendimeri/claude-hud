@@ -90,7 +90,10 @@ to one per session per minute and 20 in a rolling hour. The setting is off by de
 
 ## Setting it up
 
-1. `node hud.mjs` (or `node hud.mjs autostart on` to have it start at every logon).
+1. Clone this repository or extract the complete source archive to the folder where the HUD will run. Keep
+   `hud.mjs`, `hud-hook.mjs`, and `src/` together. The server resolves the browser modules and stylesheet from
+   `src/` beside `hud.mjs`, so you can launch it from another working directory.
+2. Run `node hud.mjs` (or `node hud.mjs autostart on` to have it start at every logon).
 
 That's all: each time it starts, the HUD installs its hooks into every Claude Code folder it watches (`~/.claude` and
 any `~/.claude-*`), so there's nothing else to run. Open sessions pick the hooks up by themselves. Set
@@ -244,8 +247,8 @@ PostToolUse, PostToolUseFailure, Notification, Stop, SubagentStart, SubagentStop
 
 The installer backs up the settings to `settings.json.hud-backup-<date>` before changing the HUD's hooks.
 When the current hooks are already there, it skips the write and backup. An install or restart upgrades
-hooks using `node "<path>/hud.mjs" hook` to the standalone forwarder. The old invocation also works. Keep the two
-scripts together when moving the HUD. Both invocations share the field allowlists in `hud-hook.mjs`. Invalid JSON
+hooks using `node "<path>/hud.mjs" hook` to the standalone forwarder. The old invocation also works. Move the full
+distribution together. Both invocations share the field allowlists in `hud-hook.mjs`. Invalid JSON
 produces a message and leaves the file as it was.
 `uninstall` removes both command formats from every watched folder. When the result matches a backup, it
 restores that backup's exact bytes. Because the HUD adds

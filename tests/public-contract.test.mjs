@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
+import { get } from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
 import { board, script, startHud } from './helpers.mjs';
@@ -128,6 +129,98 @@ test('both demo modes publish the demo contract without live Codex metadata', as
     checkSnapshot(initial, mode);
     stream.close();
   }
+});
+
+test('browser shells serve only the public assets from a staged distribution', { timeout: 30000 }, async t => {
+  const hud = await startHud({ start: false });
+  let child;
+  t.after(async () => {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit');
+      child.kill();
+      await exited;
+    }
+    await hud.close();
+  });
+
+  const distribution = path.join(hud.dir, 'distribution');
+  const web = path.join(distribution, 'src', 'web');
+  await fs.mkdir(distribution);
+  for (const name of ['hud.mjs', 'hud-hook.mjs', 'src']) {
+    await fs.cp(new URL(`../${name}`, import.meta.url), path.join(distribution, name), { recursive: true });
+  }
+  await fs.writeFile(path.join(web, 'unlisted.mjs'), '// Unlisted test fixture\n');
+  child = hud.spawnCli([path.join(distribution, 'hud.mjs'), '--demo'], { cwd: hud.dir, stdio: 'ignore' });
+  await hud.until(s => s.demo === true);
+
+  for (const [route, entry] of [['/', 'entry.mjs'], ['/design', 'design.mjs']]) {
+    const response = await fetch(hud.base + route);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /^text\/html\b/);
+    const csp = response.headers.get('content-security-policy');
+    assert.equal(csp.split('; ').find(part => part.startsWith('script-src ')), "script-src 'self'");
+    assert.ok(csp.includes("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"));
+    assert.ok(csp.includes("font-src 'self' data: https://fonts.gstatic.com"));
+    const html = await response.text();
+    assert.deepEqual([...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map(m => m[0]),
+      [`<script type="module" blocking="render" src="/assets/${entry}"></script>`]);
+    assert.ok(html.includes('<link rel="stylesheet" href="/assets/styles/hud.css">'));
+    assert.doesNotMatch(html, /<style\b/);
+  }
+
+  const types = [
+    ['entry.mjs', 'text/javascript'],
+    ['design.mjs', 'text/javascript'],
+    ['legacy-hud.mjs', 'text/javascript'],
+    ['styles/hud.css', 'text/css'],
+  ];
+  for (const [name, mime] of types) {
+    const url = `${hud.base}/assets/${name}`;
+    const expected = await fs.readFile(path.join(web, name));
+    const response = await fetch(url + '?v=fixture');
+    assert.equal(response.status, 200, name);
+    assert.equal(response.headers.get('content-type'), `${mime}; charset=utf-8`);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
+
+    const head = await fetch(url, { method: 'HEAD' });
+    assert.equal(head.status, 200, name);
+    assert.equal(head.headers.get('content-type'), `${mime}; charset=utf-8`);
+    assert.equal(Number(head.headers.get('content-length')), expected.length);
+    assert.equal(await head.text(), '');
+  }
+  const post = await fetch(hud.base + '/assets/entry.mjs', { method: 'POST' });
+  assert.equal(post.status, 404);
+  await post.arrayBuffer();
+
+  // Send raw request targets so the client doesn't normalize dot segments or backslashes.
+  function rawStatus(target) {
+    return new Promise((resolve, reject) => {
+      get(hud.base, { path: target }, response => {
+        response.resume();
+        response.on('end', () => resolve(response.statusCode));
+        response.on('error', reject);
+      }).on('error', reject);
+    });
+  }
+
+  for (const target of [
+    '/assets/', '/assets/missing.mjs', '/assets/unlisted.mjs', '/src/http/assets.mjs',
+    '/assets/../hud.mjs', '/assets/../design', '/assets/../assets/entry.mjs',
+    '/assets/%2e%2e/hud-hook.mjs', '/assets/%2e%2e%2fsrc/http/assets.mjs',
+    '/assets/..\\hud.mjs', '/assets/%2e%2e%5csrc%5chttp%5cassets.mjs',
+    '/assets/C:/hud.mjs', '/assets//host/share/entry.mjs', '/assets/%00entry.mjs',
+  ]) {
+    assert.equal(await rawStatus(target), 404, target);
+  }
+
+  // A registered URL still can't read a file reached through an out-of-tree symlink or junction.
+  const outside = path.join(distribution, 'styles-outside-web');
+  const styles = path.join(web, 'styles');
+  await fs.rename(styles, outside);
+  assert.equal(await rawStatus('/assets/styles/hud.css'), 404);
+  await fs.symlink(outside, styles, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal(await rawStatus('/assets/styles/hud.css'), 404);
 });
 
 test('CLI help, errors and settings round trip are compatible', async t => {

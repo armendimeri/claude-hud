@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Script } from 'node:vm';
 import { startHud, pause, said as saidLine } from './helpers.mjs';
 
 const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -86,13 +85,8 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
     assert.deepEqual(open.subagents.map(a => a.id), ['this-run'], 'the subagent of an earlier run is not listed');
     assert.deepEqual(open.tokensTree, { input: 2, output: 4, cacheRead: 0, cacheWrite: 0 }, 'its tokens still count');
   });
-  await t.test('HTTP, SSE and generated browser scripts', async () => {
+  await t.test('HTTP health and SSE', async () => {
     assert.equal((await (await fetch(base + '/api/health')).json()).version, '0.3.0');
-    for (const route of ['/', '/design']) {
-      const html = await (await fetch(base + route)).text();
-      for (const match of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) new Script(match[1]);
-      assert.ok(html.includes('Codex')); assert.ok(html.includes('OpenAI'));
-    }
     const stream = await hud.stream();
     try {
       assert.match(stream.headers.get('content-type'), /text\/event-stream/);
