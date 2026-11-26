@@ -236,19 +236,25 @@ try {
       const line = H.activityLine();
       const mount = document.createElement('div');
       mount.append(line.el);
-      const start = Math.floor(H.now() / 60000) * 60000;
-      line.set({ start, perMin: [20] }, { lastMs: 62_000 });
-      const path = mount.querySelector('.activity-path');
-      const full = path.getAttribute('points');
-      const turn = line.el.querySelector('span').textContent;
-      H.syncClock(start + 60000);
-      H.tickTimers(mount);
-      const padded = path.getAttribute('points')?.endsWith('89,16.0');
-      H.syncClock(start + 30 * 60000);
-      H.tickTimers(mount);
-      const aged = !path.getAttribute('points');
-      H.syncClock(Date.now());
-      return { plotted: full?.endsWith('89,2.0'), turn, padded, aged };
+      const realNow = Date.now;
+      const browserNow = realNow();
+      Date.now = () => browserNow;
+      try {
+        const skew = H.now() - browserNow;
+        const start = Math.floor(H.now() / 60000) * 60000;
+        line.set({ start, perMin: [20] }, { lastMs: 62_000 });
+        const path = mount.querySelector('.activity-path');
+        const full = path.getAttribute('points');
+        const turn = line.el.querySelector('span').textContent;
+        Date.now = () => start + 60000 - skew;
+        H.tickTimers(mount);
+        const padded = path.getAttribute('points')?.endsWith('89,16.0');
+        Date.now = () => start + 30 * 60000 - skew;
+        H.tickTimers(mount);
+        return { plotted: full?.endsWith('89,2.0'), turn, padded, aged: !path.getAttribute('points') };
+      } finally {
+        Date.now = realNow;
+      }
     })()`);
     assert.deepEqual(result, { plotted: true, turn: 'Last turn 1:02', padded: true, aged: true });
     console.log('pass activity view pads missing minutes and ages out output without a state push');
@@ -410,6 +416,63 @@ try {
     console.log('pass SSE reconnect fetches and summarizes the new snapshot', reconnected);
   }
 
+  async function checkStreamAndFeed() {
+    const { identifier } = await call('Page.addScriptToEvaluateOnNewDocument', { source: `{
+      window.streams = [];
+      window.EventSource = class extends EventSource {
+        constructor(url) {
+          super(url);
+          window.streams.push({ source: this, indicator: document.querySelector('.stream').dataset.s });
+          // Real state and plans still flow. Use controlled live feed lines for grouping assertions.
+          this.addEventListener('event', event => { if (event.isTrusted) event.stopImmediatePropagation(); });
+        }
+      };
+    }` });
+    try {
+      await openHud('/?view=cards');
+    } finally {
+      await call('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    }
+    assert.deepEqual(await evaluate('window.streams.map(stream => stream.indicator)'), ['connecting']);
+    const first = 'Fixture command one', second = 'Fixture command two';
+    const firstRow = '.p-tick .tk-list-in .tk:first-child';
+    await evaluate(`{
+      window.emitFeed = (text, step, kind = 'tool') => {
+        const line = { at: window.feedStart + step, kind, sessionId: 'store-smoke', project: 'TourCMS', text };
+        window.streams.at(-1).source.dispatchEvent(new MessageEvent('event', { data: JSON.stringify(line) }));
+      };
+      window.feedStart = Date.now();
+      window.emitFeed('Fixture session', 0, 'session');
+      window.emitFeed(${JSON.stringify(first)}, 1);
+      document.querySelector('.p-tick .tk-list').dispatchEvent(new Event('pointerenter'));
+      window.emitFeed(${JSON.stringify(second)}, 2);
+      window.emitFeed(${JSON.stringify(second)}, 2);
+    }`);
+    assert.equal(await evaluate(`document.querySelector('${firstRow} .tk-text').textContent`), first);
+    assert.equal(await evaluate("document.querySelector('.p-tick .chip.warn:not([hidden])').textContent"), 'Paused · 1 new');
+    await evaluate("document.querySelector('.p-tick .tk-list').dispatchEvent(new Event('pointerleave'))");
+    assert.equal(await evaluate(`document.querySelector('${firstRow} .tk-text').textContent`), second);
+    assert.equal(await evaluate(`document.querySelector('${firstRow} .tk-n').textContent`), '×2');
+
+    await click('.p-sess .seg button:last-child');
+    await click(`${firstRow} button[data-project="TourCMS"]`);
+    assert.equal(await evaluate("new URLSearchParams(location.search).get('project')"), 'TourCMS');
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('.p-tick .tk-text')].slice(0, 2).map(el => el.textContent)`), [second, first]);
+    await click('.p-sess .focus-clear');
+    assert.equal(await evaluate('window.streams.length'), 1, 'view and project changes reuse the stream');
+
+    await evaluate("window.streams[0].source.dispatchEvent(new Event('error'))");
+    await until("document.querySelector('.stream[data-s=reconnecting]') && document.querySelector('.conn:not([hidden])')", 'an interrupted stream shows Reconnecting');
+    await until("document.querySelector('.stream[data-s=down]') && document.querySelector('.conn[data-s=down]:not([hidden])')", 'a prolonged interruption shows Down');
+    await click('.conn:not([hidden]) button');
+    await until("window.streams.length === 2 && window.streams[0].source.readyState === EventSource.CLOSED && document.querySelector('.stream[data-s=live]')",
+      'Retry now closes the old source and connects a new one');
+    await until(`[...document.querySelectorAll('.p-tick .tk-text')].filter(el => el.textContent === ${JSON.stringify(second)}).length === 1`,
+      'reconnection retains the delivered feed without a duplicate');
+    assert.equal(await evaluate("document.querySelector('.conn').hidden"), true);
+    console.log('pass one stream across view and project changes, feed deduplication and hover grouping, connection indicators and manual retry');
+  }
+
   async function checkKiosk() {
     const { identifier } = await call('Page.addScriptToEvaluateOnNewDocument', { source: `{
       window.kioskWakeRequests = [];
@@ -557,6 +620,7 @@ try {
   await checkProjectFocus();
   await checkWindowLinks();
   await checkAwaySummary();
+  await checkStreamAndFeed();
   await checkKiosk();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log(`pass browser runtime; ${shots.length} screenshots:\n${shots.map(f => '  ' + f).join('\n')}`);

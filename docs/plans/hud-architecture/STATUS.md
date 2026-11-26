@@ -9,7 +9,7 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 | P0 | Decisions | human | — | — | accepted | 2026-11-26 | — | D1–D7 accepted and Q4 answered |
 | P1 | Capture the baseline | `baseline` | P0 | Opus 5.5 / high | accepted | 2026-11-26 | [P1-baseline](handoffs/P1-baseline.md) | 49 tests and 11 Edge layouts passed. Hook p95 overhead was 16.51 ms |
 | P2 | Serve native browser assets | `assets` | P1 | Opus 5.5 / high | accepted | 2026-11-26 | [P2-assets](handoffs/P2-assets.md) | 50 Node tests and 11 Edge layouts passed |
-| P3 | Extract the browser store | `client-data` | P2 | Opus 5.5 / high | todo | | | Shared data, connection and selectors |
+| P3 | Extract the browser store | `client-data` | P2 | Opus 5.5 / high | accepted | 2026-11-26 | [P3-client-data](handoffs/P3-client-data.md) | 55 Node tests and 11 Edge layouts passed |
 | P4 | Prove a new full-page view | `activity` | P3 | Sonnet 5.5 / high | todo | | | First milestone |
 | P5 | Separate HTTP from the application runtime | `runtime` | P4 | Opus 5.5 / xhigh | todo | | | Application and publication interfaces |
 | P6 | Extract session and transcript sources | `sessions` | P5 | Opus 5.5 / high | todo | | | Lane A |
@@ -54,6 +54,8 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 - 2026-11-26 · human · P0 · Accepted D1–D7 and answered Q4 as recommended. Commit only the architecture plan on `hud-architecture`, switch the original checkout to `hud-0-3`, and add the worktree from the existing `hud-architecture` branch.
 - 2026-11-26 · baseline · P1 · Handed off synthetic contract coverage and performance evidence. Self-test, 49 Node tests and 11 Edge layouts passed. Recorded the hook timing overage and the open 0.3 live memory gate.
 - 2026-11-26 · assets · P2 · Accepted P1 and handed off native browser assets. Self-test, 50 Node tests and 11 Edge layouts passed from the architecture worktree or staged copy.
+- 2026-11-26 · client-data · P3 · Accepted P2 at 61cf0d7 and handed off the shared browser store. Self-test, 55 Node tests, and 11 Edge layouts passed.
+- 2026-11-26 · activity · P3 · Accepted after all five browser-store fixture tests passed.
 
 ## Kickoff
 

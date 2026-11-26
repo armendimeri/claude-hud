@@ -1,6 +1,7 @@
+import { boardPlanKey, plansByKey, selectProject, sessionsById } from './data/selectors.mjs';
+
 // The client library: every component of the page and the gallery. Runs in the browser only.
-export function hudClient() {
-  'use strict';
+export function hudClient({ now = () => Date.now() } = {}) {
   const NS = 'http://www.w3.org/2000/svg';
   const doc = document, root = doc.documentElement;
   const EASE = 'cubic-bezier(.2, .8, .2, 1)';
@@ -40,9 +41,6 @@ export function hudClient() {
   function show(el, on) { if (el.hidden === !!on) el.hidden = !on; }
 
   // ---- time and numbers ----------------------------------------------------------------------------------------------
-  let skew = 0;                                   // server clock minus browser clock
-  const now = () => Date.now() + skew;
-  function syncClock(serverNow) { if (Number.isFinite(serverNow)) { const k = serverNow - Date.now(); if (Math.abs(k - skew) > 250) skew = k; } }
   const pad2 = n => String(n).padStart(2, '0');
   function fmtTok(n) {
     n = Number(n) || 0;
@@ -1367,7 +1365,6 @@ export function hudClient() {
   // ---- plan graph ------------------------------------------------------------------------------------------------------------
   const DONE_STATES = new Set(['accepted', 'done', 'handed-off']);
   const BOARD_MARKS = { unclaimed: ['Board not updated', '!'], stalled: ['Stalled', 'Ⅱ'], early: ['Started early', '↑'] };
-  const boardPlanKey = p => p.project + '|' + p.slug;
   const activeAgents = item => (item?.agents || []).filter(a => a.active);
   let planDetailId = 0;
   function planLayout(nodes, horizontal) {
@@ -1844,8 +1841,7 @@ export function hudClient() {
     const btn = h('button', { class: 'tgl tk-collapse', type: 'button', 'aria-expanded': 'true', 'aria-label': 'Collapse the feed', 'data-tip': 'Collapse the feed' }, icon('chevron'));
     header.append(newest, lastDone, paused, btn);
     let hovered = false, queue = [], project = null, lastFinish = null;
-    const history = new Map();
-    const key = f => JSON.stringify([f.at, f.sessionId, f.project, f.kind, f.text]);
+    let history = [];
     const matches = f => f && (!project || f.project === project);
     let collapsed = prefs.get('tickerCollapsed', false);
     function setCollapsed(v) {
@@ -1897,8 +1893,8 @@ export function hudClient() {
       setNewest(f);
       if (animate && !motion.rm && !collapsed) { list.animate([{ transform: 'translateY(-24px)' }, { transform: 'none' }], { duration: 300, easing: EASE }); li.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 }); }
     }
-    function redraw(feed = [...history.values()].reverse()) {
-      const visible = feed.filter(matches);
+    function redraw() {
+      const visible = selectProject(history, project);
       queue = []; show(paused, false); hovered = false;
       list.replaceChildren(...visible.slice(0, 40).map(line));
       setNewest(visible[0]);
@@ -1911,24 +1907,13 @@ export function hudClient() {
     return {
       el: clip,
       focus(name) { if (project !== name) { project = name; redraw(); } },
-      add(f) {
-        const k = key(f);
-        if (history.has(k)) return;
-        history.set(k, f);
-        if (history.size > 200) history.delete(history.keys().next().value);
+      add(f, feed = history) {
+        history = feed;
         if (!matches(f)) return;
         if (hovered) { queue.push(f); show(paused, true); txt(paused, `Paused · ${queue.length} new`); return; }
         insert(f);
       },
-      sync(feed) {   // merge the snapshot's history with events already delivered by the stream
-        if (!feed.some(f => !history.has(key(f)))) return;
-        const merged = new Map(feed.map(f => [key(f), f]));
-        for (const [k, f] of history) if (!merged.has(k)) merged.set(k, f);
-        const lines = [...merged.values()].sort((a, b) => b.at - a.at).slice(0, 200);
-        history.clear();
-        for (const f of lines.slice().reverse()) history.set(key(f), f);
-        redraw(lines);
-      },
+      sync(feed) { if (feed !== history) { history = feed; redraw(); } },
       done(f) { lastFinish = f; noteDone(f); },   // a completion known from the state, even after it leaves the feed
       type(text) {   // "SYSTEMS ONLINE" types into the ticker during boot
         if (project) return;
@@ -2248,7 +2233,7 @@ export function hudClient() {
     const app = h('div', { class: 'app' }, top.el, ban.el, main, tk.el);
     mount.append(bg, app, conn, h('div', { class: 'scanlines', 'aria-hidden': 'true' }));
 
-    let state = null, booted = false, exHidden = null, syncedFeed = null;
+    let state = null, booted = false, exHidden = null, lastAt = null;
     const announce = announcer();
 
     function showFocus() {
@@ -2308,14 +2293,14 @@ export function hudClient() {
       const firstWaiting = opts.kiosk && live.filter(x => x.status === 'needs-you' && x.needsYou)
         .sort((a, b) => a.needsYou.since - b.needsYou.since)[0];
       return {
-        byId: new Map(st.sessions.map(x => [x.id, x])), plans: new Map((st.plans || []).map(p => [boardPlanKey(p), p])), host: st.host,
+        byId: sessionsById(st), plans: plansByKey(st), host: st.host,
         project, autoPin: firstWaiting?.id,
         maxTok: Math.max(1, ...live.map(x => headline(x.tokens))), maxCache: Math.max(1, ...live.map(x => x.tokens?.cacheRead || 0)),
       };
     }
     function renderSessions(st, animate = booted) {
       se.guard(() => {
-        const sessions = st.sessions.filter(matches), live = sessions.filter(x => x.status !== 'ended');
+        const sessions = selectProject(st.sessions, project), live = sessions.filter(x => x.status !== 'ended');
         const busy = live.filter(x => x.status === 'busy').length, needs = live.filter(x => x.status === 'needs-you').length;
         txt(seSum, [`${live.length} open`, busy ? `${busy} busy` : null, needs ? `${needs} need you` : null].filter(Boolean).join(' · '));
         view = currentView(sessions);
@@ -2327,7 +2312,7 @@ export function hudClient() {
         const compact = live.length > 8;
         if (compact !== compactMode) { compactMode = compact; cardsBox.classList.toggle('compact', compact); cardsBox.replaceChildren(); cards.clear(); rowsMap.clear(); }
         const rank = { 'needs-you': 0, busy: 1, idle: 2, ended: 3 };
-        const list = sessions.sort((a, b) => rank[a.status] - rank[b.status] || (a.startedAt || 0) - (b.startedAt || 0));
+        const list = sessions.toSorted((a, b) => rank[a.status] - rank[b.status] || (a.startedAt || 0) - (b.startedAt || 0));
         if (compact) reconcile(cardsBox, rowsMap, list, x => x.id, () => compactRow(api), (r, x) => r.update(x, c), animate);
         else reconcile(cardsBox, cards, list, x => x.id, () => sessionCard(api), (r, x) => r.update(x, c), animate);
         seMore.refresh();
@@ -2335,9 +2320,9 @@ export function hudClient() {
     }
     function renderPlans(st, animate = booted) {
       pl.guard(() => {
-        const plans = (st.plans || []).filter(matches), board = st.board || {};
-        const byPlan = new Map(plans.map(p => [boardPlanKey(p), p]));
-        const sessions = new Map(st.sessions.map(x => [x.id, x]));
+        const plans = selectProject(st.plans, project), board = st.board || {};
+        const byPlan = plansByKey({ plans });
+        const sessions = sessionsById(st);
         const nameOf = ({ sessionId, agentId }) => {
           const session = sessions.get(sessionId);
           if (agentId) {
@@ -2357,9 +2342,9 @@ export function hudClient() {
           return (all.length > 0 && all.every(n => DONE_STATES.has(n.state))) ||
             (p.touchedAt > 0 && p.touchedAt <= staleBefore && !working(p) && !needs(p));
         };
-        plans.sort((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || (working(b) > 0 ? 1 : 0) - (working(a) > 0 ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || (b.touchedAt || 0) - (a.touchedAt || 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
+        const sorted = plans.toSorted((a, b) => (needs(b) ? 1 : 0) - (needs(a) ? 1 : 0) || (working(b) > 0 ? 1 : 0) - (working(a) > 0 ? 1 : 0) || (active(b) ? 1 : 0) - (active(a) ? 1 : 0) || (b.touchedAt || 0) - (a.touchedAt || 0) || a.project.localeCompare(b.project) || (a.title || '').localeCompare(b.title || ''));
         const visible = [], folded = [];
-        for (const p of plans) (isQuiet(p) ? folded : visible).push(p);
+        for (const p of sorted) (isQuiet(p) ? folded : visible).push(p);
         queue.update(queueRows(st, byPlan, nameOf));
         show(queue.el, plans.length > 0);
         show(plansEmpty, plans.length === 0);
@@ -2377,16 +2362,13 @@ export function hudClient() {
     // a finish arrives in the feed.
     function lastFinish(st) {
       let best = null;
-      for (const x of (st.sessions || []).filter(matches)) for (const a of x.subagents || []) {
+      for (const x of selectProject(st.sessions, project)) for (const a of x.subagents || []) {
         if (a.state === 'done' && a.endedAt && (!best || a.endedAt > best.at)) best = { kind: 'done', at: a.endedAt, project: x.project, text: `Agent done · ${[a.type, a.description].filter(Boolean).join(': ')}` };
       }
       return best;
     }
     function render(st, o = {}) {
-      syncClock(st.now);
       const prev = state;
-      // A state without plans or feed (the stream's later pushes, PLAN hud-0-3 §4.4) keeps the ones drawn: never clear.
-      if (prev && (!st.plans || !st.feed)) st = Object.assign({}, st, { plans: st.plans || prev.plans, feed: st.feed || prev.feed });
       state = st;
       const boot = o.boot || (!booted && root.classList.contains('booting'));
       top.update(st);
@@ -2396,9 +2378,7 @@ export function hudClient() {
       if (ex.el.hidden !== exHidden) { exHidden = ex.el.hidden; lMore.refresh(); }
       renderSessions(st);
       renderPlans(st);
-      // The feed is synced once per array: a kept feed put back on a later push is old, and the stream's `event`
-      // lines have already gone past it.
-      if (st.feed && st.feed !== syncedFeed) { syncedFeed = st.feed; tick.sync(st.feed); }
+      tick.sync(st.feed);
       tick.done(lastFinish(st));
       if (prev) announce(happenings(prev, st), st);
       booted = true;
@@ -2409,11 +2389,15 @@ export function hudClient() {
       show(conn, bad); setData(conn, 's', sv);
       app.classList.toggle('stale', bad);
       conn.querySelector('.conn-w').textContent = sv === 'down' ? 'HUD server not answering' : 'Connection lost · reconnecting';
-      conn.querySelector('.conn-m').textContent = info.lastAt ? 'last update ' + fmtAge(Date.now() - info.lastAt) + ' ago' : '';
+      lastAt = info.lastAt ?? null;
+      tickConnectionAge();
     }
-    setInterval(() => { top.tick(); tickTimers(); }, 1000);
+    function tickConnectionAge() {
+      if (!conn.hidden) txt(conn.querySelector('.conn-m'), lastAt === null ? '' : 'last update ' + fmtAge(Date.now() - lastAt) + ' ago');
+    }
+    setInterval(() => { top.tick(); tickTimers(); tickConnectionAge(); }, 1000);
     top.tick();
-    return { render, feed: f => tick.add(f), setConn, typeLine: t => tick.type(t),
+    return { render, feed: tick.add, setConn, typeLine: t => tick.type(t),
       showAway: away.update, clearProject: () => setProject(null), get state() { return state; } };
   }
 
@@ -2429,7 +2413,7 @@ export function hudClient() {
   }
 
   return {
-    h, s, txt, icon, glyph, ICONS, GLYPHS, STATUS, statusTag, provBadge, odo, tip, motion, prefs, now, syncClock, tickTimers,
+    h, s, txt, icon, glyph, ICONS, GLYPHS, STATUS, statusTag, provBadge, odo, tip, motion, prefs, now, tickTimers,
     fmtTok, fmtPct, fmtDur, fmtAge, headline, shortModel, ctxLevel,
     contextMeter, tokenMeter, cacheMeter, activityLine, sessionCard, compactRow, subList, reactor, vitals, externals, network, planCard, planNodeCard, workQueue, quietBoards,
     banners, awaySummary, projectLabel, ticker, panel, toggle, topBar, createHud, boot, audio, voice, happenings, needsPhrase, reconcile, moreBelow, stateCounts, FEED_TAGS,
