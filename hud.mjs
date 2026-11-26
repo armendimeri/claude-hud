@@ -304,7 +304,7 @@ let demo = null;
 function newSession(id) {
   return {
     id, agent: 'claude', pid: null, cwd: null, project: null, name: null, entrypoint: null, version: null, kind: null,
-    inRegistry: false, regStatus: null, regStatusAt: 0,
+    inRegistry: false, procStart: null, regStatus: null, regStatusAt: 0,
     hookStatus: null, hookStatusAt: 0, lastHookAt: 0, lastWorkAt: 0, hookModel: null,
     turn: { startedAt: null, lastMs: null }, turnAt: 0,
     needsYou: null, currentTool: null, hookTools: new Set(), doneTools: new Set(),
@@ -1025,6 +1025,37 @@ function reopenSession(s) {
 }
 
 let registryScanning = false, registryReadable = false;
+const windowsProcessStarts = new Map();
+const windowsPidDomain = `win32:${HOSTNAME.toLowerCase()}`;
+
+// Claude Code records Windows process creation times as decimal FILETIME strings. Keep the full precision.
+async function refreshWindowsProcessStarts(claims) {
+  if (process.platform !== 'win32') return;
+  for (const pid of windowsProcessStarts.keys()) if (!claims.has(pid)) windowsProcessStarts.delete(pid);
+  const now = Date.now();
+  const pending = [];
+  for (const [pid, claimedStarts] of claims) {
+    const cached = windowsProcessStarts.get(pid);
+    if (!cached || cached.expiresAt <= now || [...claimedStarts].some(start => !cached.claims.has(start))) pending.push(pid);
+  }
+  if (!pending.length) return;
+
+  const cmd = `Get-Process -Id ${pending.join(',')} -ErrorAction SilentlyContinue | ForEach-Object { try { '{0} {1}' -f $_.Id, $_.StartTime.ToFileTimeUtc() } catch {} }`;
+  const output = await new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 3000, windowsHide: true },
+      (err, stdout) => resolve(err ? '' : stdout));
+  });
+  const starts = new Map();
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^(\d+) (\d+)$/.exec(line.trim());
+    if (match) starts.set(Number(match[1]), match[2]);
+  }
+  for (const pid of pending) {
+    const value = starts.get(pid);
+    windowsProcessStarts.set(pid, { value, claims: claims.get(pid), expiresAt: now + (value ? MINUTE_MS : 15_000) });
+  }
+}
+
 async function scanRegistry() {
   if (registryScanning) return;
   registryScanning = true;
@@ -1034,19 +1065,35 @@ async function scanRegistry() {
     for (const root of ROOTS) {
       try { for (const n of await fsp.readdir(root.sessions)) entries.push([root, n]); registryReadable = true; } catch {}
     }
+    const rows = [];
+    const claims = new Map();
     for (const [root, n] of entries) {
       if (!/^\d+\.json$/.test(n)) continue;              // <pid>.json only, never *.key
       const j = await readJson(path.join(root.sessions, n));
       if (!isObj(j) || typeof j.sessionId !== 'string') continue;
       const pid = Number.isInteger(j.pid) ? j.pid : Number(n.slice(0, -5));
+      const domain = str(j.pidDomain).toLowerCase();
+      const procStart = (!domain || domain === windowsPidDomain) && /^\d{17,19}$/.test(str(j.procStart)) ? j.procStart : null;
+      if (procStart && pidAlive(pid)) {
+        if (!claims.has(pid)) claims.set(pid, new Set());
+        claims.get(pid).add(procStart);
+      }
+      rows.push({ root, j, pid, procStart });
+    }
+    await refreshWindowsProcessStarts(claims);
+    for (const { root, j, pid, procStart } of rows) {
+      const actualStart = windowsProcessStarts.get(pid)?.value;
+      if (procStart && actualStart && procStart !== actualStart) continue;
       seen.add(j.sessionId);
       const s = getSession(j.sessionId);
       const isNew = !s.inRegistry;
       s.inRegistry = true;
       s.root = root;
-      // The same session id under a new process (resumed, or the editor window reloaded): it is running again.
-      const relaunched = s.ended && s.pid !== pid && pidAlive(pid);
+      // The session may resume in a new process, including one that reused its previous PID.
+      const processChanged = s.pid !== pid || (procStart && actualStart && s.procStart && s.procStart !== procStart);
+      const relaunched = s.ended && processChanged && pidAlive(pid);
       s.pid = pid;
+      s.procStart = procStart;
       if (typeof j.cwd === 'string') setCwd(s, j.cwd);
       if (typeof j.name === 'string' && j.name) s.name = j.name;
       if (typeof j.entrypoint === 'string') s.entrypoint = j.entrypoint;

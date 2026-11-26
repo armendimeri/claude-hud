@@ -18,7 +18,7 @@ Every agent reads this file first and updates it last.
 | P7 | Page extras | `page` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7](handoffs/P7-page.md) | Selftest, 39 Node tests and all Edge smoke checks rechecked |
 | P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | accepted | 2026-11-26 | [P8](handoffs/P8-away.md) | Selftest, 42 Node tests and both kiosk layouts independently verified |
 | P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | accepted | 2026-11-26 | [P9](handoffs/P9-hooks.md) | 43 tests, byte-exact migration and 5.60 ms p95 overhead independently verified |
-| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | partial | 2026-11-26 | — | 0.3.0 candidate passes tests. Live RSS peaked at 213.12 MB against 150 MB. |
+| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | partial | 2026-11-26 | — | Documentation review closed. Release verification deferred. |
 
 Every item changes `hud.mjs`, so they run one after another. The chain in "Depends on" is that order.
 
@@ -127,6 +127,25 @@ This plan's own rules, on top of the standard.
   Peak RSS was 213.12 MB against the 150 MB limit. Two Codex open-state intervals lasted 6.440 s and 7.759 s.
   The observer counted ended sessions outside the open state, so these intervals do not establish that
   either card disappeared. The plan stays open pending investigation and a full live recheck.
+
+## P10 documentation closeout
+
+2026-11-26 · The owner closed the documentation review and stopped the release checks in progress. P10 remains
+`partial` for release verification. P0 through P9 are accepted.
+
+- **Recorded passes.** The 0.3.0 candidate passed self-test, all 43 Node tests, and 11 Edge layouts. The plan passed
+  HUD lint. The Windows PID-reuse fix subsequently passed all 44 Node tests and cleared the stale card on the
+  running HUD.
+- **Live verification deferred.** The last complete ten-minute run recorded 20,240 bytes for the largest later SSE
+  frame and 213.12 MB peak RSS against the 150 MB limit. Mean CPU was 0.979% of one core, with a 7.368% rolling
+  30-second peak. The later transcript-reader change and Windows fix await a completed resource recheck. The two
+  brief Codex open-state intervals still need a check that distinguishes hidden cards from visible ended cards.
+- **Owner checks from the handoffs.** Check old VS Code conversations for card or sound flashes, a waiting
+  coordinator for “Agents working,” and Fable 5.2 for its context ring. On a LAN device, check feed and plan
+  updates, card stability, clipboard copy, and kiosk readability and wake behavior. Check local VS Code navigation,
+  warning and drift announcements, hidden-tab notifications, and phone alerts if enabled. After an owner-run
+  restart, confirm new activity arrives through the installed `hud-hook.mjs` hooks. The P1 screenshots and hook
+  recording are optional, and the live stream size can also be sampled from port 7777.
 
 ## Kickoff
 

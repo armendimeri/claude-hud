@@ -22,6 +22,33 @@ function forward(hud, event, args = [forwarder]) {
   assert.equal(r.stdout + r.stderr, '', 'the command emits no output');
 }
 
+test('Windows registry sessions require the original process when procStart is recorded', { skip: process.platform !== 'win32' }, async t => {
+  const current = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `(Get-Process -Id ${process.pid}).StartTime.ToFileTimeUtc()`], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
+  assert.ifError(current.error);
+  assert.equal(current.status, 0, current.stderr);
+  const procStart = current.stdout.trim();
+  const reusedStart = String(BigInt(procStart) - 1n);
+  const hud = await startHud({ start: false });
+  t.after(() => hud.close());
+  const active = sid(), stale = sid(), legacy = sid();
+  const activeEntry = { pid: process.pid, file: '91007.json', procStart };
+  await registry(hud, active, activeEntry);
+  await registry(hud, stale, { pid: process.pid, file: '91008.json', procStart: reusedStart, status: 'busy' });
+  await registry(hud, legacy, { pid: process.pid, file: '91009.json' });
+  await hud.restart();
+
+  const find = (s, id) => s.sessions.find(x => x.id === id);
+  const state = await hud.until(s => find(s, active) && find(s, legacy));
+  assert.equal(find(state, active).status, 'idle');
+  assert.equal(find(state, legacy).status, 'idle');
+  assert.equal(find(state, stale), undefined, 'a different process using the PID cannot keep the session running');
+
+  await hud.post({ session_id: active, hook_event_name: 'UserPromptSubmit' });
+  await registry(hud, active, { ...activeEntry, procStart: reusedStart });
+  await hud.until(s => find(s, active)?.status === 'ended');
+});
+
 test('hook events drive the session state', { timeout: 60000 }, async t => {
   const hud = await startHud();
   t.after(() => hud.close());
