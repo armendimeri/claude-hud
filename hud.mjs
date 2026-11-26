@@ -36,7 +36,7 @@ const CONTEXT_WINDOWS = {
   'claude-haiku-4-5': 200_000,
 };
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const HOSTNAME = os.hostname();          // labels the hub of the network view
 const PORT = portFrom(process.env.HUD_PORT) ?? 7777;
 const LAN = process.argv.includes('--lan') || process.env.HUD_LAN === '1';   // D15, off by default

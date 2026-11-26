@@ -87,7 +87,7 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
     assert.deepEqual(open.tokensTree, { input: 2, output: 4, cacheRead: 0, cacheWrite: 0 }, 'its tokens still count');
   });
   await t.test('HTTP, SSE and generated browser scripts', async () => {
-    assert.equal((await (await fetch(base + '/api/health')).json()).version, '0.2.0');
+    assert.equal((await (await fetch(base + '/api/health')).json()).version, '0.3.0');
     for (const route of ['/', '/design']) {
       const html = await (await fetch(base + route)).text();
       for (const match of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) new Script(match[1]);

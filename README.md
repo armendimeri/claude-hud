@@ -12,10 +12,10 @@ The dashboard runs from `hud.mjs` and its hook forwarder from `hud-hook.mjs`. Bo
 built-ins and consume no Claude usage. The dashboard listens on 127.0.0.1 unless you start it with `--lan` (see
 [Viewing it from another device](#viewing-it-from-another-device)).
 
-![Claude HUD: the network view. A coordinator session has started subagents three levels deep; two sessions are waiting for you; plan boards on the right, the live feed below.](docs/screenshots/hero-network.png)
+![Claude HUD network view showing a subagent linked to a board item, the plan work queue, and the live feed.](docs/screenshots/hero-network.png)
 
-*The network view, with `node hud.mjs --demo`: who started whom, sized by tokens, ringed by context fill. Two
-sessions need you (red).*
+*The network view with `node hud.mjs --demo`. A session needs you, an amber banner warns about context, and the
+subagent card shows its linked item and recent token activity.*
 
 ## Commands
 
@@ -39,16 +39,23 @@ node tests/tools/stream-size.mjs <url> | --demo[=dense] [--seconds=30]
                                  the number, size and rate of each event; --demo starts a demo HUD of its own
 ```
 
+Integration test files use the `*.test.mjs` suffix. On Node 26, `tests/package.json` and `tests/run-all.mjs`
+support running the directory as a suite. Run the suite with `HUD_PUSH_URL` unset. Phone push tests provide
+their own loopback receiver.
+
 Routes: `/` (the page), `/design` (the component gallery), `/api/state` (the full state as JSON), `/api/stream`
 (server-sent events), `/api/health`, and `POST /event`, which the hooks use. The stream starts each connection with
 the full state (marked `full: true`); after that a `state` event comes on every change but without the plans and the
 feed, a `plans` event comes only when a board changed, and each feed line comes as its own `event`. The page keeps the
-last plans and feed, so a steady update averages about 25 KB with `--demo=dense` (about 37 KB before the stream change).
+last plans and feed. Later state events include live board links, alerts, and phone push status. Board history
+arrives with the plan data.
 Requests whose `Host` header is not
 `127.0.0.1:<port>` or `localhost:<port>` are refused (with `--lan`, an IP address or this PC's name is accepted too).
 
 Each session and subagent has a `work` field with its linked plan, items and role, or `null` if no link resolves.
 `state.board` carries active links, ready work, handoffs awaiting acceptance, owner inputs and three drift marks.
+The HUD resolves task IDs and plan-file evidence against known boards when it takes a snapshot, so evidence can
+arrive before a board has loaded.
 An item is marked `unclaimed` after 3 minutes of active work while it is still `todo`, `stalled` after 30 minutes
 without work or board changes while it is `in-progress`, and `early` when work starts ahead of a dependency.
 `HUD_UNCLAIMED_MS` and `HUD_STALLED_MS` override the two time limits in milliseconds for tests. Each plan carries
@@ -199,12 +206,13 @@ Completed boards and boards unchanged for 14 days with no active work or owner r
 | Source | What the HUD takes from it |
 |---|---|
 | `~/.claude/sessions/<pid>.json` | The list of running sessions: id, folder, name, busy or idle, and the entrypoint used to show the local VS Code link. The `*.key` files next to them are never opened. |
-| `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, tool names, provider, and subagents (their `meta.json` gives the parent). For board links, it extracts ID-shaped words from user and Agent prompts and keeps only those words in memory. It also reads the paths of `Read`, `Edit`, `Write` and `MultiEdit` calls for Markdown files under `docs/`, `Documentation/` or `doc/`. Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
+| `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/` | Title, model, effort, branch, tokens, message IDs and times for usage deduplication and activity, tool names and input summaries, provider, and subagents (their `meta.json` gives the parent). For board links, it extracts ID-shaped words from user and Agent prompts and keeps only those words in memory. It also reads the paths of `Read`, `Edit`, `Write` and `MultiEdit` calls for Markdown files under `docs/`, `Documentation/` or `doc/`. Of the `api-request` lines, only the model id. Read from where it left off, a line at a time. |
 | Hook events (`POST /event`) | Event name and time, tool name and the input fields used for short summaries and board-file evidence. Prompt and Stop hooks time Claude turns, and the background flag keeps background tools out of the long-tool warnings. The forwarder omits prompt bodies and the receiver drops them from direct posts. With `HUD_RECORD=<file>` set (off by default), the redacted event is also written to that file. |
 | `docs/**/STATUS.md`, `docs/plans/*.md` and `docs/status.md` in each project with a session | Plan boards, the plan's state, unticked decisions and open questions, and the project's one-line headline. |
-| `~/.claude/settings.json` (and each other watched folder's) | Only `env.CLAUDE_CODE_USE_BEDROCK` (to label sessions as Bedrock) and whether the HUD's hooks are installed. The HUD writes to it only to add its own hooks, at start (backup first). |
+| `~/.claude/settings.json` (and each other watched folder's) | The Bedrock flag `env.CLAUDE_CODE_USE_BEDROCK` and whether the HUD's hooks are installed. The installer backs up the file before adding or migrating HUD hook entries. The uninstall command removes those entries. |
 | `~/.claude.json` | Only `cachedUsageUtilization`: the 5-hour and weekly usage Claude Code caches itself. |
 | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` | Session metadata, short redacted title, model, effort, branch, cumulative tokens, reported context, tool names and short summaries, turn status, and subagent parent IDs. Read incrementally; reasoning, instructions and tool output are discarded. |
+| Local page and API clients | Full snapshots contain session and subagent state, output activity, turn timing, board links and changes, alerts, push status, and the recent feed. The VS Code action hands the session folder to the local URL handler when selected. The browser stores display preferences locally. |
 | Optional phone receiver (`HUD_PUSH_URL`) | The HUD sends the project label and request kind in a text POST with a fixed title header. Session titles, paths, commands, and session IDs stay on the HUD. |
 
 It never reads `~/.claude/.credentials.json`, the session `*.key` files, `~/.aws/` or any `AWS_*` environment
@@ -229,7 +237,8 @@ PostToolUse, PostToolUseFailure, Notification, Stop, SubagentStart, SubagentStop
 The installer backs up the settings to `settings.json.hud-backup-<date>` before changing the HUD's hooks.
 When the current hooks are already there, it skips the write and backup. An install or restart upgrades
 hooks using `node "<path>/hud.mjs" hook` to the standalone forwarder. The old invocation also works. Keep the two
-scripts together when moving the HUD. Invalid JSON produces a message and leaves the file as it was.
+scripts together when moving the HUD. Both invocations share the field allowlists in `hud-hook.mjs`. Invalid JSON
+produces a message and leaves the file as it was.
 `uninstall` removes both command formats from every watched folder. When the result matches a backup, it
 restores that backup's exact bytes. Because the HUD adds
 the hooks at every start, set `HUD_NO_AUTOINSTALL=1` (and `autostart off`) if you want them to stay removed.

@@ -468,7 +468,7 @@ try {
         let text = '';
         for (let i = 0; i < 100; i++) {
           // Dense network layouts shorten visible labels; full agent/model details remain in accessible labels.
-          text = await evaluate(`document.body.innerText + Array.from(document.querySelectorAll('[aria-label]'), el => el.getAttribute('aria-label')).join(' ')`) || '';
+          text = await evaluate(`(document.body?.innerText || '') + Array.from(document.querySelectorAll('[aria-label]'), el => el.getAttribute('aria-label')).join(' ')`) || '';
           if (/Codex|gpt-/i.test(text) && /LIVE/i.test(text)) break;
           await pause(100);
         }

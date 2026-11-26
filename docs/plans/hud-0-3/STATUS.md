@@ -18,7 +18,7 @@ Every agent reads this file first and updates it last.
 | P7 | Page extras | `page` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7](handoffs/P7-page.md) | Selftest, 39 Node tests and all Edge smoke checks rechecked |
 | P8 | TV mode and phone push | `away` | P7 | Opus 5.5 / high | accepted | 2026-11-26 | [P8](handoffs/P8-away.md) | Selftest, 42 Node tests and both kiosk layouts independently verified |
 | P9 | A faster hook forwarder | `hooks` | P8 | Opus 5.5 / high | accepted | 2026-11-26 | [P9](handoffs/P9-hooks.md) | 43 tests, byte-exact migration and 5.60 ms p95 overhead independently verified |
-| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | todo | | — | |
+| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | partial | 2026-11-26 | — | 0.3.0 candidate passes tests. Live RSS peaked at 213.12 MB against 150 MB. |
 
 Every item changes `hud.mjs`, so they run one after another. The chain in "Depends on" is that order.
 
@@ -119,6 +119,14 @@ This plan's own rules, on top of the standard.
   settings hashes matched.
 - 2026-11-26 · coordinator · P9 · Accepted after selftest, 43 Node tests and independent migration and 30-run timing
   checks. The forwarder measured 44.79 ms p95, 5.60 ms above bare Node. The owner settings hash still matched.
+- 2026-11-26 · review · P10 · Prepared the 0.3.0 candidate and refreshed the demo screenshot. Selftest, all 43
+  Node tests and 11 Edge layouts passed. Lint reported no issue for this plan. The read-only HUD on port 7790
+  ran for 600.07 s. Its 263 later SSE frames peaked at 20,240 bytes, and all 14 sampled live links matched
+  source transcripts and project boards. The sample included one active ID-prefixed worker linked in flight
+  and no blank subagents. Mean CPU was 0.979% of one core, with a 7.368% peak over rolling 30 s windows.
+  Peak RSS was 213.12 MB against the 150 MB limit. Two Codex open-state intervals lasted 6.440 s and 7.759 s.
+  The observer counted ended sessions outside the open state, so these intervals do not establish that
+  either card disappeared. The plan stays open pending investigation and a full live recheck.
 
 ## Kickoff
 

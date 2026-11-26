@@ -150,7 +150,7 @@ As built. Each entry says what the component shows, its states, and which motion
 `?kiosk` uses the network view and enlarges body text to 18 px. The top-bar toggles, session view switch and
 feed collapse control are hidden. At TV widths the page fits the viewport and panels handle their own overflow.
 The oldest needs-you session in view is pinned automatically. When it clears, the next waiting session takes
-its place. The screen wake lock is requested while the page is visible where the browser supports it.
+its place. Where supported, the page requests a screen wake lock again when it becomes visible.
 
 ### Top bar
 
@@ -189,7 +189,8 @@ button dismisses the summary until the next qualifying absence.
 Project names in the network, session cards, plan cards and feed are controls. Choosing one filters all three
 panels, including the plan work queue and feed header. The active project appears as a removable chip in the
 Sessions header. Choose the same project again, remove the chip or press Escape to clear it. The address reflects
-the current focus in `?project=`.
+the current focus in `?project=`. The feed keeps its recent history across focus changes, and the page filters
+session and plan lists before reconciling them.
 
 ### VS Code window
 
