@@ -1,0 +1,69 @@
+/* ---- page layout ---- */
+.app { position: relative; z-index: 1; display: grid; grid-template-rows: 56px auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); height: 100vh; padding: 0 24px 16px; }
+.app > .top { grid-row: 1; } .app > .main { grid-row: 3; margin-top: 16px; } .app > .p-tick { grid-row: 4; margin-top: 16px; }
+.main { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); column-gap: 24px; row-gap: 16px; min-height: 0; }
+.col-l { grid-column: span 3; display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow: hidden auto; margin: 0 -8px; padding: 0 8px; }
+.p-reactor, .p-ext { flex: none; }
+@media (min-width: 1440px) { .col-l > .p-reactor:has(+ .p-ext[hidden]), .col-l > .p-ext:not([hidden]) { flex: 1 0 auto; } }   /* bottoms line up with the centre */
+@media (max-height: 959px) and (min-width: 900px) { .p-reactor .reactor { width: 200px !important; height: 200px !important; } }
+.p-sess { grid-column: span 6; }
+.p-sess .pc { display: flex; flex-direction: column; }
+.p-plans { grid-column: span 3; }
+@media (max-width: 1439px) { .p-plans { scroll-margin-top: 64px; } }
+@media (max-width: 1439px) {
+  .app { height: auto; min-height: 100vh; }
+  .main { grid-template-rows: auto auto; }
+  .col-l { grid-column: 1 / span 4; grid-row: 1 / span 2; align-self: start; position: sticky; top: 72px; max-height: calc(100vh - 88px); }   /* the reactor stays in view while the sessions scroll */
+  .p-sess { grid-column: 5 / span 8; }
+  .p-sess .pc { overflow: visible; }
+  .p-sess .net { min-height: 540px; }
+  .p-plans { grid-column: 5 / span 8; }
+  .p-plans .pc { overflow: visible; }
+  .top { position: sticky; top: 0; }
+}
+@media (min-width: 900px) and (max-width: 1100px) {
+  .p-sess .pc { max-height: clamp(280px, calc(100vh - 430px), 480px); overflow: auto; }
+  .p-sess .net { min-height: 328px; }
+}
+@media (max-width: 899px) {
+  .app { padding: 0 12px 12px; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .app > .main { margin-top: 12px; } .app > .p-tick { margin-top: 12px; }
+  .ph { flex-wrap: wrap; row-gap: 8px; }
+  .top { margin: 0 -12px; padding: 0 12px; gap: 12px; height: 56px; }
+  .main { display: flex; flex-direction: column; gap: 12px; }
+  .col-l { display: contents; }
+  .p-reactor { order: 1; } .p-sess { order: 2; } .p-plans { order: 3; } .p-ext { order: 4; }
+  .p-reactor .reactor, .brand-sub, .clock-d, .clock-u { display: none; }
+  .p-reactor .vitals { margin-top: 0; grid-template-columns: 1fr 1fr; }
+  .mini { display: flex; }
+  .brand-mark { display: none; }
+  .clock-t { font-size: 15px; }
+  .pb { padding: 16px; }
+  .p-sess .net { min-height: 380px; }
+  .tk { grid-template-columns: 8ch minmax(0, .8fr) minmax(0, 1.4fr); gap: 0 8px; height: 40px; }
+  .tk-list { height: 120px; }
+  .tk .tk-tag { grid-column: 2; justify-self: start; font-size: 10px; padding: 0 2px; }
+  .tk .tk-project { grid-column: 3; }
+  .tk .tk-text { grid-column: 2 / -1; line-height: 16px; }
+  .ban { gap: 12px; padding-left: 16px; }
+  .ban-t { display: none; }
+  .ban-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ban-w > span:last-child { display: none; }
+}
+@media (max-width: 599px) {
+  .top { flex-wrap: wrap; height: auto; min-height: 56px; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+  .clock { display: none; }
+  .top-r { margin-left: auto; gap: 4px; }
+  .top-chips { order: 9; width: 100%; }
+  .top-chips:not(:has(.chip:not([hidden]))) { display: none; }
+  .stream .label { display: none; }
+  .tgl { width: 32px; }
+  .p-sess .ps { display: none; }
+  .p-reactor .vitals { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .p-reactor .vital .vital-s, .p-reactor .vital.acct-v { display: none; }
+  .p-reactor .vital.wide { grid-column: span 2; }
+  .p-reactor .vital.wide .vital-s:first-of-type { display: block; }
+  .ban-rl { display: none; } .ban-rs { display: inline; }
+  .warning-label span { display: none; }
+}
+

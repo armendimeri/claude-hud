@@ -1,0 +1,60 @@
+/* ---- motion: data and alert layers ---- */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes efade { from { opacity: 1; } to { opacity: .3; } }
+@keyframes doneglow { 0% { filter: drop-shadow(0 0 0 transparent); opacity: 1; } 20% { filter: drop-shadow(0 0 6px var(--ok)); opacity: 1; } 100% { filter: drop-shadow(0 0 0 transparent); opacity: 1; } }
+@keyframes bandown { from { transform: translateY(-16px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tkin { from { transform: translateY(-100%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pnpulse { 0% { transform: scale(.85); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+.enter { animation: enter .22s var(--ease) both; }
+@keyframes enter { from { transform: scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.leave { animation: leave .2s var(--ease) both; pointer-events: none; }
+@keyframes leave { to { transform: scaleY(.6); opacity: 0; } }
+
+/* ---- motion: ambient layer (D14), only with EFFECTS on and no reduced motion ---- */
+.fx .bg-shim { display: block; background: linear-gradient(100deg, transparent 42%, rgba(41, 230, 255, .045) 50%, transparent 58%); background-size: 100% 100%; animation: shimmer 14s var(--ease) infinite; }
+.fx .bg-dots { display: block; background-image: radial-gradient(circle, rgba(41, 230, 255, .5) 0 1px, transparent 1.5px), radial-gradient(circle, rgba(214, 243, 255, .35) 0 .8px, transparent 1.3px); background-size: 220px 260px, 140px 170px; background-position: 0 0, 70px 90px; opacity: .35; animation: drift 70s linear infinite; inset: -260px -48px -48px; }
+.fx .bg-dots.d2 { background-size: 320px 300px, 190px 230px; background-position: 40px 20px, 150px 130px; opacity: .22; animation-duration: 110s; }
+@keyframes shimmer { 0% { transform: translateX(-60%); } 55%, 100% { transform: translateX(60%); } }
+@keyframes drift { from { transform: translateY(0); } to { transform: translateY(-260px); } }
+.fx .panel::before { animation: flicker 9s steps(1, end) infinite; }
+.fx .main > :nth-child(2)::before, .fx .col-l > :nth-child(2)::before { animation-delay: -3s; }
+.fx .main > :nth-child(3)::before { animation-delay: -6s; }
+.fx .p-tick::before { animation-delay: -4.5s; animation-duration: 11s; }
+@keyframes flicker { 0%, 100% { opacity: 1; } 62% { opacity: 1; } 62.4% { opacity: .35; } 62.8% { opacity: 1; } 63.4% { opacity: .55; } 64% { opacity: 1; } 88% { opacity: 1; } 88.3% { opacity: .5; } 88.7% { opacity: 1; } }
+.fx .r-outer { animation: spin 80s linear infinite; }
+.fx .r-mid { animation: spin 120s linear infinite reverse; }
+.fx .r-inner { animation: spin 50s linear infinite; }
+.fx .r-core { animation: beat var(--beat, 6s) ease-in-out infinite; }
+.fx .reactor[data-mode=alert] .r-core { animation: none; }
+@keyframes beat { 0%, 100% { transform: scale(1); opacity: .85; } 12% { transform: scale(1.06); opacity: 1; } 24% { transform: scale(1); opacity: .9; } 34% { transform: scale(1.03); opacity: 1; } 50% { transform: scale(1); opacity: .85; } }
+.fx .net-sweep { display: block; }
+.fx .nf { animation: float var(--fd, 8s) ease-in-out var(--fdl, 0s) infinite; }
+@keyframes float { 0%, 100% { transform: translate(0, 0); } 30% { transform: translate(1.5px, -2px); } 65% { transform: translate(-1.5px, 1.5px); } }
+.fx .nf-ping { display: block; }
+.fx .hub-ring { animation: spin 30s linear infinite; }
+.fx .brand-mark { animation: spin 20s linear infinite; }
+
+/* ---- boot (D14 ambient: skipped with EFFECTS off or reduced motion) ---- */
+.booting .bg { animation: bootfade .4s var(--ease) both; }
+.booting .r-track, .booting .r-tick, .booting .r-arc { stroke-dasharray: 800; animation: bootdraw .7s var(--ease) .15s both; }
+.booting .panel, .booting .top { animation: unfold .5s var(--ease) both; transform-origin: 0 0; }
+.booting .top { animation-name: bootfade; }
+.booting .col-l > .panel:nth-child(1) { animation-delay: .3s; } .booting .col-l > .panel:nth-child(2) { animation-delay: .36s; }
+.booting .main > .p-sess { animation-delay: .42s; } .booting .main > .p-plans { animation-delay: .48s; } .booting .p-tick { animation-delay: .54s; }
+@keyframes bootfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bootdraw { from { stroke-dashoffset: 800; } to { stroke-dashoffset: 0; } }
+@keyframes unfold { 0% { transform: scale(.04, .01); opacity: 0; } 45% { transform: scale(1, .01); opacity: 1; } 100% { transform: none; opacity: 1; } }
+
+/* ---- reduced motion ---- */
+.rm *, .rm *::before, .rm *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .15s !important; }
+.rm .card[data-s=needs-you] .card-glow, .rm .na[data-s=needs-you] .nf-glow, .rm .reactor[data-mode=alert] .r-glow, .rm .ban::before, .rm .crow[data-s=needs-you]::before { animation: none !important; opacity: 1; }
+.rm .card-scan, .rm .nf-spin { animation: none !important; }
+.rm .eflow, .rm .pg-pulse { display: none; }
+.rm .card[data-s=busy] .card-scan { opacity: 0; }
+.rm .gl.spin { animation: none !important; }
+.rm .enter { animation: rmfade .2s linear both !important; }
+@keyframes rmfade { from { opacity: 0; } to { opacity: 1; } }
+

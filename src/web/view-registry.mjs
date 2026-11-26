@@ -1,11 +1,5 @@
 import { activity } from './views/activity.mjs';
+import { cards } from './views/cards.mjs';
+import { network } from './views/network.mjs';
 
-// Cards and Network share the existing dashboard and its session outlet.
-export function createViewRegistry(mountDashboard) {
-  const views = [
-    { key: 'cards', outlet: 'sessions', mount: mountDashboard },
-    { key: 'network', outlet: 'sessions', mount: mountDashboard },
-    activity,
-  ];
-  return new Map(views.map(view => [view.key, view]));
-}
+export const viewRegistry = new Map([cards, network, activity].map(view => [view.key, view]));

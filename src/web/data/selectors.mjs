@@ -24,3 +24,26 @@ export function selectActivityRows(snapshot, project) {
     }),
   }));
 }
+
+export const headline = t => t ? (t.input || 0) + (t.output || 0) + (t.cacheWrite || 0) : 0;
+
+export function selectSessionContext(snapshot, live, project, kiosk = false) {
+  const longestWaiting = kiosk && live.filter(session => session.status === 'needs-you' && session.needsYou)
+    .sort((a, b) => a.needsYou.since - b.needsYou.since)[0];
+  return {
+    byId: sessionsById(snapshot), plans: plansByKey(snapshot), host: snapshot.host,
+    project, autoPin: longestWaiting?.id,
+    maxTok: Math.max(1, ...live.map(session => headline(session.tokens))),
+    maxCache: Math.max(1, ...live.map(session => session.tokens?.cacheRead || 0)),
+  };
+}
+
+// The newest finished subagent in the state: "what just finished" is answered from the first frame, not only once
+// a finish arrives in the feed.
+export function selectLastFinish(st, project) {
+  let best = null;
+  for (const x of selectProject(st.sessions, project)) for (const a of x.subagents || []) {
+    if (a.state === 'done' && a.endedAt && (!best || a.endedAt > best.at)) best = { kind: 'done', at: a.endedAt, project: x.project, text: `Agent done · ${[a.type, a.description].filter(Boolean).join(': ')}` };
+  }
+  return best;
+}

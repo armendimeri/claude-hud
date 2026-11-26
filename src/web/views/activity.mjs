@@ -1,3 +1,7 @@
+import { CONNECTION_LABELS } from '../components/controls.mjs';
+import { h } from '../components/dom.mjs';
+import { FEED_TAGS } from '../components/feed.mjs';
+import { statusTag } from '../components/status.mjs';
 import { selectActivityRows, selectProject } from '../data/selectors.mjs';
 
 const feedTime = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -8,8 +12,7 @@ export const activity = {
   demoOnly: true,
   stylesheet: new URL('../styles/activity.css', import.meta.url).href,
 
-  mount(element, { store, actions, ui }) {
-    const { h, statusTag, feedTags, connectionLabels } = ui;
+  mount(element, { store, actions }) {
     const back = h('a', { class: 'activity-back', href: actions.dashboardUrl() }, '← Dashboard');
     const connectionLabel = h('span');
     const connection = h('span', { class: 'activity-connection', role: 'status' }, connectionLabel);
@@ -47,7 +50,7 @@ export const activity = {
     function update() {
       const status = store.getConnection().status;
       connection.dataset.status = status;
-      const statusText = connectionLabels[status];
+      const statusText = CONNECTION_LABELS[status];
       if (connectionLabel.textContent !== statusText) connectionLabel.textContent = statusText;
       retry.hidden = status !== 'down' && status !== 'reconnecting';
 
@@ -88,7 +91,7 @@ export const activity = {
         feedList.replaceChildren(...lines.map(line => h('li', { 'data-project': line.project },
           h('div', { class: 'activity-event-meta' },
             h('time', { class: 'mono', text: feedTime.format(line.at) }),
-            h('span', { text: line.project || feedTags[line.kind] || line.kind })),
+            h('span', { text: line.project || FEED_TAGS[line.kind] || line.kind })),
           h('p', { text: line.text }))));
         emptyFeed.hidden = lines.length > 0;
       }

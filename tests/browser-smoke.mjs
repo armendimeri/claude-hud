@@ -2,7 +2,7 @@
 // Starts its own `--demo` HUD on a free port (over temp folders, tests/helpers.mjs), opens /?view=network,
 // /?view=cards and /design at 1440x900, 1024x768 and 390x844 in headless Edge with an isolated profile, and fails on
 // a runtime exception or a horizontal page scroll. It also exercises Plans, warnings and page extras, with captures in .hud-tmp/.
-// HUD_TEST_BROWSER picks another Chromium-based browser. Node built-ins only.
+// HUD_TEST_BROWSER picks another Chromium-based browser. HUD_TEST_SCREENSHOTS overrides the capture directory.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -14,7 +14,8 @@ import { startHud, pause } from './helpers.mjs';
 const SIZES = [[1440, 900], [1024, 768], [390, 844]];
 const ROUTES = [['network', '/?view=network'], ['cards', '/?view=cards'], ['design', '/design']];
 
-const dir = fileURLToPath(new URL('../.hud-tmp/', import.meta.url));
+const dir = process.env.HUD_TEST_SCREENSHOTS ? path.resolve(process.env.HUD_TEST_SCREENSHOTS)
+  : fileURLToPath(new URL('../.hud-tmp/', import.meta.url));
 await fs.mkdir(dir, { recursive: true });
 const hud = await startHud({ demo: true });
 const profile = await fs.mkdtemp(path.join(dir, 'edge-profile-'));
@@ -36,6 +37,10 @@ try {
   const pending = new Map(), errors = [];
   ws.onmessage = e => {
     const msg = JSON.parse(e.data);
+    if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error' && msg.params.entry.url?.includes('/assets/')) {
+      const { text, url } = msg.params.entry;
+      errors.push(text + ' (' + url + ')');
+    }
     if (msg.method === 'Runtime.exceptionThrown') {
       const d = msg.params.exceptionDetails;
       errors.push(`${d.text} ${d.exception?.description || ''} (${d.url || ''}:${d.lineNumber})`);
@@ -163,21 +168,32 @@ try {
       const st = await (await fetch('/api/state')).json();
       const mount = document.createElement('div');
       mount.hidden = true; document.body.append(mount);
-      const preview = H.createHud(mount);
+      const { createPlanPanel } = await import('/assets/components/plan-panel.mjs');
+      const { createLifetime } = await import('/assets/components/lifetime.mjs');
+      const { createDisplayEffects } = await import('/assets/components/animation.mjs');
+      const { createTooltip } = await import('/assets/components/tooltip.mjs');
+      const { happenings } = await import('/assets/components/notifications.mjs');
+      const lifetime = createLifetime();
+      const motion = { rm: true };
+      const tip = createTooltip(lifetime);
+      const { reconcile } = createDisplayEffects(lifetime, motion);
+      const preview = createPlanPanel({ lifetime, motion, tip, reconcile, api: {} });
+      mount.append(preview.el);
       const item = 'TourCMS|booking-changes#P4';
       const first = { ...st, board: { ...st.board, items: {} } };
-      preview.render(first);
+      preview.update(first);
       const graphNode = () => mount.querySelector('${p4}');
       const oldNode = graphNode();
-      preview.render({ ...first });
+      preview.update({ ...first });
       const stable = graphNode() === oldNode;
       const next = { ...st, board: { ...st.board, items: { [item]: st.board.items[item] } } };
-      preview.render(next);
+      preview.update(next);
       const rebuilt = graphNode() !== oldNode && graphNode().querySelector('.pn-count')?.textContent === '1' &&
         !!graphNode().querySelector('[data-flag="unclaimed"]');
-      const events = (previous, next) => H.happenings(previous, next).filter(e => e.type === 'board-mark').map(e => e.text);
-      preview.render({ ...st, plans: [], board: {} });
+      const events = (previous, next) => happenings(previous, next).filter(e => e.type === 'board-mark').map(e => e.text);
+      preview.update({ ...st, plans: [], board: {} });
       const noBoards = !mount.querySelector('.plans-empty').hidden && mount.querySelector('.work-queue').hidden;
+      lifetime.close();
       mount.remove();
       return { stable, rebuilt, marks: events(first, next), steady: events(next, next), noBoards };
     })()`, { awaitPromise: true });
@@ -207,24 +223,39 @@ try {
     assert.ok(await evaluate(`!document.querySelector('${amber}') && !!document.querySelector('${red}')`),
       'the warning stays dismissed after a state push and the red banner stays visible');
 
-    const transitions = await evaluate(`(() => {
-      const banner = H.banners();
+    const transitions = await evaluate(`(async () => {
+      const { createAlertComponents } = await import('/assets/components/alerts.mjs');
+      const { createDisplayEffects } = await import('/assets/components/animation.mjs');
+      const { createLifetime } = await import('/assets/components/lifetime.mjs');
+      const { happenings } = await import('/assets/components/notifications.mjs');
+      const { createTiming } = await import('/assets/components/timing.mjs');
+      const lifetime = createLifetime();
+      const motion = { rm: true };
+      const effects = createDisplayEffects(lifetime, motion);
+      const banner = createAlertComponents({ motion, effects, timing: createTiming() }).banners();
       const low = { id: 'context:session:80', kind: 'context', text: 'Context reached 80%' };
       const high = { id: 'context:session:90', kind: 'context', text: 'Context reached 90%' };
-      const emit = (from, to) => H.happenings({ sessions: [], alerts: from }, { sessions: [], alerts: to })
+      const emit = (from, to) => happenings({ sessions: [], alerts: from }, { sessions: [], alerts: to })
         .filter(e => e.type === 'warning').map(e => e.alert.id);
       banner.update([], [low]);
       banner.el.querySelector('.ban-x').click();
       banner.update([], [low, high]);
       const escalation = banner.el.querySelector('.warning [aria-label]').getAttribute('aria-label');
       banner.update([], []);
-      banner.update([], [low]);
+      const session = { id: 'waiting', status: 'needs-you', project: 'Fixture', needsYou: { since: Date.now(), reason: 'Question' } };
+      banner.update([session], [low]);
+      banner.el.querySelector('.ban .ban-x').click();
+      banner.update([session], [low]);
+      const needsDismissed = !banner.el.querySelector('.ban');
+      lifetime.close();
       return {
+        needsDismissed,
         escalation, rearmed: !!banner.el.querySelector('[data-alert-id="context:session:80"]'),
         first: emit([], [low]), steady: emit([low], [low]), high: emit([low], [low, high]),
       };
-    })()`);
+    })()`, { awaitPromise: true });
     assert.deepEqual(transitions, {
+      needsDismissed: true,
       escalation: 'Dismiss warning: Context reached 90%', rearmed: true,
       first: ['context:session:80'], steady: [], high: ['context:session:90'],
     });
@@ -232,30 +263,25 @@ try {
   }
 
   async function checkActivity() {
-    const result = await evaluate(`(() => {
-      const line = H.activityLine();
+    const result = await evaluate(`(async () => {
+      const { createTiming } = await import('/assets/components/timing.mjs');
+      let now = Date.now();
+      const { activityLine, tickTimers } = createTiming(() => now);
+      const line = activityLine();
       const mount = document.createElement('div');
       mount.append(line.el);
-      const realNow = Date.now;
-      const browserNow = realNow();
-      Date.now = () => browserNow;
-      try {
-        const skew = H.now() - browserNow;
-        const start = Math.floor(H.now() / 60000) * 60000;
-        line.set({ start, perMin: [20] }, { lastMs: 62_000 });
-        const path = mount.querySelector('.activity-path');
-        const full = path.getAttribute('points');
-        const turn = line.el.querySelector('span').textContent;
-        Date.now = () => start + 60000 - skew;
-        H.tickTimers(mount);
-        const padded = path.getAttribute('points')?.endsWith('89,16.0');
-        Date.now = () => start + 30 * 60000 - skew;
-        H.tickTimers(mount);
-        return { plotted: full?.endsWith('89,2.0'), turn, padded, aged: !path.getAttribute('points') };
-      } finally {
-        Date.now = realNow;
-      }
-    })()`);
+      const start = Math.floor(now / 60000) * 60000;
+      line.set({ start, perMin: [20] }, { lastMs: 62_000 });
+      const path = mount.querySelector('.activity-path');
+      const full = path.getAttribute('points');
+      const turn = line.el.querySelector('span').textContent;
+      now = start + 60000;
+      tickTimers(mount);
+      const padded = path.getAttribute('points')?.endsWith('89,16.0');
+      now = start + 30 * 60000;
+      tickTimers(mount);
+      return { plotted: full?.endsWith('89,2.0'), turn, padded, aged: !path.getAttribute('points') };
+    })()`, { awaitPromise: true });
     assert.deepEqual(result, { plotted: true, turn: 'Last turn 1:02', padded: true, aged: true });
     console.log('pass activity view pads missing minutes and ages out output without a state push');
   }
@@ -632,6 +658,97 @@ try {
     console.log('pass Activity trace: one stream, first-frame gate, project focus, session/plan/feed updates, disconnect/resume and cleanup on return');
   }
 
+  async function checkMountCycles() {
+    await openHud('/?view=cards');
+    const result = await evaluate(`(async () => {
+      const listenersFor = getEventListeners;
+      const { mountHudPage } = await import('/assets/components/page.mjs');
+      const { createHudStore } = await import('/assets/data/store.mjs');
+      const snapshot = await (await fetch('/api/state')).json();
+      dispatchEvent(new PageTransitionEvent('pagehide'));
+      const root = document.createElement('div');
+      document.body.append(root);
+      const resources = { subscriptions: 0, streams: 0 };
+      const observers = new Set(), intervals = new Set();
+      const NativeObserver = ResizeObserver, startInterval = setInterval, stopInterval = clearInterval;
+      const originalUrl = location.href;
+      window.ResizeObserver = class extends NativeObserver {
+        observe(target) { observers.add(this); super.observe(target); }
+        disconnect() { observers.delete(this); super.disconnect(); }
+      };
+      window.setInterval = (...args) => {
+        const id = startInterval(...args);
+        intervals.add(id);
+        return id;
+      };
+      window.clearInterval = id => { intervals.delete(id); stopInterval(id); };
+      const listenerCounts = () => [
+        ...['keydown', 'visibilitychange', 'pointerover', 'focusin'].map(type => listenersFor(document)[type]?.length || 0),
+        ...['scroll', 'pagehide'].map(type => listenersFor(window)[type]?.length || 0),
+      ];
+      const initial = listenerCounts();
+      const active = () => ({
+        ...resources, observers: observers.size, intervals: intervals.size,
+        listeners: listenerCounts().map((count, index) => count - initial[index]),
+      });
+      const trace = [];
+      try {
+        for (const view of ['cards', 'network', 'activity', 'cards', 'network', 'activity']) {
+          history.replaceState(history.state, '', '/?view=' + view);
+          let receiver;
+          const transport = {
+            connect(handlers) {
+              receiver = handlers;
+              resources.streams++;
+              return () => { resources.streams--; };
+            },
+            fetchSnapshot: async () => snapshot,
+          };
+          const base = createHudStore({ transport });
+          const listeners = new Set();
+          const store = { ...base, subscribe(listener) {
+            listeners.add(listener);
+            resources.subscriptions = listeners.size;
+            const stop = base.subscribe(listener);
+            return () => {
+              listeners.delete(listener);
+              resources.subscriptions = listeners.size;
+              stop();
+            };
+          } };
+          const close = mountHudPage(root, { store, transport });
+          receiver.open();
+          receiver.frame('state', JSON.stringify({ ...snapshot, full: true }));
+          const target = view === 'activity' ? '.activity-page' : view === 'network' ? '.net:not([hidden])' : '.p-sess div:not([hidden]) > .cards';
+          const before = { ...active(), selected: !!root.querySelector(target) };
+          close();
+          close();
+          receiver.frame('state', JSON.stringify({ ...snapshot, full: true }));
+          trace.push({ view, before, after: { ...active(), children: root.children.length } });
+        }
+        return trace;
+      } finally {
+        root.remove();
+        history.replaceState(history.state, '', originalUrl);
+        window.ResizeObserver = NativeObserver;
+        window.setInterval = startInterval;
+        window.clearInterval = stopInterval;
+      }
+    })()`, { awaitPromise: true, includeCommandLineAPI: true });
+    for (const { view, before, after } of result) {
+      const activity = view === 'activity';
+      assert.deepEqual(before, {
+        subscriptions: 1, streams: 1, observers: activity ? 0 : 4, intervals: activity ? 0 : 1,
+        listeners: activity ? [1, 0, 0, 0, 0, 1] : [1, 1, 1, 1, 1, 1], selected: true,
+      }, view + ' has one set of active resources');
+      assert.deepEqual(after, {
+        subscriptions: 0, streams: 0, observers: 0, intervals: 0, listeners: [0, 0, 0, 0, 0, 0], children: 0,
+      }, view + ' released its mounted resources');
+    }
+    console.log('pass six mount/unmount cycles: one stream, one store subscriber and one set of global listeners while mounted');
+  }
+
+
   async function checkActivityLiveFallback() {
     const live = await startHud();
     try {
@@ -693,7 +810,9 @@ try {
     await call('Page.removeScriptToEvaluateOnNewDocument', { identifier });
   }
 
-  await call('Runtime.enable'); await call('Page.enable');
+  await call('Runtime.enable');
+  await call('Log.enable');
+  await call('Page.enable');
   await call('Page.bringToFront');
   await call('Emulation.setFocusEmulationEnabled', { enabled: true });
   await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -806,6 +925,7 @@ try {
   await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await checkActivityFrames();
   await checkActivityLiveFallback();
+  await checkMountCycles();
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   console.log(`pass browser runtime; ${shots.length} screenshots:\n${shots.map(f => '  ' + f).join('\n')}`);
   await call('Browser.close').catch(() => {});

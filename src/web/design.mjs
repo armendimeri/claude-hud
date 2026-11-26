@@ -1,10 +1,36 @@
-import { hudClient } from './legacy-hud.mjs';
+import { createAlertComponents } from './components/alerts.mjs';
+import { createDisplayEffects } from './components/animation.mjs';
+import { backgroundLayer, moreBelow, panel, stateCounts, toggle, topBar } from './components/controls.mjs';
+import { h } from './components/dom.mjs';
+import { FEED_TAGS, ticker } from './components/feed.mjs';
+import { headline } from './data/selectors.mjs';
+import { createLifetime } from './components/lifetime.mjs';
+import { createNetworkMap } from './components/network-map.mjs';
+import { createNotifications } from './components/notifications.mjs';
+import { createPlanComponents } from './components/plans.mjs';
+import { createMotion } from './components/preferences.mjs';
+import { createSessionComponents, projectLabel } from './components/sessions.mjs';
+import { ICONS, icon, provBadge, statusTag } from './components/status.mjs';
+import { createTiming } from './components/timing.mjs';
+import { createTooltip } from './components/tooltip.mjs';
+import { createVitalsComponents, externals } from './components/vitals.mjs';
+import { quietBoards, workQueue } from './components/work-queue.mjs';
 
 // The component gallery at `/design`: every component in every state, from fixtures (PLAN §6.6).
-function designMain(H) {
-  'use strict';
-  const { h, s, icon, glyph } = H;
-  const t = Date.now();
+function mountGallery(mount) {
+  const lifetime = createLifetime();
+  const motion = createMotion(lifetime);
+  const now = Date.now;
+  const timing = createTiming(now);
+  const effects = createDisplayEffects(lifetime, motion);
+  const { odo, reconcile } = effects;
+  const { contextMeter, tokenMeter, cacheMeter, sessionCard, compactRow } = createSessionComponents({ lifetime, motion, now, timing, effects });
+  const { reactor, vitals } = createVitalsComponents({ now, odo });
+  const { planCard, planNodeCard } = createPlanComponents(createTooltip(lifetime));
+  const { banners, awaySummary } = createAlertComponents({ motion, timing, effects });
+  const { audio, voice } = createNotifications(lifetime);
+  const networkMap = api => createNetworkMap({ lifetime, motion, now, sessionCard, activityLine: timing.activityLine }, api);
+  const t = now();
   let seq = 0;
   const uid = p => p + (++seq).toString(16).padStart(6, '0');
   const tok = (output, cacheWrite, input = 120, cacheRead = 0) => ({ input, output, cacheWrite, cacheRead });
@@ -46,7 +72,7 @@ function designMain(H) {
   const galleryPlanKey = 'WasteManagement2|customer-history', galleryPlans = new Map([[galleryPlanKey, galleryPlan]]);
   busy.work = { plan: galleryPlanKey, items: [{ id: 'P1' }], role: 'coordinator' };
   busy.subagents[0].work = { plan: galleryPlanKey, items: [{ id: 'P2' }], role: 'worker' };
-  const cardCtx = { byId, plans: galleryPlans, host, maxTok: Math.max(...all.map(x => H.headline(x.tokens))), maxCache: Math.max(...all.map(x => x.tokens.cacheRead)) };
+  const cardCtx = { byId, plans: galleryPlans, host, maxTok: Math.max(...all.map(x => headline(x.tokens))), maxCache: Math.max(...all.map(x => x.tokens.cacheRead)) };
   const totals = list => {
     const live = list.filter(x => x.status !== 'ended'), subs = live.reduce((n, x) => n + x.subagents.filter(a => a.state === 'running').length, 0);
     return { sessions: live.length, needsYou: live.filter(x => x.status === 'needs-you').length, busy: live.filter(x => x.status === 'busy').length, subagentsRunning: subs,
@@ -54,16 +80,19 @@ function designMain(H) {
   };
 
   // ---- page frame ----
-  const fxT = H.toggle('effects', 'Effects', H.motion.fx, (v, set) => { H.motion.setFx(v); set(v); });
-  const rmT = H.toggle('clock', 'Reduced motion preview', H.motion.rm, (v, set) => { H.motion.setRm(v); set(v); });
-  const bg = h('div', { class: 'bg', 'aria-hidden': 'true' }, h('div', { class: 'bg-grid' }), h('div', { class: 'bg-dots' }), h('div', { class: 'bg-dots d2' }), h('div', { class: 'bg-shim' }), h('div', { class: 'bg-vig' }));
+  const fxT = toggle('effects', 'Effects', motion.fx, (v, set) => { motion.setFx(v); set(v); });
+  const rmT = toggle('clock', 'Reduced motion preview', motion.rm, (v, set) => { motion.setRm(v); set(v); });
+  const bg = backgroundLayer();
   const head = h('header', { class: 'top gal-head' },
     h('div', { class: 'brand' }, h('span', { class: 'wordmark', text: 'HUD' }), h('span', { class: 'brand-sub label', text: 'Design system · every component, every state' })),
-    h('div', { class: 'top-r', style: 'margin-left:auto' }, (() => { const b = h('button', { class: 'btn', type: 'button', text: 'Replay boot' }); b.addEventListener('click', () => { if (!H.motion.ambient) return; document.documentElement.classList.remove('booting'); void document.body.offsetWidth; document.documentElement.classList.add('booting'); setTimeout(() => document.documentElement.classList.remove('booting'), 1600); }); return b; })(), h('a', { class: 'btn', href: '/', text: 'Open the HUD' }), h('span', { class: 'label c-ink2', text: 'Effects' }), fxT.el, h('span', { class: 'label c-ink2', text: 'Reduced motion' }), rmT.el));
+    h('div', { class: 'top-r', style: 'margin-left:auto' }, (() => { const b = h('button', { class: 'btn', type: 'button', text: 'Replay boot' }); b.addEventListener('click', () => { if (!motion.ambient) return; document.documentElement.classList.remove('booting'); void document.body.offsetWidth; document.documentElement.classList.add('booting'); lifetime.delay(() => document.documentElement.classList.remove('booting'), 1600); }); return b; })(), h('a', { class: 'btn', href: '/', text: 'Open the HUD' }), h('span', { class: 'label c-ink2', text: 'Effects' }), fxT.el, h('span', { class: 'label c-ink2', text: 'Reduced motion' }), rmT.el));
   const gal = h('div', { class: 'gal' }, head);
-  document.body.append(bg, gal, h('div', { class: 'scanlines', 'aria-hidden': 'true' }));
+  const scanlines = h('div', { class: 'scanlines', 'aria-hidden': 'true' });
+  mount.append(bg, gal, scanlines);
+  lifetime.listen(window, 'pagehide', event => { if (!event.persisted) lifetime.close(); });
+  lifetime.onClose(() => { bg.remove(); gal.remove(); scanlines.remove(); document.documentElement.classList.remove('booting'); });
   function section(title, note, ...specs) {
-    const p = H.panel('gal-sec', title);
+    const p = panel('gal-sec', title);
     if (note) p.head.append(h('span', { class: 'ps', text: note }));
     p.content.append(h('div', { class: 'specs' }, ...specs));
     gal.append(p.el);
@@ -99,41 +128,41 @@ function designMain(H) {
 
   // ---- icons, status, chips, controls ----
   section('Icons and status', 'Icons: 24-unit grid, 1.5 px stroke. Status is always a word, a shape and a colour.',
-    spec('Icons', h('div', { class: 'icons' }, Object.keys(H.ICONS).filter(n => n !== 'slash').map(n => h('div', { class: 'icon-c' }, icon(n), h('span', { class: 'mono', text: n }))))),
-    spec('Session and subagent states', h('div', { class: 'col' }, ['needs-you', 'busy', 'agents', 'idle', 'ended', 'running', 'done'].map(st => { const g = H.statusTag(); g.set(st, st === 'needs-you' ? '1:35' : st === 'running' ? '0:42' : null); return g.el; }))),
-    spec('Plan states', h('div', { class: 'col' }, ['todo', 'in-progress', 'handed-off', 'accepted', 'blocked', 'bounced', 'partial', 'unknown'].map(st => { const g = H.statusTag(); g.set(st); return g.el; }))),
+    spec('Icons', h('div', { class: 'icons' }, Object.keys(ICONS).filter(n => n !== 'slash').map(n => h('div', { class: 'icon-c' }, icon(n), h('span', { class: 'mono', text: n }))))),
+    spec('Session and subagent states', h('div', { class: 'col' }, ['needs-you', 'busy', 'agents', 'idle', 'ended', 'running', 'done'].map(st => { const g = statusTag(); g.set(st, st === 'needs-you' ? '1:35' : st === 'running' ? '0:42' : null); return g.el; }))),
+    spec('Plan states', h('div', { class: 'col' }, ['todo', 'in-progress', 'handed-off', 'accepted', 'blocked', 'bounced', 'partial', 'unknown'].map(st => { const g = statusTag(); g.set(st); return g.el; }))),
     spec('Chips and badges', h('div', { class: 'row' }, (() => {
-      const pa = H.provBadge(), pb = H.provBadge(), pu = H.provBadge(); pa.set('anthropic', 'claude-opus-5-5'); pb.set('bedrock', 'us.anthropic.claude-opus-5-5'); pu.set('unknown');
+      const pa = provBadge(), pb = provBadge(), pu = provBadge(); pa.set('anthropic', 'claude-opus-5-5'); pb.set('bedrock', 'us.anthropic.claude-opus-5-5'); pu.set('unknown');
       return [h('span', { class: 'chip', text: 'opus 5.5 · xhigh' }), h('span', { class: 'chip' }, icon('branch'), h('span', { class: 'trunc', text: 'customer-history' })), pa.el, pb.el, pu.el,
         h('button', { class: 'chip', type: 'button' }, icon('agent'), 'Started by', h('span', { class: 'trunc', text: 'Coordinator' })), h('span', { class: 'chip demo', text: 'Demo' }), h('span', { class: 'chip warn', text: 'Hooks off' }), h('span', { class: 'chip warn', text: 'Delayed' })];
     })())),
     spec('Controls', h('div', { class: 'row' }, (() => {
-      const on = H.toggle('voice', 'Voice', true, () => {}), off = H.toggle('voice', 'Voice', false, () => {});
+      const on = toggle('voice', 'Voice', true, () => {}), off = toggle('voice', 'Voice', false, () => {});
       const seg = h('div', { class: 'seg', style: 'margin:0' }, h('button', { type: 'button', 'aria-pressed': 'true' }, icon('cards'), 'Cards'), h('button', { type: 'button', 'aria-pressed': 'false' }, icon('network'), 'Network'));
       return [on.el, h('span', { class: 'label c-ink2', text: 'on' }), off.el, h('span', { class: 'label c-ink2', text: 'off' }), seg, h('button', { class: 'btn', type: 'button', text: 'Retry' })];
     })())),
     spec('Stream light', h('div', { class: 'col' }, ['live', 'reconnecting', 'down', 'connecting'].map(sv => h('div', { class: 'stream', 'data-s': sv }, h('span', { class: 'stream-dot' }), h('span', { class: 'label', text: { live: 'Live', reconnecting: 'Reconnecting', down: 'Down', connecting: 'Connecting' }[sv] }))))));
 
   // ---- meters ----
-  const cm = [30, 72, 91, 100, null].map(p => { const m = H.contextMeter(); m.set(ctx(p)); return m.el; });
-  const tm = H.tokenMeter(); tm.set(busy.tokens, busy.tokensTree, H.headline(busy.tokens) * 1.2);
-  const crm = H.cacheMeter(); crm.set(busy.tokens.cacheRead, busy.tokens.cacheRead * 1.3);
+  const cm = [30, 72, 91, 100, null].map(p => { const m = contextMeter(); m.set(ctx(p)); return m.el; });
+  const tm = tokenMeter(); tm.set(busy.tokens, busy.tokensTree, headline(busy.tokens) * 1.2);
+  const crm = cacheMeter(); crm.set(busy.tokens.cacheRead, busy.tokens.cacheRead * 1.3);
   section('Meters', 'Every bar has its number beside it. Context: amber from 70%, red from 90%, “—” when the window is unknown.',
     spec('Context × 4 levels + unknown', h('div', { class: 'meters' }, cm)), spec('Tokens and cache read', h('div', { class: 'meters' }, tm.el, crm.el)));
 
   // ---- reactor and vitals ----
-  const rx = (label, list) => { const r = H.reactor(); r.update(list, totals(list)); return spec(label, r.el); };
-  const vit = H.vitals();
+  const rx = (label, list) => { const r = reactor(); r.update(list, totals(list)); return spec(label, r.el); };
+  const vit = vitals();
   vit.update({ sessions: all, totals: totals(all), plans: [1, 2, 3], account: { fiveHour: { pct: 42, resetsAt: t + 2.4 * 3600e3 }, sevenDay: { pct: 31, resetsAt: t + 3.2 * 86400e3 } } });
-  const vitNoAcct = H.vitals(); vitNoAcct.update({ sessions: [], totals: Object.assign(totals([]), { plansInProgress: 0, plansNeedingYou: 0 }), plans: [], account: null });
+  const vitNoAcct = vitals(); vitNoAcct.update({ sessions: [], totals: Object.assign(totals([]), { plansInProgress: 0, plansNeedingYou: 0 }), plans: [], account: null });
   section('Reactor and vitals', 'Rings turn and the core beats only with EFFECTS on. Red breathing while anything needs you.',
     rx('Idle', []), rx('Busy', [busy, fresh, idle, long]), rx('Alert: something needs you', all),
     spec('Vitals with account limits', vit.el), spec('Vitals, empty, no account source', vitNoAcct.el));
 
   // ---- session cards ----
-  const card = (label, x) => { const c = H.sessionCard({ jump: () => {} }); c.update(x, cardCtx); return spec(label, h('div', { class: 'cards' }, c.el)); };
-  const rows = H.h('div', { class: 'cards compact' });
-  for (const x of all) { const r = H.compactRow(); r.update(x, cardCtx); rows.append(r.el); }
+  const card = (label, x) => { const c = sessionCard({ jump: () => {} }); c.update(x, cardCtx); return spec(label, h('div', { class: 'cards' }, c.el)); };
+  const rows = h('div', { class: 'cards compact' });
+  for (const x of all) { const r = compactRow(); r.update(x, cardCtx); rows.append(r.el); }
   const deep = sess({ project: 'claude-hud', title: 'Folding: deep trees and many finished subagents', subagents: (() => {
     const out = [], a = sub({ type: 'general-purpose', description: 'Level 1' }), b = sub({ parentId: a.id, depth: 2, description: 'Level 2' }), c = sub({ parentId: b.id, depth: 3, description: 'Level 3' }), d = sub({ parentId: c.id, depth: 4, description: 'Level 4, folded' });
     out.push(a, b, c, d);
@@ -148,7 +177,7 @@ function designMain(H) {
   // ---- network ----
   const nets = [];
   const netSpec = (label, list, height, cls, after) => {
-    const n = H.network({ showCard: () => {} });
+    const n = networkMap({ showCard: () => {} });
     const box = h('div', { class: 'gal-net' + (cls ? ' ' + cls : ''), style: `height:${height}px` }, n.el);
     nets.push([n, list, after]);
     return [spec(label, box), n, list];
@@ -184,21 +213,21 @@ function designMain(H) {
     netSpec('Over 40 nodes: finished subagents fold into a numbered satellite (click to expand)', (() => { const out = []; for (let i = 0; i < 4; i++) { const subs = []; for (let k = 0; k < 11; k++) subs.push(sub({ type: 'web-fetch', description: 'Job ' + k, state: 'done', currentTool: null, endedAt: t - k * 6e4, tokens: tok(800 + k * 90, 4000) })); subs.push(sub({ type: 'Explore', description: 'Still running', tokens: tok(9000, 30000) })); out.push(sess({ project: ['FidiaCRM', 'TourCMS'][i % 2], title: 'Fan-out ' + (i + 1), subagents: subs })); } return out; })(), 420, 'wide')[0]);
 
   // ---- tooltip card ----
-  const tipDemo = h('div', { class: 'tip on gal-static' }, h('div', { class: 'tip-b cutbox' }, H.network().nodeCard({ kind: 'session', id: busy.id, state: 'busy', depth: 0, x: busy })));
+  const tipDemo = h('div', { class: 'tip on gal-static' }, h('div', { class: 'tip-b cutbox' }, networkMap().nodeCard({ kind: 'session', id: busy.id, state: 'busy', depth: 0, x: busy })));
   const longTitle = 'Phone app phase 7: battery and Xiaomi autostart switches, runbook for the real-phone pass on the Samsung';
   const truncDemo = h('div', { class: 'col', style: 'max-width:300px' }, h('div', { class: 'card-title trunc', style: 'align-self:stretch', text: longTitle }), h('div', { class: 'tip on gal-static' }, h('div', { class: 'tip-b cutbox' }, h('div', { class: 'tip-t', text: longTitle }))));
   const focusDemo = h('div', { class: 'row' }, h('button', { class: 'tgl focus-demo', type: 'button', 'aria-pressed': 'true', 'aria-label': 'Effects' }, icon('effects')), h('button', { class: 'btn focus-demo', type: 'button', text: 'Retry' }), h('span', { class: 'chip focus-demo', text: 'Started by Coordinator' }), h('span', { class: 'label c-ink2', text: '2 px --arc ring, 2 px offset, on every control' }));
   section('Floating layer', 'Tooltips, the pinned card and the alerts sit above the panels: stronger glow, brighter border.', spec('Node tooltip card', tipDemo),
     spec('Long text truncates; the full text is in a tooltip', truncDemo), spec('Keyboard focus', focusDemo),
-    spec('Plan node tooltip', h('div', { class: 'tip on gal-static' }, h('div', { class: 'tip-b cutbox' }, H.planNodeCard({ id: 'P3', name: 'Change requests in the service', agent: 'requests', state: 'in-progress', stateRaw: 'in-progress', since: '2026-10-29', model: 'Opus 5.5', effort: 'high', waitsFor: ['P1'], notes: 'Waits for P1. The service accepts change requests from the portal.' })))));
+    spec('Plan node tooltip', h('div', { class: 'tip on gal-static' }, h('div', { class: 'tip-b cutbox' }, planNodeCard({ id: 'P3', name: 'Change requests in the service', agent: 'requests', state: 'in-progress', stateRaw: 'in-progress', since: '2026-10-29', model: 'Opus 5.5', effort: 'high', waitsFor: ['P1'], notes: 'Waits for P1. The service accepts change requests from the portal.' })))));
 
   // ---- plans ----
   const P = (id, name, agent, state, waitsFor = [], extra = {}) => Object.assign({ id, name, agent, state, stateRaw: state, since: state === 'todo' ? null : '2026-10-29', waitsFor, waitsForOther: [], notes: waitsFor.length ? 'Waits for ' + waitsFor.join(' and ') : null, group: 'Board', kind: 'phase', model: 'Opus 5.5', effort: 'high' }, extra);
   const plan = (o) => Object.assign({ project: 'WasteManagement2', slug: uid('plan'), title: 'Customer change history and change requests', path: 'docs/plans/customer-history/STATUS.md', format: 'standard', size: 'phased', state: 'building', stateDate: null, needsYou: [], runs: [], lastLog: ['2026-10-29 · data · P1 · Handed off: history tables and triggers, 14 tests.'] }, o);
   const pc = (label, p, cls, board) => {
-    const c = H.planCard(); const box = h('div', { class: 'plans' }, c.el); const e = spec(label, box);
+    const c = planCard(); const box = h('div', { class: 'plans' }, c.el); const e = spec(label, box);
     if (cls) e.classList.add(cls);
-    requestAnimationFrame(() => c.update(p, board, a => a.agentId ? 'History UI subagent' : 'Customer history coordinator'));
+    lifetime.frame(() => c.update(p, board, a => a.agentId ? 'History UI subagent' : 'Customer history coordinator'));
     return e;
   };
   const following = plan({ ...galleryPlan, phases: [P('P1', 'Data and history', 'data', 'todo'),
@@ -219,7 +248,7 @@ function designMain(H) {
       runs: [{ id: 'R14', name: 'Quotation screens', state: 'in-progress', lane: 'A', chunks: ['UX-10', 'UX-11'], startWhen: 'UX-06 done' }, { id: 'R15', name: 'Clients screens', state: 'todo', lane: 'B', chunks: ['UX-12'], startWhen: 'O-9 is in' }],
       needsYou: [{ kind: 'question', id: '3', item: 'UX-12', text: 'Contact names longer than 60 characters: cut them, or widen the column to 120?' }], lastLog: [] })),
     pc('Small plan with an open decision', plan({ project: 'TourCMS', title: 'Booking changes', size: 'small', state: 'approved', stateDate: '2026-10-28', phases: [P('P1', 'Change dates', 'bookings', 'todo'), P('P2', 'Change people', 'bookings', 'todo', ['P1'])], needsYou: [{ kind: 'decision', id: 'D2', text: 'A changed booking keeps its original price unless the tour price went down ★' }], lastLog: [] })));
-  const emptyQueue = H.workQueue(), fullQueue = H.workQueue();
+  const emptyQueue = workQueue(), fullQueue = workQueue();
   emptyQueue.update({}, 'ready');
   const queueRow = { project: galleryPlan.project, plan: galleryPlan.title, slug: galleryPlan.slug, model: 'Opus 5.5 / high' };
   fullQueue.update({
@@ -229,9 +258,9 @@ function designMain(H) {
     accept: [{ ...queueRow, id: 'P5', title: 'Table system' }],
     drift: [{ ...queueRow, id: 'P3', title: 'Change requests', note: 'Stalled' }],
   }, 'ready');
-  const quietPlan = H.planCard();
+  const quietPlan = planCard();
   let expanded = false;
-  const quiet = H.quietBoards(() => {
+  const quiet = quietBoards(() => {
     expanded = !expanded; quiet.update(1, expanded);
     if (expanded) quietPlan.update(plan({ title: 'Completed migration', phases: [P('P1', 'Move history', 'data', 'accepted')] }));
   });
@@ -245,14 +274,14 @@ function designMain(H) {
     ['usage', '5-hour usage reached 90%'], ['usage', 'Weekly usage reached 90%'],
   ].map(([kind, text, session, agent], i) => ({ id: `${kind}:spec:${i}`, kind, text, since: t,
     sessionId: session?.id ?? null, agentId: agent?.id ?? null, project: session?.project ?? null }));
-  const warningGallery = H.banners();
+  const warningGallery = banners();
   warningGallery.el.classList.add('gal-static');
   warningGallery.update([needs], sampleWarnings);
   section('Warnings', null, wide('Context, long-running tool, silent subagent and account limits', warningGallery.el));
 
   const firstMinute = Math.floor(t / 60000) * 60000 - 29 * 60000;
   const activitySpec = (label, perMin, lastMs) => {
-    const line = H.activityLine();
+    const line = timing.activityLine();
     line.set({ start: firstMinute, perMin }, { lastMs });
     return spec(label, line.el);
   };
@@ -261,7 +290,7 @@ function designMain(H) {
     activitySpec('Steady output', Array.from({ length: 30 }, (_, i) => 900 + (i % 4) * 130), 94_000),
     activitySpec('One burst', Array.from({ length: 30 }, (_, i) => i === 23 ? 2400 : 0), 14_000));
 
-  const away = H.awaySummary();
+  const away = awaySummary();
   away.update([
     { at: t, kind: 'needs-you', project: 'FidiaCRM', text: 'Permission: Bash' },
     { at: t - 1000, action: 'agent-done' },
@@ -269,52 +298,52 @@ function designMain(H) {
     { at: t - 3000, action: 'item-changed' },
   ], t - 300_000);
   let focused = 'TourCMS';
-  const focus = H.projectLabel({ project: name => { focused = focused ? null : name; focus.set(name); }, focused: () => focused },
+  const focus = projectLabel({ project: name => { focused = focused ? null : name; focus.set(name); }, focused: () => focused },
     'chip focus-clear', '');
   focus.set('TourCMS');
-  const editorCard = H.sessionCard();
+  const editorCard = sessionCard();
   editorCard.update({ ...busy, cwd: 'C:\\Users\\demo\\source\\repos\\Customer Tools' }, cardCtx);
   section('Page extras', null, wide('While you were away', away.el), spec('Project focus', focus.el), spec('VS Code window', editorCard.el));
 
-  const kioskNet = H.network();
+  const kioskNet = networkMap();
   const kioskPreview = h('div', { class: 'kiosk gal-net', style: 'height:440px' }, kioskNet.el);
   section('Kiosk display', null, wide('Automatic pin for the oldest request', kioskPreview),
     spec(null, h('a', { class: 'btn', href: '/?kiosk' }, 'Open kiosk mode')));
-  requestAnimationFrame(() => kioskNet.update([needs, idle], { ...cardCtx, host, autoPin: needs.id }));
+  lifetime.frame(() => kioskNet.update([needs, idle], { ...cardCtx, host, autoPin: needs.id }));
 
   // ---- alerts, ticker, externals, states ----
-  const b1 = H.banners({}), b4 = H.banners({});
+  const b1 = banners({}), b4 = banners({});
   b1.update([needs]);
   b4.update([needs, sess({ project: 'TourCMS', status: 'needs-you', needsYou: { since: t - 30e3, reason: 'Question for you', kind: 'question' }, title: 'Booking changes' }), sess({ project: 'ImPOS-Maui', status: 'needs-you', needsYou: { since: t - 12e3, reason: 'Plan approval', kind: 'question' }, title: 'Phone app phase 7' }), sess({ project: 'Aegis', status: 'needs-you', needsYou: { since: t - 5e3, reason: 'Waiting for your input', kind: 'input' }, title: 'Rules engine' })]);
   b1.el.classList.add('gal-static'); b4.el.classList.add('gal-static');
-  const tkP = H.panel('p-tick', 'Feed'), tkT = H.ticker(tkP.el, tkP.head); tkP.content.replaceWith(tkT.el);
+  const tkP = panel('p-tick', 'Feed'), tkT = ticker(tkP.el, tkP.head, { lifetime, motion, now, timing }); tkP.content.replaceWith(tkT.el);
   [['session', 'Session started', 'TourCMS'], ['tool', 'Bash · dotnet test -c Release --no-build', 'FidiaCRM'], ['agent', 'Agent started · Explore: map the quotation totals code', 'WasteManagement2'], ['needs-you', 'Permission: Bash', 'FidiaCRM'], ['done', 'Agent done · web-fetch: read the Syncfusion grid docs', 'WasteManagement2'], ['plan', 'Customer change history: P2 in-progress → handed-off', 'WasteManagement2']]
     .forEach(([kind, text, project], i) => tkT.add({ at: t - (6 - i) * 7000, sessionId: null, project, kind, text }));
-  const exP = H.panel('p-ext', 'Outside Claude Code'), exB = H.externals(); exP.content.append(exB.el);
+  const exP = panel('p-ext', 'Outside Claude Code'), exB = externals(reconcile); exP.content.append(exB.el);
   exB.update([{ source: 'ingest', app: 'invoice-ocr', provider: 'bedrock', model: 'claude-haiku-5-5', modelRaw: 'anthropic.claude-haiku-5-5', tokens: tok(52000, 0, 410000), windowStart: t - 9e6, windowEnd: t, delayed: false },
     { source: 'ingest', app: 'support-bot', provider: 'bedrock', model: 'claude-sonnet-5-5', modelRaw: 'us.anthropic.claude-sonnet-5-5-v1:0', tokens: tok(120000, 0, 980000), windowStart: t - 9e6, windowEnd: t, delayed: false },
     { source: 'cloudwatch', app: null, provider: 'bedrock', model: 'claude-sonnet-5-5', modelRaw: 'us.anthropic.claude-sonnet-5-5-v1:0', tokens: tok(400000, 0, 3100000), windowStart: t - 9e6, windowEnd: t - 3e5, delayed: true }], 'CloudWatch: aws CLI not found');
-  const moreP = H.panel('p-sess', 'Sessions'), moreBox = h('div', { class: 'cards' }), moreH = H.moreBelow(moreP.content, moreBox, H.stateCounts);
+  const moreP = panel('p-sess', 'Sessions'), moreBox = h('div', { class: 'cards' }), moreH = moreBelow(lifetime, motion, moreP.content, moreBox, stateCounts);
   moreP.el.style.height = '320px'; moreP.content.style.overflow = 'auto'; moreP.content.append(moreBox, moreH.el);   // gallery panels don't scroll; this one must
-  for (const x of [fresh, idle, ended]) { const c = H.sessionCard({ jump: () => {} }); c.update(x, cardCtx); moreBox.append(c.el); }
-  const errP = H.panel('p-plans', 'Plans'); errP.el.style.flex = '1'; errP.guard(() => { throw new Error('Cannot read properties of undefined (reading \'phases\')'); }, () => {});
-  const emptyP = H.panel('p-sess', 'Sessions'); emptyP.content.append(h('div', { class: 'cards-empty' }, h('span', { class: 'label', text: 'No active sessions' }), ' · systems nominal'));
+  for (const x of [fresh, idle, ended]) { const c = sessionCard({ jump: () => {} }); c.update(x, cardCtx); moreBox.append(c.el); }
+  const errP = panel('p-plans', 'Plans'); errP.el.style.flex = '1'; errP.guard(() => { throw new Error('Cannot read properties of undefined (reading \'phases\')'); }, () => {});
+  const emptyP = panel('p-sess', 'Sessions'); emptyP.content.append(h('div', { class: 'cards-empty' }, h('span', { class: 'label', text: 'No active sessions' }), ' · systems nominal'));
   const conn = h('div', { class: 'conn gal-static', 'data-s': 'reconnecting' }, h('span', { class: 'label', text: 'Connection lost · reconnecting' }), h('span', { class: 'mono', text: 'last update 12s ago' }), h('button', { type: 'button', text: 'Retry now' }));
   const connDown = h('div', { class: 'conn gal-static', 'data-s': 'down' }, h('span', { class: 'label', text: 'HUD server not answering' }), h('span', { class: 'mono', text: 'last update 41s ago' }), h('button', { type: 'button', text: 'Retry now' }));
-  const topB = H.topBar(); topB.update({ host, demo: false, hooksInstalled: false, now: t, uptime: 2 * 3600e3 + 14 * 60e3, sessions: all, totals: totals(all) }); topB.setStream('live');
+  const topB = topBar({ now, motion, reactor, odo, audio, voice }); topB.update({ host, demo: false, hooksInstalled: false, now: t, uptime: 2 * 3600e3 + 14 * 60e3, sessions: all, totals: totals(all) }); topB.setStream('live');
   section('Alerts, feed, externals, page states', null,
     wide('Top bar (hooks not installed)', h('div', { class: 'gal-topbar' }, topB.el)),
     wide('Needs-you banner: one', b1.el), wide('Needs-you banner: several stack, with a count', b4.el),
-    wide('Ticker', tkP.el), spec('Feed tags', h('div', { class: 'row' }, ...Object.entries(H.FEED_TAGS).map(([k, w]) => h('span', { class: 'tk-tag', 'data-k': k, style: 'padding:0 8px', text: w })))),
+    wide('Ticker', tkP.el), spec('Feed tags', h('div', { class: 'row' }, ...Object.entries(FEED_TAGS).map(([k, w]) => h('span', { class: 'tk-tag', 'data-k': k, style: 'padding:0 8px', text: w })))),
     spec('More below: a panel that scrolls says what it hides; a click brings it up', moreP.el), spec('Externals panel (D12 on)', exP.el),
     spec('Empty', emptyP.el), spec('Error in one panel, with retry', h('div', { style: 'height:220px;display:flex' }, errP.el)),
-    wide('Reconnecting, then down: the last state stays, dimmed', h('div', { class: 'col' }, conn, connDown, (() => { const c = H.sessionCard(); c.update(busy, cardCtx); return h('div', { class: 'stale', style: 'width:100%' }, h('div', { class: 'main gal-main' }, h('div', { class: 'cards' }, c.el))); })())));
+    wide('Reconnecting, then down: the last state stays, dimmed', h('div', { class: 'col' }, conn, connDown, (() => { const c = sessionCard(); c.update(busy, cardCtx); return h('div', { class: 'stale', style: 'width:100%' }, h('div', { class: 'main gal-main' }, h('div', { class: 'cards' }, c.el))); })())));
 
   // ---- render the networks once they have a size; then keep the fixtures alive so the motion can be reviewed ----
   const netCtx = { byId: new Map([...all, ...dense, one].map(x => [x.id, x])), plans: galleryPlans, host, maxTok: 1, maxCache: 1 };
-  requestAnimationFrame(() => nets.forEach(([n, list, after]) => { n.update(list, netCtx); if (after) after(n, list); }));
+  lifetime.frame(() => nets.forEach(([n, list, after]) => { n.update(list, netCtx); if (after) after(n, list); }));
   let tickN = 0;
-  setInterval(() => {
+  lifetime.repeat(() => {
     tickN++;
     for (const x of [busy, one, ...dense]) if (x.status === 'busy') { x.tokens.output += 400; x.tokens.cacheWrite += 1200; if (tickN % 2 === 0) x.currentTool = { name: ['Read', 'Edit', 'Bash', 'Grep'][tickN % 4], summary: 'src/Quotations/QuotationTotals.cs', since: Date.now() }; }
     for (const a of busy.subagents) if (a.state === 'running') { a.tokens.output += 300; a.tokens.cacheWrite += 900; if (tickN % 3 === 0) a.currentTool = { name: 'Read', summary: 'Program.cs', since: Date.now() }; }
@@ -325,11 +354,8 @@ function designMain(H) {
       busy.subagents.push(sub({ parentId: busy.subagents[0] ? busy.subagents[0].id : busy.id, depth: busy.subagents[0] ? 2 : 1, type: 'web-fetch', description: 'Fresh job ' + tickN, startedAt: Date.now(), provider: busy.provider }));
     }
     nets.forEach(([n, list]) => n.update(list, netCtx));
-    H.tickTimers();
+    timing.tickTimers(gal);
   }, 1500);
 }
 
-const H = hudClient();
-// Preserve the global client binding used by the browser smoke checks.
-Object.defineProperty(globalThis, 'H', { value: H });
-designMain(H);
+mountGallery(document.body);
