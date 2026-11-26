@@ -13,7 +13,7 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 | P4 | Prove a new full-page view | `activity` | P3 | Sonnet 5.5 / high | accepted | 2026-11-26 | [P4-activity](handoffs/P4-activity.md) | 55 Node tests and 15 Edge layouts passed |
 | P5 | Separate HTTP from the application runtime | `runtime` | P4 | Opus 5.5 / xhigh | accepted | 2026-11-26 | [P5-runtime](handoffs/P5-runtime.md) | 60 Node tests and 15 Edge layouts passed |
 | P6 | Extract session and transcript sources | `sessions` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6-sessions](handoffs/P6-sessions.md) | Lane A, port 7791. 61 Node tests and 15 Edge layouts passed. |
-| P7 | Extract projects, boards, usage and alerts | `boards` | P6 | Opus 5.5 / high | todo | | | Lane A |
+| P7 | Extract projects, boards, usage and alerts | `boards` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7-boards](handoffs/P7-boards.md) | Lane A, port 7791. 63 Node tests and a matching v1 replay |
 | P8 | Factor the dashboard into reusable components | `components` | P5 | Sonnet 5.5 / high | todo | | | Lane B |
 | P9 | Finish CLI, demos and packaging | `packaging` | P7, P8 | Sonnet 5.5 / high | todo | | | Verify standalone hook and install layout |
 | P10 | Verify and close | `review` | P9 | Opus 5.5 / high | todo | | | Parity, performance, and release checks |
@@ -67,6 +67,10 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 - 2026-11-26 · sessions · P6 · Handed off the session and transcript sources after 61 Node tests, a matching 24-session replay and the comparative P1 benchmark.
 
 - 2026-11-26 · boards · P6 · Accepted after all 25 Codex and hook checks passed.
+
+- 2026-11-26 · boards · P7 · Handed off project, plan, usage and alert modules after 63 Node tests and a matching v1 replay. Edge captured 28 screenshots.
+
+- 2026-11-26 · packaging · P7 · Accepted after the 27 board, usage, alert, push, and stream checks passed.
 
 ## Kickoff
 

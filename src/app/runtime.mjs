@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { setMaxListeners } from 'node:events';
+import { EventEmitter, setMaxListeners } from 'node:events';
 import fs from 'node:fs';
 import { createPublisher } from './publish.mjs';
 
@@ -67,8 +67,9 @@ function createLifetime() {
 /** Connects the application engine to an instance-local publisher, writer and lifecycle. */
 export function createRuntime(createEngine) {
   const lifetime = createLifetime();
-  const publisher = createPublisher(now => engine.project(now));
-  const engine = createEngine(lifetime, publisher);
+  const events = new EventEmitter();
+  const publisher = createPublisher(now => engine.update(now));
+  const engine = createEngine(lifetime, publisher, events);
   const unavailable = [503, 'HUD is closing'];
   let started = false;
   let closing;
@@ -120,6 +121,7 @@ export function createRuntime(createEngine) {
 
   async function closeRuntime() {
     publisher.close();
+    events.removeAllListeners();
     for (const { resolve } of writes) resolve(unavailable);
     writes = [];
     await lifetime.close();

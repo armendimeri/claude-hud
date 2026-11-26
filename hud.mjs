@@ -3,7 +3,6 @@
 // Node 22 built-ins only and no build step. `node hud.mjs help` lists the commands; README.md has the rest.
 
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
@@ -12,36 +11,37 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { readConfig, VERSION } from './src/config.mjs';
 import { createRuntime } from './src/app/runtime.mjs';
+import { createPhonePush } from './src/app/phone-push.mjs';
+import { compareSessions, projectLiveSnapshot, publicSessions } from './src/app/publish.mjs';
 import { createHttpServer } from './src/http/server.mjs';
 import { hostAllowed, writeAllowed } from './src/http/security.mjs';
 import { HOOK_FIELDS, TOOL_INPUT_FIELDS, TOOL_RESPONSE_FIELDS, runHook, slimHookPayload } from './hud-hook.mjs';
-import { CONTEXT_WINDOWS, MINUTE_MS, addPulse, addTokens, contextFor, dayKey, minuteOf, modelInfo, normalizeModel, num, pulseView, rawModel, startOfDay, zero } from './src/domain/models.mjs';
-import { ENDED_KEEP_MS, SILENT_SESSION_MS, STARTUP_MS, clearNeedsYou, codexTree, createSessions, createTranscriptInfo, endedLongAgo, finishTurn, lastActivity, markNeedsYou, sessionStatus, sessionView, setHookStatus, startTurn } from './src/domain/sessions.mjs';
+import { CONTEXT_WINDOWS, MINUTE_MS, addPulse, addTokens, contextFor, minuteOf, modelInfo, normalizeModel, num, pulseView, rawModel, startOfDay, zero } from './src/domain/models.mjs';
+import { ENDED_KEEP_MS, SILENT_SESSION_MS, STARTUP_MS, clearNeedsYou, createSessions, createTranscriptInfo, finishTurn, lastActivity, markNeedsYou, sessionStatus, setHookStatus, startTurn } from './src/domain/sessions.mjs';
 import { createSubagents, silentSubagentAt } from './src/domain/subagents.mjs';
-import { AGENT_TOOLS, createToolSummary, currentSessionTool, isObj, oneLine, str, truncate } from './src/domain/tools.mjs';
+import { createToolSummary, currentSessionTool, isObj, oneLine, str, truncate } from './src/domain/tools.mjs';
 import { createWindowsProcessLookup, pidAlive } from './src/platform/windows-process.mjs';
 import { createClaudeRegistry } from './src/sources/claude-registry.mjs';
 import { createClaudeTranscripts } from './src/sources/claude-transcripts.mjs';
 import { createCodexRollouts } from './src/sources/codex-rollouts.mjs';
 import { createHookHandler, createHookSource, notificationReason } from './src/sources/hooks.mjs';
 import { createTailReader } from './src/sources/tail-reader.mjs';
+import { createProjectSource, projectsView } from './src/sources/projects.mjs';
+import { createPlanFiles } from './src/sources/plan-files.mjs';
+import { createAccountSource } from './src/sources/account.mjs';
+import { createExternalUsageSource } from './src/sources/external-usage.mjs';
+import { BOARD_HEADER, parsePlan, parsePlanCandidate, selectPlanFiles } from './src/domain/plan-parser.mjs';
+import { PLAN_TOOLS, addPrompt, idWords, indexPlans, linkAgents, liveAgents, mergeTouched, noteTouched, planKeyOf, promptRefs, resolveWork } from './src/domain/board-links.mjs';
+import { boardMarkText, boardState, createPlanState, followBoards, newTrack } from './src/domain/board-status.mjs';
+import { createFeed } from './src/domain/feed.mjs';
+import { alertsFor } from './src/domain/alerts.mjs';
+import { accountView, createExternalUsage, dailyTokens, totalsFor } from './src/domain/usage.mjs';
 
 // =====================================================================================================================
 // Settings
 
 const POLL_MS = 3_000;
-const PLAN_POLL_MS = 10_000;             // recover missed file events and documentation folders created later
 
-const TOOL_ALERT_MS = 10 * MINUTE_MS;
-const SUB_ALERT_MS = 5 * MINUTE_MS;
-
-const PLAN_WRITE_MS = 60_000;            // a board change this soon after an agent wrote the file is that agent's
-const HISTORY_MAX = 50;                  // state changes kept per plan, in memory
-const REFS_MAX = 40;                     // ID-shaped words kept per agent from its task text
-const TOUCHED_MAX = 20;                  // plan files read or written, kept per agent
-const ITEMS_MAX = 3;                     // board items one agent links to
-const EXTERNAL_ROWS_MAX = 200;
-const CLOUDWATCH_EVERY_MS = 60_000;
 // Recognise both hook commands even if the HUD folder has moved.
 const HOOK_COMMAND = `node "${fileURLToPath(new URL('./hud-hook.mjs', import.meta.url)).replace(/\\/g, '/')}"`;
 const OUR_HOOK_RE = /^node "[^"]*[\\/]hud(?:\.mjs" hook|-hook\.mjs")$/;
@@ -57,18 +57,14 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 
-function readJsonSync(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; } }
-
-function capSet(set, max) { while (set.size > max) set.delete(set.values().next().value); }
-
 export function createHudRuntime(config = readConfig(), demoMode = false) {
-  return createRuntime((lifetime, publisher) => createEngine(config, demoMode, lifetime, publisher));
+  return createRuntime((lifetime, publisher, events) => createEngine(config, demoMode, lifetime, publisher, events));
 }
 
 function selftest(config) {
   let runChecks;
-  createRuntime((lifetime, publisher) => {
-    const engine = createEngine(config, false, lifetime, publisher);
+  createRuntime((lifetime, publisher, events) => {
+    const engine = createEngine(config, false, lifetime, publisher, events);
     runChecks = engine.selftest;
     return engine;
   });
@@ -76,9 +72,9 @@ function selftest(config) {
 }
 
 // Compose the source adapters and domain state with publication and the remaining board and usage rules.
-function createEngine(config, demoMode, lifetime, publisher) {
+function createEngine(config, demoMode, lifetime, publisher, events) {
   const {
-    hostname: HOSTNAME, unclaimedMs: UNCLAIMED_MS, stalledMs: STALLED_MS, bedrockRegion: BEDROCK_REGION,
+    hostname: HOSTNAME, unclaimedMs, stalledMs, bedrockRegion,
   } = config;
   const ROOTS = config.roots.map(root => ({ ...root, bedrock: false, hooks: false }));
   const CODEX_ROOTS = [...config.codexRoots];
@@ -91,25 +87,17 @@ function createEngine(config, demoMode, lifetime, publisher) {
       return;
     }
 
-    configurePhonePush();
+    phonePush.start();
+    events.on('needs-you', phonePush.onNeedsYou);
     if (!config.noAutoInstall) autoInstall(ROOTS);
-    readSettingsFlags();
-    void readAccount();
-    for (const root of ROOTS) {
-      lifetime.watchFile(root.settings, { interval: 5000 }, readSettingsFlags);
-      lifetime.watchFile(root.json, { interval: 10_000 }, readAccount);
-    }
+    accountSource.start();
     registry.watch();
     claude.watch();
     void registry.scan().then(claude.scanRecentTranscripts);
     codex.watch();
     void codex.scan(true);
     lifetime.interval(poll, POLL_MS);
-    if (!BEDROCK_REGION) return;
-    if (/^[a-z]{2}(-[a-z]+)+-\d+$/.test(BEDROCK_REGION)) {
-      pollCloudWatch();
-      lifetime.interval(pollCloudWatch, CLOUDWATCH_EVERY_MS);
-    } else externalError = 'CloudWatch: HUD_BEDROCK_REGION is not a region name';
+    externalUsageSource.start();
   }
 
   // =====================================================================================================================
@@ -117,17 +105,45 @@ function createEngine(config, demoMode, lifetime, publisher) {
 
   let hudStartedAt;
 
-  const feedSeen = new Set();     // de-duplicates feed lines that hooks and transcripts both report
-  const plans = new Map();        // `${project}|${relative path}` -> { plan, mtime, rootKey }
-  const roots = new Map();        // project root (lower-cased) -> { root, project, watchers, timer }
-  const rootCache = new Map();    // cwd (lower-cased) -> { root, mainRoot, project }
-  const external = new Map();     // D12 rows
-  const planWrites = new Map();   // plan file key -> { sessionId, agentId, at }: the last agent that wrote it (hud-0-3 §4.2)
-  const planHistory = new Map();  // planKey -> the plan's last HISTORY_MAX state changes, { at, id, from, to, sessionId, agentId }
-  const boardTrack = new Map();   // itemKey -> { inFlightSince, lastInFlightAt, changedAt, on }: the marks' clocks, in memory
-  let externalError = null;
-  let account = null;             // 5-hour and weekly usage from Claude Code's own cache in ~/.claude.json (of the first folder that has one)
+  const { pushFeed, feedTool, forget, remember } = createFeed(appendFeed);
+  const { rootFor, planFileKey } = createProjectSource();
+  const boardTrack = new Map();
+  const liveAlerts = new Map();
+  const planState = createPlanState({ boardTrack, agentLabel, pushFeed, clock: Date.now });
+  const planFiles = createPlanFiles({
+    lifetime, parseCandidate: parsePlanCandidate,
+    onScan(key, root, candidates) {
+      planState.applyScan(key, root, selectPlanFiles(candidates));
+      scheduleState();
+    },
+    onDrop: planState.dropRoot,
+  });
+  let account = null;
   let hooksInstalled = false;
+  const accountSource = createAccountSource({
+    roots: ROOTS, lifetime, isOurHook,
+    onAccount(value) {
+      account = accountView(value, Date.now());
+      scheduleState();
+    },
+    onSettings(value) {
+      hooksInstalled = value;
+      scheduleState();
+    },
+  });
+  const externalUsage = createExternalUsage(redact);
+  const externalUsageSource = createExternalUsageSource({
+    region: bedrockRegion, lifetime,
+    onRows(rows) {
+      externalUsage.replaceCloudWatch(rows);
+      scheduleState();
+    },
+    onError(error) {
+      externalUsage.setError(error);
+      scheduleState();
+    },
+  });
+  const phonePush = createPhonePush({ url: config.pushUrl, lifetime, redact, onChange: scheduleState });
   let demo = null;
 
   const startedAt = () => hudStartedAt;
@@ -142,7 +158,7 @@ function createEngine(config, demoMode, lifetime, publisher) {
   const sessions = createSessions({
     startedAt, timeout: lifetime.timeout, isAlive: pidAlive, pushFeed, closeSub, onChange: scheduleState,
     onResume(s) { s.chainChecked = false; queueChain(s); },
-    onReopen(s) { feedSeen.delete('end:' + s.id); },
+    onReopen(s) { forget('end:' + s.id); },
   });
   const { getSession, findSession, listSessions, settle, askResume, sessionLine, endSession, reopenSession, dropSession } = sessions;
   const registry = createClaudeRegistry({ roots: ROOTS, hostname: HOSTNAME, lifetime, processLookup, reconcile: reconcileRegistry });
@@ -182,51 +198,13 @@ function createEngine(config, demoMode, lifetime, publisher) {
     }),
   });
 
-  function pushFeed(s, kind, text, at = Date.now(), dedupeKey = null, action = null) {
-    if (dedupeKey) { if (feedSeen.has(dedupeKey)) return; feedSeen.add(dedupeKey); capSet(feedSeen, 5000); }
-    const line = { at: Math.min(at, Date.now()), sessionId: s?.id ?? null, project: s?.project ?? null, kind, text: truncate(oneLine(text), 200) };
-    if (action) line.action = action;
-    appendFeed(line);
-  }
-
-  // ---------------------------------------------------------------------------------------------------------------------
-  // Project roots (walk up from the session cwd to the folder with .git; a worktree belongs to its main repository)
-
-  function rootFor(cwd) {
-    const key = cwd.toLowerCase();
-    let r = rootCache.get(key);
-    if (r) return r;
-    let dir = path.resolve(cwd), root = null, mainRoot = null;
-    for (let i = 0; i < 40; i++) {
-      const git = path.join(dir, '.git');
-      let st = null;
-      try { st = fs.statSync(git); } catch {}
-      if (st) {
-        root = dir; mainRoot = dir;
-        if (st.isFile()) {
-          const m = /gitdir:\s*(.+)/.exec(fs.readFileSync(git, 'utf8'));
-          const wt = m && m[1].trim().split(/[\\/]\.git[\\/]worktrees[\\/]/);
-          if (wt && wt.length > 1) mainRoot = path.resolve(dir, wt[0]);
-        }
-        break;
-      }
-      const up = path.dirname(dir);
-      if (up === dir) break;
-      dir = up;
-    }
-    root ??= path.resolve(cwd);
-    mainRoot ??= root;
-    r = { root, mainRoot, project: path.basename(mainRoot) || mainRoot };
-    rootCache.set(key, r);
-    return r;
-  }
   function setCwd(s, cwd) {
     if (!cwd || s.cwd === cwd) return;
     s.cwd = cwd;
     const r = rootFor(cwd);
     s.project = r.project;
-    ensureRoot(r.root, r.project);
-    if (r.mainRoot !== r.root) ensureRoot(r.mainRoot, r.project);
+    planFiles.ensureRoot(r.root, r.project);
+    if (r.mainRoot !== r.root) planFiles.ensureRoot(r.mainRoot, r.project);
   }
 
   // Source events are applied here before publication.
@@ -236,7 +214,7 @@ function createEngine(config, demoMode, lifetime, publisher) {
       if (key) {
         const at = ts || Date.now();
         noteTouched(t.info.touched, id, key, name !== 'Read', at);
-        if (name !== 'Read') noteWrite(key, t.owner?.session.id ?? t.info.sessionId, t.owner ? t.owner.agentId : t.info.agentId, at);
+        if (name !== 'Read') planState.noteWrite(key, t.owner?.session.id ?? t.info.sessionId, t.owner ? t.owner.agentId : t.info.agentId, at);
       }
     }
     if (ts >= hudStartedAt - 2000 && t.owner) {
@@ -357,13 +335,7 @@ function createEngine(config, demoMode, lifetime, publisher) {
 
   function setNeedsYou(s, reason, kind, at, agentId) {
     const first = markNeedsYou(s, reason, kind, at, agentId);
-    if (first && !s.ended && at >= hudStartedAt) void sendPhonePush(s, kind);
-  }
-
-  function feedTool(s, sub, id, name, summary, at) {
-    const who = sub ? `${sub.type || 'agent'} › ` : '';
-    if (AGENT_TOOLS.has(name)) pushFeed(s, 'agent', `${who}Agent started · ${summary}`, at, id ? `tool:${id}` : null);
-    else pushFeed(s, 'tool', `${who}${name}${summary ? ` · ${summary}` : ''}`, at, id ? `tool:${id}` : null);
+    if (first && !s.ended && at >= hudStartedAt) events.emit('needs-you', s, kind);
   }
 
   function poll() {
@@ -391,462 +363,17 @@ function createEngine(config, demoMode, lifetime, publisher) {
         if (silentAt !== null) closeSub(s, sub, silentAt);
       }
     }
-    for (const [key, r] of roots) {
-      if (![...listSessions()].some(s => s.project === r.project)) dropRoot(key);
-      else if (now - r.lastScanAt >= PLAN_POLL_MS) scanRoot(key);
-    }
+    planFiles.poll(new Set([...listSessions()].map(s => s.project)), now);
     scheduleState();
   }
 
-  // =====================================================================================================================
-  // Plans: status, plan, rollout and handoff boards under docs/ or Documentation/ of a project the HUD sees, plus
-  // small plans (docs/plans/<slug>.md). A "board" is any table with an id column first and a State or Status column.
-  // Covers the standard's board (workflow/STANDARD.md §5: ID | Item | Agent | Depends on | Model / effort | State |
-  // Since | Handoff | Notes, with Runs, Decisions (P0) and Questions), and the formats in use before it: the
-  // WasteManagement2 board ("Waits for" in Notes), FidiaCRM's chunk board and the ImPOS-Maui Phase | State tables.
-
-  const PLAN_TOP_DIRS = ['docs', 'Documentation', 'doc'];
-  const PLAN_FILE_RE = /^(?:.*[-_])?(?:status|plan)\.md$|^(?:handoff|rollout)\.md$/i;
-  const PLAN_SKIP_DIRS = new Set(['_template', 'node_modules', 'bin', 'obj', 'handoff', 'handoffs', 'archive', 'archives', '.git']);
-  const BOARD_HEADER = '| ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |';
-  const COLUMN_ROLES = [
-    ['id', /^(phase|chunk|run|step|slice|stage|id|#|task|milestone|item)$/],
-    ['name', /^(title|name|what|what it is|input|goal|summary|part|item|job|work|description)$/],
-    ['agent', /^(agent|owner|who|assignee)$/],
-    ['state', /^(state|status)$/],
-    ['since', /^(since|started|date)$/],
-    ['deps', /^(depends on|dependencies|waits for|after|requires|prerequisites|blocked by|start when|needs)$/],
-    ['notes', /^(notes?|comments?)$/],
-    ['handoff', /^handoffs?$/],
-    ['modelEffort', /^model\s*[/,·]\s*effort$/],
-    ['model', /^model$/],
-    ['effort', /^effort$/],
-    ['chunks', /^(chunks?|items?)(,? in order)?$/],
-    ['lane', /^lane$/],
-  ];
-
-  function cleanCell(c) {
-    return oneLine(str(c)
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<br\s*\/?>/gi, ' ')
-      .replace(/<[^>]+>/g, '')
-      .replace(/\*\*|__|`/g, ''));
-  }
-  function splitRow(line) {
-    let s = line.trim();
-    if (s.startsWith('|')) s = s.slice(1);
-    if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
-    const cells = [];
-    let cur = '', tick = false;
-    for (let k = 0; k < s.length; k++) {
-      const ch = s[k];
-      if (ch === '\\' && s[k + 1] === '|') { cur += '|'; k++; continue; }
-      if (ch === '`') tick = !tick;
-      if (ch === '|' && !tick) { cells.push(cur.trim()); cur = ''; continue; }
-      cur += ch;
-    }
-    cells.push(cur.trim());
-    return cells;
-  }
-  function parseIdCell(cell) {
-    const m = /^([A-Za-z]{0,4}-?\d+(?:[-.]\d+)*[a-z]?)(?![\w])\s*[:.)\-–—]?\s*(.*)$/.exec(cell);
-    return m ? { id: m[1], rest: m[2] } : { id: truncate(cell, 40), rest: cell };
-  }
-  function normalizeState(raw) {
-    const t = raw.toLowerCase().trim();
-    if (!t || t === '—' || t === '-') return 'todo';
-    if (/\bbounced\b/.test(t)) return 'bounced';
-    if (/\bblocked\b/.test(t)) return 'blocked';
-    if (/\baccepted\b/.test(t)) return 'accepted';
-    if (/\bhanded[- ]?off\b/.test(t)) return 'handed-off';
-    if (/\bin[- ]progress\b|^(started|working|building|active|running|doing)\b/.test(t)) return 'in-progress';
-    if (/\bpartial(ly)?\b/.test(t)) return 'partial';
-    if (/^(done|complete|completed|finished|built|merged|shipped|confirmed|in)\b/.test(t)) return 'done';
-    if (/^(todo|to do|not started|planned|pending|open|waiting|ready|next|later)\b/.test(t)) return 'todo';
-    if (/\bdone\b/.test(t)) return 'partial';
-    return 'unknown';
-  }
-  function splitModelEffort(v) {
-    const t = cleanCell(v);
-    if (!t || /^(?:[—-]|owner|human)$/i.test(t)) return { model: null, effort: null };
-    const [m, e] = t.split(/[/,·]/).map(x => x.trim());
-    return { model: m || null, effort: e || null };
-  }
-  function extractRefs(text, known, self) {
-    if (!text || !known.length) return [];
-    const re = new RegExp(`(?<![A-Za-z0-9-])(${known.map(k => k.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')).join('|')})(?![A-Za-z0-9]|-\\d)`, 'g');
-    const hits = [...text.matchAll(re)];
-    const out = [];
-    const push = id => { if (id !== self && !out.includes(id)) out.push(id); };
-    for (let i = 0; i < hits.length; i++) {
-      const a = hits[i], b = hits[i + 1];
-      const between = b ? text.slice(a.index + a[0].length, b.index) : '';
-      const pa = /^(.*?)(\d+)$/.exec(a[1]), pb = b && /^(.*?)(\d+)$/.exec(b[1]);
-      if (b && /^\s*(–|—|-|to|through|\.\.)\s*$/.test(between) && pa && pb && pa[1] === pb[1]) {
-        const lo = Number(pa[2]), hi = Number(pb[2]);
-        for (const k of known) { const pk = /^(.*?)(\d+)$/.exec(k); if (pk && pk[1] === pa[1] && Number(pk[2]) >= lo && Number(pk[2]) <= hi) push(k); }
-        i++;
-        continue;
-      }
-      push(a[1]);
-    }
-    return out;
-  }
-
-  /** The plan header line (STANDARD §4.1): `Status: **<state>**`, with the date that may follow the state. */
-  function planHeader(text) {
-    const m = /^Status:\s*\*\*([^*]+)\*\*\s*(\d{4}-\d{2}-\d{2})?/m.exec(text.split(/\r?\n/, 30).join('\n'));
-    return m ? { state: m[1].trim().toLowerCase(), date: m[2] || null } : null;
-  }
-
-  function parsePlan(text, file, root, project, planText = null) {
-    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
-    let title = null, section = '', fence = false, inLog = false, standard = false;
-    const tables = [], log = [], decisions = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
-      if (fence) continue;
-      const h = /^(#{1,6})\s+(.*)$/.exec(line);
-      if (h) {
-        const txt = cleanCell(h[2]);
-        if (h[1].length === 1) title ??= txt;
-        else { section = txt; inLog = /^log\b/i.test(txt); }
-        continue;
-      }
-      if (inLog && /^\s*[-*]\s+/.test(line)) { log.push(cleanCell(line.replace(/^\s*[-*]\s+/, ''))); continue; }
-      const box = /^decisions\b/i.test(section) && /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/.exec(line);
-      if (box) {
-        const body = cleanCell(box[2]);
-        decisions.push({ id: (/^(D\d+)\b/.exec(body) || [])[1] || null, text: truncate(body, 200), ticked: box[1] !== ' ' });
-        continue;
-      }
-      if (line.trimStart().startsWith('|') && /^\s*\|[\s:|-]+$/.test(lines[i + 1] || '') && lines[i + 1].includes('-')) {
-        if (/^board$/i.test(section) && line.trim() === BOARD_HEADER) standard = true;
-        const header = splitRow(line).map(c => cleanCell(c).toLowerCase());
-        const rows = [];
-        for (i += 2; i < lines.length && lines[i].trimStart().startsWith('|'); i++) rows.push(splitRow(lines[i]));
-        i--;
-        tables.push({ section, header, rows });
-      }
-    }
-
-    // Unanswered questions: a Questions table row whose Answer cell is empty (STANDARD §5, §17).
-    const questions = [];
-    for (const tb of tables) {
-      const q = tb.header.indexOf('question'), a = tb.header.indexOf('answer');
-      if (!/^questions\b/i.test(tb.section) || q < 0 || a < 0) continue;
-      for (const row of tb.rows) {
-        const ask = cleanCell(row[q]);
-        if (ask && !/^[—-]?$/.test(cleanCell(row[a]))) continue;
-        if (ask) questions.push({ id: cleanCell(row[0]) || null, item: cleanCell(row[tb.header.indexOf('item')]) || null, text: truncate(ask, 300) });
-      }
-    }
-
-    const phases = [], runs = [], byId = new Map(), enrich = [];
-    for (const tb of tables) {
-      const col = {};
-      tb.header.forEach((h, k) => { for (const [role, re] of COLUMN_ROLES) if (re.test(h) && col[role] === undefined && (role !== 'id' || k === 0)) col[role] = k; });
-      // Numbered rollout boards have both a step reference and a human-readable job.
-      const job = tb.header.indexOf('job'), step = tb.header.indexOf('step');
-      if (job >= 0) col.name = job;
-      if (col.id !== 0 || /^questions\b/i.test(tb.section)) continue;
-      const head = tb.header[0];
-      const tableKind = head === 'run' ? 'run' : head === 'chunk' ? 'chunk' : /^(phase|step|stage|slice)$/.test(head) ? 'phase'
-        : (/input/i.test(tb.section) || tb.header[col.name] === 'input') ? 'input' : 'item';
-      const group = tb.section.replace(/\s+[—-]\s+\S+\.md$/i, '');
-      const isBoard = col.state !== undefined;
-      for (const row of tb.rows) {
-        const cell = k => (k === undefined ? '' : cleanCell(row[k]));
-        const idc = parseIdCell(cell(0));
-        if (!idc.id) continue;
-        const kind = tableKind === 'item' && /^O-\d+$/.test(idc.id) ? 'input' : tableKind;
-        const me = col.modelEffort !== undefined ? splitModelEffort(row[col.modelEffort]) : { model: cell(col.model) || null, effort: cell(col.effort) || null };
-        if (!isBoard) { if (me.model || me.effort) enrich.push({ id: idc.id, ...me }); continue; }
-        const stateRaw = cell(col.state);
-        const since = cell(col.since) || (/(\d{4}-\d{2}-\d{2})/.exec(stateRaw) || [])[1] || null;
-        const node = {
-          id: idc.id,
-          name: truncate([step > 0 ? cell(step) : '', cell(col.name) || idc.rest || idc.id].filter(Boolean).join(' · '), 140),
-          agent: cell(col.agent) || null,
-          state: normalizeState(stateRaw),
-          stateRaw: truncate(stateRaw, 160),
-          since: since && !/^[—-]$/.test(since) ? since : null,
-          waitsFor: [],
-          notes: truncate(cell(col.notes), 300) || null,
-          group: group || null,
-          kind,
-          model: me.model && !/^[—-]$/.test(me.model) ? me.model : null,
-          effort: me.effort,
-          handoff: !!cell(col.handoff) && !/^[—-]$/.test(cell(col.handoff)),   // hud-0-3 P4: a handoff is linked ("—" says none will be)
-          _deps: [cell(col.deps), (/waits? for\s+([^·;]+)/i.exec(cell(col.notes)) || [])[1] || ''].join(' '),
-          _chunks: cell(col.chunks),
-          lane: cell(col.lane) || null,
-        };
-        if (byId.has(node.id)) continue;
-        byId.set(node.id, node);
-        (kind === 'run' ? runs : phases).push(node);
-      }
-    }
-    const rel = path.relative(root, file).replace(/\\/g, '/');
-    const small = /^docs\/plans\/[^/]+\.md$/i.test(rel);
-    const header = planHeader(text) ?? planHeader(planText ?? '');
-    if (!phases.length && !runs.length && !(small && header)) return null;
-    for (const e of enrich) { const n = byId.get(e.id); if (n) { n.model ??= e.model; n.effort ??= e.effort; } }
-    const known = [...byId.keys()];
-    const CROSS = /(?<![\w/-])([a-z0-9][\w.-]*)\/([A-Za-z]{0,4}-?\d+(?:-\d+)?)(?![\w-])/g;
-    for (const n of [...phases, ...runs]) {
-      n.waitsForOther = [...n._deps.matchAll(CROSS)].map(m => `${m[1]}/${m[2]}`);   // `<slug>/<ID>` in another plan
-      n.waitsFor = extractRefs(n._deps.replace(CROSS, ' '), known, n.id);
-      if (n.kind === 'run') { n.chunks = extractRefs(n._chunks, known, n.id); n.startWhen = truncate(n._deps.trim(), 200) || null; }
-      delete n._deps; delete n._chunks;
-      if (n.kind !== 'run') delete n.lane;
-    }
-    const slug = (/^docs\/plans\/([^/]+)\/status\.md$/i.exec(rel) || /^docs\/plans\/([^/]+)\.md$/i.exec(rel) || [])[1] || rel.replace(/\.md$/i, '');
-    let t = (title || slug).replace(/^plan:\s*/i, '').replace(/:\s*(status( and handoffs?)?|handoffs?\b.*)$/i, '').trim();
-    if (!t || /^(chunk\s+)?status(\s+board)?$/i.test(t)) t = path.basename(path.dirname(file));
-    const openDecisions = decisions.filter(d => !d.ticked).map(({ id, text: dt }) => ({ id, text: dt }));
-    return {
-      project, slug, title: t, path: file, format: standard ? 'standard' : 'legacy', size: small ? 'small' : 'phased',
-      state: header?.state ?? null, stateDate: header?.date ?? null,
-      phases, runs,
-      needsYou: [...openDecisions.map(d => ({ kind: 'decision', id: d.id, text: d.text })), ...questions.map(q => ({ kind: 'question', id: q.id, item: q.item, text: q.text }))],
-      lastLog: log.slice(-5).map(l => truncate(l, 240)),
-    };
-  }
-
-  /**
-   * The board file of a parsed plan, relative to its project root, rebuilt from the slug parsePlan() gave it (a phased
-   * plan `docs/plans/<slug>/STATUS.md`, a small one `docs/plans/<slug>.md`, any other board `<slug>.md`). Lower-cased,
-   * with forward slashes: `planFile(p)` is the same key planFileKey() makes from a path an agent read or wrote.
-   */
-  function planFile(p) {
-    const rel = p.slug.includes('/') ? `${p.slug}.md` : p.size === 'small' ? `docs/plans/${p.slug}.md` : `docs/plans/${p.slug}/STATUS.md`;
-    return `${p.project}|${rel}`.toLowerCase();
-  }
-  const planKeyOf = p => `${p.project}|${p.slug}`;   // PLAN hud-0-3 §4.1, the key renderPlans uses
-
-  function ensureRoot(root, project) {
-    const key = root.toLowerCase();
-    if (roots.has(key)) return;
-    const rec = { root, project, watchers: new Map(), timer: null, scanning: false, scanAgain: false, lastScanAt: 0 };
-    roots.set(key, rec);
-    scanRoot(key);
-  }
-  function watchPlanDirs(key, rec) {
-    for (const top of PLAN_TOP_DIRS) {
-      const dir = path.join(rec.root, top);
-      if (rec.watchers.has(dir) || !fs.existsSync(dir)) continue;
-      try {
-        const w = lifetime.watch(dir, { recursive: true }, (e, f) => { if (e === 'rename' || !f || /\.md$/i.test(f)) scheduleRootScan(key); });
-        if (!w) return;
-        w.on('error', () => { w.close(); rec.watchers.delete(dir); });
-        rec.watchers.set(dir, w);
-      } catch {}
-    }
-  }
-  function scheduleRootScan(key) {
-    const rec = roots.get(key);
-    if (!rec || rec.timer) return;
-    rec.timer = lifetime.timeout(() => { rec.timer = null; scanRoot(key); }, 400);
-  }
-  function dropRoot(key) {
-    const rec = roots.get(key);
-    if (!rec) return;
-    for (const w of rec.watchers.values()) try { w.close(); } catch {}
-    lifetime.clearTimer(rec.timer);
-    roots.delete(key);
-    for (const [k, v] of plans) if (v.rootKey === key) plans.delete(k);
-  }
-  const scanRoot = lifetime.task(async function (key) {
-    const rec = roots.get(key);
-    if (!rec) return;
-    if (rec.scanning) { rec.scanAgain = true; return; }
-    rec.scanning = true;
-    try {
-      watchPlanDirs(key, rec);
-      await readRootPlans(key, rec);
-    } finally {
-      rec.lastScanAt = Date.now();
-      rec.scanning = false;
-      if (rec.scanAgain && roots.get(key) === rec) { rec.scanAgain = false; scheduleRootScan(key); }
-    }
-  });
-  async function readRootPlans(key, rec) {
-    const files = [];
-    const walk = async (dir, depth) => {
-      if (lifetime.signal.aborted) return;
-      let ents;
-      try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
-      const smallPlans = depth === 1 && path.basename(dir).toLowerCase() === 'plans';
-      for (const e of ents) {
-        if (e.isDirectory()) { if (depth < 4 && !PLAN_SKIP_DIRS.has(e.name.toLowerCase()) && !e.name.startsWith('.')) await walk(path.join(dir, e.name), depth + 1); }
-        else if (PLAN_FILE_RE.test(e.name) || (smallPlans && /\.md$/i.test(e.name))) files.push(path.join(dir, e.name));
-      }
-    };
-    for (const top of PLAN_TOP_DIRS) await walk(path.join(rec.root, top), 0);
-    const info = await projectInfo(rec.root);
-    const candidates = new Map();
-    for (const f of files) {
-      if (lifetime.signal.aborted) return;
-      let st, text, planText = null;
-      try { st = await fsp.stat(f); text = await fsp.readFile(f, 'utf8'); } catch { continue; }
-      if (/status\.md$/i.test(f)) { try { planText = await fsp.readFile(path.join(path.dirname(f), 'PLAN.md'), 'utf8'); } catch {} }
-      const plan = parsePlan(text, f, rec.root, rec.project, planText);
-      if (plan) candidates.set(f.toLowerCase(), { plan, mtime: st.mtimeMs, text });
-    }
-    // A STATUS board takes precedence over its companion design plan. An explicit supersession only
-    // hides a board when its replacement was actually read and contains a usable board.
-    const hidden = new Set();
-    for (const [file, candidate] of candidates) {
-      if (/[/\\]plan\.md$/i.test(file) && candidates.has(path.join(path.dirname(file), 'STATUS.md').toLowerCase())) hidden.add(file);
-      const replacement = /\bsuperseded by\s+(?:\*\*)?\[([^\]]+)\]\(([^)]+)\)/i.exec(candidate.text);
-      if (!replacement) continue;
-      const target = path.resolve(path.dirname(file), replacement[2].split('#')[0]).toLowerCase();
-      if (target !== file && candidates.has(target)) hidden.add(file);
-    }
-    if (roots.get(key) !== rec) return;   // a dropped root cannot publish the result of an old scan
-    rec.info = info;
-    const found = new Set();
-    for (const [file, { plan, mtime }] of candidates) {
-      if (hidden.has(file)) continue;
-      const pkey = `${rec.project}|${path.relative(rec.root, plan.path)}`.toLowerCase();
-      found.add(pkey);
-      const prev = plans.get(pkey);
-      if (prev && prev.rootKey !== key && prev.mtime > mtime) continue;   // a newer copy in another worktree
-      if (prev) diffPlan(prev.plan, plan);
-      plans.set(pkey, { plan, mtime, rootKey: key });
-    }
-    for (const [k, v] of plans) if (v.rootKey === key && !found.has(k)) plans.delete(k);
-    scheduleState();
-  }
-  // The project's headline (the first section of docs/status.md) and the CLAUDE.md Workflow and Git lines (STANDARD §17).
-  async function projectInfo(root) {
-    const read = async f => { try { return await fsp.readFile(path.join(root, f), 'utf8'); } catch { return null; } };
-    const status = await read('docs/status.md');
-    const claude = await read('CLAUDE.md');
-    let headline = null;
-    if (status) {
-      const m = /^##\s+The project in one paragraph\s*$([\s\S]*?)(?=^#{1,2}\s|(?![\s\S]))/im.exec(status);
-      headline = m ? truncate(oneLine(cleanCell(m[1])), 300) || null : null;
-    }
-    const git = claude && (/^\*\*Git:\*\*\s*(you commit|agents commit per item)/im.exec(claude) || [])[1];
-    return { headline, standard: !!claude && /^\*\*Workflow:\*\*.*standard/im.test(claude), git: git ? git.toLowerCase() : null };
-  }
-
-  /**
-   * Feeds each state change, and records it in the plan's history (hud-0-3 §4.2). A change seen within PLAN_WRITE_MS of
-   * an agent writing the board file is that agent's: "claimed by <title>" when it moved the item to in-progress.
-   */
-  function diffPlan(a, b, now = Date.now()) {
-    const old = new Map([...a.phases, ...a.runs].map(n => [n.id, n.state]));
-    const w = planWrites.get(planFile(b));
-    const by = w && now - w.at <= PLAN_WRITE_MS ? w : null;
-    const key = planKeyOf(b);
-    for (const n of [...b.phases, ...b.runs]) {
-      const was = old.get(n.id);
-      if (!was || was === n.state) continue;
-      const hist = planHistory.get(key) || [];
-      hist.push({ at: now, id: n.id, from: was, to: n.state, sessionId: by?.sessionId ?? null, agentId: by?.agentId ?? null });
-      if (hist.length > HISTORY_MAX) hist.splice(0, hist.length - HISTORY_MAX);
-      planHistory.set(key, hist);
-      const itemKey = `${key}#${n.id}`;
-      boardTrack.set(itemKey, { ...newTrack(), ...boardTrack.get(itemKey), changedAt: now });
-      const who = by && n.state === 'in-progress' ? agentLabel(by) : null;
-      pushFeed({ id: null, project: b.project }, 'plan', who ? `${b.title}: ${n.id} claimed by ${truncate(oneLine(who), 80)}` : `${b.title}: ${n.id} ${was} → ${n.state}`,
-        now, null, 'item-changed');
-    }
-    const asked = new Set(a.needsYou.map(x => `${x.kind}:${x.id}:${x.text}`));
-    for (const x of b.needsYou) {
-      if (!asked.has(`${x.kind}:${x.id}:${x.text}`)) pushFeed({ id: null, project: b.project }, 'needs-you', `${b.title}: ${x.kind === 'decision' ? 'decision' : 'question'} ${x.id ?? ''} waiting on you`.replace(/\s+/g, ' '));
-    }
-  }
-
-  // =====================================================================================================================
-  // Board following (hud-0-3 D1 to D5, PLAN §4.2). The HUD links agents to board items from evidence and marks where the
-  // board and the agents disagree. It never writes to a board. The evidence is kept raw, as ID-shaped words and plan-file
-  // keys, and resolved during publication: a transcript is often read before its plan. Nothing of it is kept on disk.
-
-  const ID_WORD_RE = /(?<![\w/\\.-])(?:([a-z0-9][\w.-]*)\/)?([A-Z]{1,4}-?\d+(?:-\d+)?)(?![\w-])/g;
-  const PROMPT_NOISE_RE = /<(system-reminder|bash-stdout|bash-stderr|local-command-stdout)>[\s\S]*?<\/\1>/g;
-  const PLAN_TOOLS = new Set(['Read', 'Edit', 'Write', 'MultiEdit']);
-  const PLAN_PATH_RE = /(?:^|[\\/])(?:docs|documentation|doc)[\\/].*\.md$/i;
-  const FINISHED = new Set(['handed-off', 'accepted', 'done']);
-  const OWNER_AGENTS = /^(human|owner)$/i;
-  const MARK_WORDS = { unclaimed: 'board not updated', stalled: 'stalled', early: 'started early' };
-
-  /** ID-shaped words, in text order: `<slug>/<ID>` and bare `<ID>`, an ID being `[A-Z]{1,4}-?\d+(-\d+)?` (runs: R<n>, S<n>). */
-  function idWords(text, max = 200) {
-    const out = [];
-    if (typeof text !== 'string' || !text) return out;
-    for (const m of text.matchAll(ID_WORD_RE)) { out.push(m[1] ? `${m[1]}/${m[2]}` : m[2]); if (out.length >= max) break; }
-    return out;
-  }
-  /**
-   * Adds one prompt's ID-shaped words to holder.refs (prompts, oldest first, each a list of words) and drops the text
-   * (D3). At most REFS_MAX words are kept: bare IDs go first, since they only count as mentions, so a `<slug>/<ID>`
-   * assignment outlives the IDs that later prompts list.
-   */
-  function addPrompt(holder, text) {
-    const words = idWords(typeof text === 'string' ? text.replace(PROMPT_NOISE_RE, ' ') : '');
-    if (!words.length) return;
-    const refs = holder.refs;
-    refs.push(words);
-    let n = refs.reduce((a, p) => a + p.length, 0);
-    for (let i = 0; i < refs.length && n > REFS_MAX; i++) {
-      const p = refs[i];
-      for (let k = 0; k < p.length && n > REFS_MAX;) { if (p[k].includes('/')) k++; else { p.splice(k, 1); n--; } }
-    }
-    while (n > REFS_MAX && refs.length) { refs[0].shift(); n--; if (!refs[0].length) refs.shift(); }
-    for (let i = refs.length - 1; i >= 0; i--) if (!refs[i].length) refs.splice(i, 1);
-  }
-  function promptRefs(text) { const h = { refs: [] }; addPrompt(h, text); return h.refs.length ? h.refs : null; }
-
-  /**
-   * The key of a plan file an agent read or wrote, `<project>|<path from the project root>` lower-cased with forward
-   * slashes, or null outside a docs folder. Either slash and any case give the same key, and a file in a worktree gets
-   * the main repository's project (rootFor), so it belongs to the main repository's plan.
-   */
-  function planFileKey(file, cwd) {
-    file = str(file);
-    if (!file || !PLAN_PATH_RE.test(file)) return null;
-    if (!path.isAbsolute(file)) { if (!cwd) return null; file = path.resolve(cwd, file); }
-    const abs = path.resolve(file);
-    const r = rootFor(path.dirname(abs));
-    const rel = path.relative(r.root, abs).replace(/\\/g, '/');
-    return /^(?:docs|documentation|doc)\//i.test(rel) ? `${r.project}|${rel}`.toLowerCase() : null;
-  }
-  /** Records a plan file an agent read or wrote, once per tool-use id, oldest first, at most TOUCHED_MAX. */
-  function noteTouched(list, id, file, write, at) {
-    if (id && list.some(x => x.id === id)) return;
-    let k = list.length;
-    while (k > 0 && list[k - 1].at > at) k--;
-    list.splice(k, 0, { id: id || null, file, write, at });
-    if (list.length > TOUCHED_MAX) list.splice(0, list.length - TOUCHED_MAX);
-  }
-  function mergeTouched(a, b) {
-    if (!b?.length) return a || [];
-    if (!a?.length) return b;
-    const out = [...a];
-    for (const x of b) if (!x.id || !out.some(y => y.id === x.id)) out.push(x);
-    return out.sort((p, q) => p.at - q.at).slice(-TOUCHED_MAX);
-  }
-  function noteWrite(file, sessionId, agentId, at) {
-    if (!sessionId) return;
-    const prev = planWrites.get(file);
-    if (prev && prev.at > at) return;
-    planWrites.delete(file);
-    planWrites.set(file, { sessionId, agentId: agentId ?? null, at });
-    if (planWrites.size > 500) planWrites.delete(planWrites.keys().next().value);
-  }
   /** A Read, Edit, Write or MultiEdit hook on a plan file. PostToolUse moves the write's time to when it happened. */
   function hookTouch(s, sub, p, id, name, at) {
     if (!PLAN_TOOLS.has(name) || !isObj(p.tool_input)) return;
     const key = planFileKey(p.tool_input.file_path, str(p.cwd) || s.cwd);
     if (!key) return;
     noteTouched((sub || s).touched, id, key, name !== 'Read', at);
-    if (name !== 'Read') noteWrite(key, s.id, sub?.agentId ?? null, at);
+    if (name !== 'Read') planState.noteWrite(key, s.id, sub?.agentId ?? null, at);
   }
   /** Who wrote a board, for its "claimed by" line: a subagent's description, or a session's title. */
   function agentLabel(w) {
@@ -856,451 +383,27 @@ function createEngine(config, demoMode, lifetime, publisher) {
     return s.tail?.info.customTitle || s.tail?.info.title || s.name || null;
   }
 
-  /** The plans, indexed once per snapshot for resolveWork() and boardState(). */
-  function indexPlans(planList) {
-    const list = [], byProject = new Map(), byKey = new Map(), files = new Map(), dirs = new Map();
-    for (const p of planList) {
-      const nodes = new Map();
-      for (const n of [...(p.phases || []), ...(p.runs || [])]) if (!nodes.has(n.id)) nodes.set(n.id, n);
-      const P = { key: planKeyOf(p), slug: p.slug.toLowerCase(), plan: p, nodes, mtime: p.touchedAt || 0 };
-      list.push(P); byKey.set(P.key, P);
-      if (!byProject.has(p.project)) byProject.set(p.project, []);
-      byProject.get(p.project).push(P);
-      const file = planFile(p);
-      files.set(file, P);
-      // A plan folder's PLAN.md and handoffs/ belong to its board; with two boards in one folder, to neither.
-      if (p.size !== 'small') { const dir = file.slice(0, file.lastIndexOf('/')); dirs.set(dir, dirs.has(dir) ? null : P); }
-    }
-    return { list, byProject, byKey, files, dirs };
-  }
-  /** The plan a plan-file key belongs to: its board, or the PLAN.md or a file in handoffs/ next to the board. */
-  function planOfFile(file, ix) {
-    const own = ix.files.get(file);
-    if (own) return own;
-    const cut = file.lastIndexOf('/'), dir = file.slice(0, cut), base = file.slice(cut + 1);
-    if (base === 'plan.md') return ix.dirs.get(dir) || null;
-    const up = dir.lastIndexOf('/');
-    return up > 0 && dir.slice(up + 1) === 'handoffs' ? ix.dirs.get(dir.slice(0, up)) || null : null;
-  }
-  /** A branch `<slug>` or `<slug>/<ID or run>`, maybe followed by `-words`. Branch IDs may be in lower case. */
-  function branchRef(branch) {
-    const m = /^([^/\s]+)(?:\/([A-Za-z]{1,4}-?\d+(?:-\d+)?)(?=$|[-_./](?!\d)))?/.exec(str(branch));
-    return m ? { slug: m[1].toLowerCase(), id: m[2] ? m[2].toUpperCase() : null } : null;
-  }
+  function updateSnapshot(now) {
+    if (demo) return { ...demo.project(now), push: phonePush.status };
 
-  /**
-   * The board items one agent works on (PLAN hud-0-3 §4.2 steps 1 to 3). Pure. `agent` is its evidence: { project,
-   * label (a session's title or a subagent's description), refs (its prompts, oldest first, each a list of ID-shaped
-   * words), touched ([{ file, write, at }], oldest first), branch }. `parentWork` is the work of whoever started it, and
-   * `ix` is indexPlans(). Returns { plan, items: [{ id, via, plan }], role: 'worker' } or null.
-   *
-   * `<slug>/<ID>` words are read from the newest prompt back, so a session given a second item works on that one. An
-   * item outside the home plan keeps its own `plan`; with no home plan, the first item's plan is the agent's plan.
-   */
-  function resolveWork(agent, parentWork, ix) {
-    const cands = ix.byProject.get(agent.project);
-    if (!cands?.length) return null;
-    const bySlug = slug => cands.find(P => P.slug === slug.toLowerCase()) || null;
-    const prompts = agent.refs || [];
-    const slugRefs = [];
-    for (let i = prompts.length - 1; i >= 0; i--) {
-      for (const w of prompts[i]) { const cut = w.indexOf('/'); if (cut > 0) slugRefs.push([w.slice(0, cut), w.slice(cut + 1)]); }
+    const list = publicSessions(listSessions(), now, cwd => rootFor(cwd).project, findSession);
+    // Plan records are independent of session changes. The changing links go out with the board.
+    const plans = planState.views();
+    const { board, turnedOn } = followBoards(liveAgents(list, findSession), plans, {
+      now, track: boardTrack, unclaimedMs, stalledMs, floor: hudStartedAt,
+    });
+    for (const mark of turnedOn) {
+      const key = `mark:${mark.P.key}#${mark.node.id}:${mark.flag}`;
+      if (now - hudStartedAt < STARTUP_MS) remember(key);
+      else pushFeed({ id: null, project: mark.P.plan.project }, 'plan', boardMarkText(mark), now, key);
     }
-    // 2. The home plan: the first match wins.
-    let home = null;
-    for (const [slug] of slugRefs) if ((home = bySlug(slug))) break;
-    if (!home) {
-      let pick = null, write = null;
-      for (const t of agent.touched || []) {
-        const P = planOfFile(t.file, ix);
-        if (!P || !cands.includes(P)) continue;
-        pick = { t, P };
-        if (t.write) write = pick;
-      }
-      if (pick && !pick.t.write && write && pick.t.at - write.t.at <= 10 * 60_000) pick = write;   // a write beats a read made soon after it
-      home = pick?.P ?? null;
-    }
-    const br = branchRef(agent.branch);
-    if (!home && br) home = bySlug(br.slug);
-    if (!home && parentWork?.plan) home = cands.find(P => P.key === parentWork.plan) || null;
-    // 3. The items, at most ITEMS_MAX. A run links itself and its current item (its first chunk not finished).
-    const items = [];
-    const add = (P, id, via) => {
-      const n = P.nodes.get(id);
-      if (!n) return;
-      for (const x of n.kind === 'run' ? [id, (n.chunks || []).find(c => !FINISHED.has(P.nodes.get(c)?.state))] : [id]) {
-        if (x && items.length < ITEMS_MAX && !items.some(i => i.plan === P.key && i.id === x)) items.push({ id: x, via, plan: P.key });
-      }
-    };
-    for (const [slug, id] of slugRefs) { const P = bySlug(slug); if (P?.nodes.has(id)) { add(P, id, 'ref'); break; } }
-    for (const w of idWords(agent.label || '')) {
-      const cut = w.indexOf('/'), id = cut > 0 ? w.slice(cut + 1) : w;
-      let P = cut > 0 ? bySlug(w.slice(0, cut)) : null;
-      if (!P?.nodes.has(id)) {
-        const having = cands.filter(c => c.nodes.has(id));
-        const open = having.filter(c => !FINISHED.has(c.nodes.get(id).state));
-        P = home?.nodes.has(id) ? home : having.length === 1 ? having[0] : open.length === 1 ? open[0] : null;   // else: nothing (D2)
-      }
-      if (P) add(P, id, 'name');
-    }
-    if (br?.id) { const P = bySlug(br.slug); if (P) add(P, br.id, 'branch'); }
-    const plan = home?.key ?? items[0]?.plan ?? null;
-    return plan ? { plan, items, role: 'worker' } : null;
-  }
-  /** Resolves every agent, parents first (step 2.4), then step 4: whoever has a subagent linked in its own plan coordinates. */
-  function linkAgents(agents, ix) {
-    const byKey = new Map(agents.map(e => [e.key, e]));
-    const visit = (e, depth) => {
-      if (e.work !== undefined) return e.work;
-      e.work = null;                        // an agent in a cycle of parents resolves without one
-      const p = e.parent ? byKey.get(e.parent) : null;
-      return (e.work = resolveWork(e, p && depth < 20 ? visit(p, depth + 1) : null, ix));
-    };
-    for (const e of agents) visit(e, 0);
-    for (const e of agents) {
-      const p = e.agentId && e.parent ? byKey.get(e.parent) : null;
-      if (p?.work && e.work?.items.some(i => i.plan === p.work.plan)) p.work.role = 'coordinator';
-    }
-  }
-  function newTrack() { return { inFlightSince: null, lastInFlightAt: 0, changedAt: 0, on: new Set() }; }
-  /**
-   * state.board (PLAN hud-0-3 §4.2, §4.3) from resolved agents: links, marks and lists. `track` keeps each item's clocks
-   * between calls (boardTrack; the demo has its own): when its current unbroken stretch in flight began, when it was last
-   * in flight, when it last changed state (diffPlan), and its marks at the last call. Nothing before `floor` (the HUD's
-   * start) counts, so after a restart `stalled` counts from the restart. Returns { board, turnedOn: [{ P, node, flag }] }.
-   */
-  function boardState(agents, ix, { now, track, unclaimedMs = UNCLAIMED_MS, stalledMs = STALLED_MS, floor = hudStartedAt }) {
-    const items = {}, plans = {}, ready = [], awaiting = [], ownerInputs = [], turnedOn = [];
-    const item = k => (items[k] ??= { agents: [], flags: [], since: null });
-    for (const e of agents) {
-      const w = e.work;
-      if (!w) continue;
-      if (e.active) for (const pk of new Set([w.plan, ...w.items.map(i => i.plan)])) (plans[pk] ??= { active: 0 }).active++;
-      for (const i of w.items) item(`${i.plan}#${i.id}`).agents.push({ sessionId: e.sessionId, agentId: e.agentId, active: e.active, via: i.via, role: w.role });
-    }
-    const live = new Set();
-    for (const P of ix.list) {
-      const std = P.plan.format === 'standard';
-      const inRun = new Set(std ? (P.plan.runs || []).flatMap(r => r.chunks || []) : []);
-      const done = id => !P.nodes.has(id) || FINISHED.has(P.nodes.get(id).state);
-      for (const n of P.nodes.values()) {
-        const k = `${P.key}#${n.id}`;
-        live.add(k);
-        const x = items[k], deps = n.waitsFor || [];
-        const inFlight = !!x && x.agents.some(a => a.active);
-        let t = track.get(k);
-        if (inFlight) { if (!t) track.set(k, (t = newTrack())); t.inFlightSince ??= now; t.lastInFlightAt = now; }
-        else if (t) t.inFlightSince = null;
-        const flags = [];
-        let since = inFlight ? t.inFlightSince : null;
-        if (n.state === 'todo' && inFlight && now - t.inFlightSince >= unclaimedMs) flags.push('unclaimed');
-        if (n.state === 'in-progress' && !inFlight) {
-          since = Math.max(floor, t?.lastInFlightAt || 0, t?.changedAt || 0, P.mtime);
-          if (now - since >= stalledMs) flags.push('stalled');
-        }
-        if ((n.state === 'in-progress' || inFlight) && deps.some(d => !done(d))) flags.push('early');
-        if (x || flags.length) { const it = item(k); it.flags = flags; it.since = since; }
-        if (flags.length || t?.on.size) {
-          if (!t) track.set(k, (t = newTrack()));
-          for (const f of flags) if (!t.on.has(f)) turnedOn.push({ P, node: n, flag: f });
-          t.on = new Set(flags);
-        }
-        if (!std) continue;   // the lists need the standard's states and owner inputs
-        if (n.state === 'handed-off') awaiting.push({ plan: P.key, id: n.id });
-        // Ready: an item to start, or a run. An item that is part of a run starts with its run, not on its own.
-        if (n.state === 'todo' && !inFlight && n.kind !== 'input' && !OWNER_AGENTS.test(n.agent || '') && !inRun.has(n.id) && deps.every(done)) {
-          ready.push({ plan: P.key, id: n.id, run: n.kind === 'run' });
-        }
-        if (n.kind === 'input' && n.state === 'todo') {
-          const unlocks = [];
-          for (const m of P.nodes.values()) if ((m.state === 'todo' || m.state === 'blocked') && m.kind !== 'input' && (m.waitsFor || []).includes(n.id)) unlocks.push(m.id);
-          if (unlocks.length) ownerInputs.push({ plan: P.key, id: n.id, unlocks });
-        }
-      }
-    }
-    for (const k of track.keys()) if (!live.has(k)) track.delete(k);
-    return { board: { items, plans, ready, awaiting, ownerInputs }, turnedOn };
-  }
-  /** Links `agents` (see liveAgents) to the boards of `planList`, puts `work` on each one's view, and builds state.board. */
-  function followBoards(agents, planList, opts) {
-    const ix = indexPlans(planList);
-    linkAgents(agents, ix);
-    for (const e of agents) e.view.work = e.work;
-    return boardState(agents, ix, opts);
-  }
-  /** The evidence of every session and subagent in the state's list (§4.2): parents are keyed `<sessionId>` and `<sessionId>/<id>`. */
-  function liveAgents(list) {
-    const out = [];
-    for (const x of list) {
-      const s = findSession(x.id), info = s?.tail?.info;
-      out.push({ key: x.id, parent: x.startedBy || null, sessionId: x.id, agentId: null, view: x, project: x.project,
-        label: x.title, refs: info?.refs, touched: mergeTouched(info?.touched, s?.touched), branch: x.branch,
-        active: x.status === 'busy' || x.status === 'needs-you' });
-      for (const a of x.subagents || []) {
-        const sub = s && (s.byAgent.get(a.id) || s.byToolUse.get(a.id));
-        const own = sub ? sub.tail?.info : findSession(a.id)?.tail?.info;   // or a Codex child session drawn as a subagent
-        out.push({ key: `${x.id}/${a.id}`, parent: a.parentId === x.id ? x.id : `${x.id}/${a.parentId}`, sessionId: x.id, agentId: a.id,
-          view: a, project: x.project, label: a.description, refs: sub ? sub.refs || own?.refs : null,
-          touched: sub ? mergeTouched(own?.touched, sub.touched) : [], branch: own?.branch || x.branch, active: a.state === 'running' });
-      }
-    }
-    return out;
-  }
-  /** A mark that turns on writes one feed line, once per item and mark (D4). Marks already on at start are not news. */
-  function announceMarks(turnedOn, now) {
-    for (const { P, node, flag } of turnedOn) {
-      const key = `mark:${P.key}#${node.id}:${flag}`;
-      if (now - hudStartedAt < STARTUP_MS) { feedSeen.add(key); continue; }
-      pushFeed({ id: null, project: P.plan.project }, 'plan', `${P.plan.title}: ${node.id} ${MARK_WORDS[flag]}`, now, key);
-    }
-  }
-
-  // =====================================================================================================================
-  // Account usage (5-hour and weekly limits): Claude Code caches it in ~/.claude.json. Only that key is used.
-
-  const readAccount = lifetime.task(async function () {
-    let u = null, halfWritten = false;
-    for (const root of ROOTS) {      // a Bedrock folder has no subscription usage; the first folder that has it is the account
-      try { u = JSON.parse((await fsp.readFile(root.json, 'utf8')).replace(/^\uFEFF/, ''))?.cachedUsageUtilization; } catch (e) { if (e instanceof SyntaxError) halfWritten = true; }
-      if (isObj(u)) break;
-    }
-    if (!isObj(u) && halfWritten) return;   // keep the last value
-    const win = w => {
-      if (!isObj(w) || !Number.isFinite(w.utilization)) return null;
-      const resetsAt = Date.parse(w.resets_at) || null;
-      return { pct: resetsAt && resetsAt < Date.now() ? null : Math.round(w.utilization * 10) / 10, resetsAt };
-    };
-    account = isObj(u) ? { fiveHour: win(u.utilization?.five_hour), sevenDay: win(u.utilization?.seven_day), fetchedAt: num(u.fetchedAtMs) || null } : null;
-    scheduleState();
-  });
-  function readSettingsFlags() {
-    for (const root of ROOTS) {
-      const j = readJsonSync(root.settings);
-      const v = j?.env?.CLAUDE_CODE_USE_BEDROCK;
-      root.bedrock = v === true || v === 1 || /^(1|true|yes)$/i.test(String(v ?? ''));
-      root.hooks = isObj(j?.hooks) && Object.values(j.hooks).some(arr => Array.isArray(arr) && arr.some(g => Array.isArray(g?.hooks) && g.hooks.some(isOurHook)));
-    }
-    hooksInstalled = ROOTS.every(r => r.hooks);   // one folder without the hooks is enough to show "Hooks off"
-    scheduleState();
-  }
-
-  // =====================================================================================================================
-  // External Bedrock usage (D12). Both sources are off unless switched on by environment variable.
-
-  function onUsage(j) {
-    if (!isObj(j)) return [400, 'body must be a JSON object'];
-    // Redact before cutting to length, so a secret is never cut short of what the patterns recognise.
-    const app = truncate(oneLine(redact(str(j.app).trim())), 80);
-    const model = truncate(redact(str(j.model).trim()), 160);
-    if (!app) return [400, '`app` is required'];
-    if (!model) return [400, '`model` is required'];
-    const tok = zero();
-    for (const k of Object.keys(tok)) {
-      const v = j[k] ?? 0;
-      if (!Number.isInteger(v) || v < 0 || v > 1e9) return [400, `\`${k}\` must be a whole number from 0 to 1000000000`];
-      tok[k] = v;
-    }
-    let at = Date.now();
-    if (j.at != null) {
-      at = typeof j.at === 'number' ? j.at : Date.parse(j.at);
-      if (!Number.isFinite(at)) return [400, '`at` must be epoch milliseconds or an ISO date'];
-    }
-    const key = `ingest\u0000${app}\u0000${model}`;
-    let row = external.get(key);
-    if (!row) {
-      if ([...external.values()].filter(r => r.source === 'ingest').length >= EXTERNAL_ROWS_MAX) return [429, 'too many app and model rows'];
-      const mi = normalizeModel(model);
-      row = { source: 'ingest', app, provider: 'unknown', model: mi.model, modelRaw: model, tokens: zero(), windowStart: at, windowEnd: at, delayed: false };
-      external.set(key, row);
-    }
-    row.provider = ['anthropic', 'bedrock'].includes(j.provider) ? j.provider : normalizeModel(model).provider;
-    addTokens(row.tokens, tok);
-    row.windowStart = Math.min(row.windowStart, at);
-    row.windowEnd = Math.max(row.windowEnd, at);
-    scheduleState();
-    return [204, ''];
-  }
-
-  function pollCloudWatch() {
-    const end = Date.now(), start = startOfDay(end);
-    const period = Math.max(60, Math.ceil((end - start) / 60_000) * 60);
-    const metrics = [['InputTokenCount', 'input'], ['OutputTokenCount', 'output'], ['CacheReadInputTokenCount', 'cacheRead'], ['CacheWriteInputTokenCount', 'cacheWrite']];
-    const queries = metrics.map(([m], i) => ({ Id: `q${i}`, Expression: `SEARCH('{AWS/Bedrock,ModelId} MetricName="${m}"', 'Sum', ${period})`, ReturnData: true }));
-    const args = ['cloudwatch', 'get-metric-data', '--region', BEDROCK_REGION, '--start-time', new Date(start).toISOString(),
-      '--end-time', new Date(end).toISOString(), '--metric-data-queries', JSON.stringify(queries), '--output', 'json'];
-    lifetime.exec('aws', args, { timeout: 10_000, windowsHide: true, maxBuffer: 8 << 20 }, (err, out, errOut) => {
-      if (lifetime.signal.aborted) return;
-      try {
-        if (err) throw new Error(err.code === 'ENOENT' ? 'aws CLI not found' : oneLine(errOut) || err.message);
-        const res = JSON.parse(out);
-        const rows = new Map();
-        for (const r of res.MetricDataResults || []) {
-          const metric = metrics[Number(String(r.Id).slice(1))];
-          if (!metric) continue;
-          const modelId = str(r.Label).replace(new RegExp(`\\s*${metric[0]}\\s*$`), '').trim() || 'unknown';
-          let row = rows.get(modelId);
-          if (!row) {
-            const mi = normalizeModel(modelId);
-            row = { source: 'cloudwatch', app: null, provider: 'bedrock', model: mi.model, modelRaw: modelId, tokens: zero(), windowStart: start, windowEnd: end, delayed: true };
-            rows.set(modelId, row);
-          }
-          row.tokens[metric[1]] += (r.Values || []).reduce((a, v) => a + num(v), 0);
-        }
-        for (const k of [...external.keys()]) if (k.startsWith('cloudwatch\u0000')) external.delete(k);
-        for (const [m, row] of rows) external.set(`cloudwatch\u0000${m}`, row);
-        externalError = null;
-      } catch (e) {
-        externalError = truncate(`CloudWatch: ${oneLine(e.message)}`, 200);
-      }
-      scheduleState();
+    const alerts = alertsFor(list, account, now, liveAlerts, x => currentSessionTool(findSession(x.id), now));
+    return projectLiveSnapshot({
+      now, startedAt: hudStartedAt, host: HOSTNAME, hooksInstalled, codex: codex.monitoring(),
+      sessions: list, projects: projectsView(planFiles.roots()), plans, board, alerts, account,
+      externalUsage: externalUsage.view(), push: phonePush.status, tokensToday: dailyTokens(reader.values(), now),
     });
   }
-
-  // =====================================================================================================================
-  // State snapshot (PLAN §4.4)
-
-  const STATUS_ORDER = { 'needs-you': 0, busy: 1, idle: 2, ended: 3 };
-  function totalsFor(list, planList, tokensToday) {
-    const live = list.filter(x => x.status !== 'ended');
-    const subagentsRunning = live.reduce((n, x) => n + x.subagents.filter(a => a.state === 'running').length, 0);
-    return {
-      sessions: live.length,
-      needsYou: live.filter(x => x.status === 'needs-you').length,
-      busy: live.filter(x => x.status === 'busy').length,
-      subagentsRunning,
-      agentsRunning: live.filter(x => x.status === 'busy' || x.status === 'needs-you').length + subagentsRunning,
-      tokensToday,
-      plansInProgress: planList.filter(p => [...p.phases, ...p.runs].some(n => n.state === 'in-progress')).length,
-      plansNeedingYou: planList.filter(p => p.needsYou?.length).length,
-    };
-  }
-  function projectsView() {
-    const out = new Map();
-    for (const r of roots.values()) {
-      const prev = out.get(r.project);
-      if (prev && (prev.headline || !r.info?.headline)) continue;
-      out.set(r.project, { project: r.project, root: r.root, headline: r.info?.headline ?? null, standard: r.info?.standard ?? false, git: r.info?.git ?? null });
-    }
-    return [...out.values()].sort((a, b) => a.project.localeCompare(b.project));
-  }
-  const liveAlerts = new Map();
-  function alertsFor(list, account, now, active, toolFor) {
-    const next = new Map();
-    function add(id, kind, text, session = null, agent = null, at = now) {
-      next.set(id, { id, kind, sessionId: session?.id ?? null, agentId: agent?.id ?? null,
-        project: session?.project ?? null, text, since: active.get(id)?.since ?? at });
-    }
-    function context(session, agent) {
-      const pct = (agent || session).context?.pct;
-      for (const level of [80, 90]) {
-        const id = ['context', session.id, agent?.id, level].filter(v => v != null).join(':');
-        if (pct >= level - (active.has(id) ? 5 : 0)) {
-          add(id, 'context', `${agent ? 'Subagent context' : 'Context'} reached ${level}%`, session, agent);
-        }
-      }
-    }
-    for (const session of list) {
-      if (session.status === 'ended') continue;
-      context(session);
-      if (session.status === 'busy') {
-        const tool = toolFor(session);
-        if (tool?.since && now - tool.since >= TOOL_ALERT_MS && !tool.background && !AGENT_TOOLS.has(tool.name)) {
-          add(`tool:${session.id}:${tool.id || tool.since}`, 'tool', `${tool.name} running for 10 min`, session, null, tool.since + TOOL_ALERT_MS);
-        }
-      }
-      for (const agent of session.subagents) {
-        if (agent.state !== 'running') continue;
-        context(session, agent);
-        const at = agent.lastActivityAt || agent.startedAt;
-        if (at && now - at >= SUB_ALERT_MS) {
-          add(`subagent:${session.id}:${agent.id}`, 'subagent', 'Subagent silent for 5 min', session, agent, at + SUB_ALERT_MS);
-        }
-      }
-    }
-    for (const [key, label] of [['fiveHour', '5-hour usage'], ['sevenDay', 'Weekly usage']]) {
-      const window = account?.[key];
-      if (window?.pct >= 90 && (!window.resetsAt || window.resetsAt > now)) {
-        add(`usage:account:${key}`, 'usage', `${label} reached 90%`);
-      }
-    }
-    active.clear();
-    for (const [id, alert] of next) active.set(id, alert);
-    return [...next.values()];
-  }
-  function projectSnapshot(now) {
-    if (demo) return { ...demo.project(now), push };
-    const list = codexTree([...listSessions()]
-      .filter(s => (s.shown || s.agent === 'codex') && !endedLongAgo(s, now) && (s.inRegistry || s.tail || s.lastHookAt))
-      .map(s => sessionView(s, now, cwd => rootFor(cwd).project))
-      .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0)), findSession);
-    const today = dayKey(now);
-    const tokensToday = zero();
-    for (const t of reader.values()) { const d = t.info.byDay.get(today); if (d) addTokens(tokensToday, d); }
-    // Plans carry when their board last changed and their last state changes (history). Nothing in a plan changes with a
-    // session, so the stream sends plans only when a board changes (hud-0-3 P3); what links sessions to boards is in
-    // `board`, which goes with every state.
-    const planList = [...plans.values()].map(v => ({ ...v.plan, touchedAt: Math.round(v.mtime), history: planHistory.get(planKeyOf(v.plan)) || [] }))
-      .sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
-    const { board, turnedOn } = followBoards(liveAgents(list), planList, { now, track: boardTrack });
-    announceMarks(turnedOn, now);
-    const alerts = alertsFor(list, account, now, liveAlerts, x => currentSessionTool(findSession(x.id), now));
-    return {
-      now, uptime: now - hudStartedAt, demo: false, version: VERSION, host: HOSTNAME, hooksInstalled,
-      codex: codex.monitoring(),
-      sessions: list,
-      external: [...external.values()],
-      externalError,
-      projects: projectsView(),
-      plans: planList,
-      board, alerts, push,
-      account,
-      totals: totalsFor(list, planList, tokensToday),
-    };
-  }
-
-  // Phone push (hud-0-3 D13). Only new needs-you transitions can use this endpoint.
-  const push = { enabled: false, lastError: null };
-  const pushBySession = new Map(), pushTimes = [];
-  let pushUrl = null;
-  function configurePhonePush() {
-    const configured = config.pushUrl;
-    if (!configured) return;
-    try {
-      const url = new URL(configured);
-      if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
-      pushUrl = url;
-      push.enabled = true;
-    } catch {
-      push.lastError = 'HUD_PUSH_URL must be an HTTP or HTTPS URL';
-      console.error(push.lastError + '. Phone push disabled.');
-    }
-  }
-  const sendPhonePush = lifetime.task(async function (session, kind) {
-    if (!pushUrl || !['permission', 'question', 'input'].includes(kind)) return;
-    const now = performance.now();
-    for (const [id, sent] of pushBySession) if (now - sent >= MINUTE_MS) pushBySession.delete(id);
-    while (pushTimes.length && now - pushTimes[0] >= 60 * MINUTE_MS) pushTimes.shift();
-    if (pushBySession.has(session.id) || pushTimes.length >= 20) return;
-    pushBySession.set(session.id, now);
-    pushTimes.push(now);
-
-    let error = null;
-    try {
-      const res = await fetch(pushUrl, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(5000)]),
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', Title: 'Claude HUD' },
-        body: redact(oneLine(session.project || 'Session')) + ' needs you: ' + kind,
-      });
-      if (!res.ok) error = 'Phone push HTTP ' + res.status;
-      void res.body?.cancel().catch(() => {});
-    } catch (err) {
-      error = err?.name === 'TimeoutError' ? 'Phone push timed out' : 'Phone push request failed';
-    }
-    if (error !== push.lastError) {
-      push.lastError = error;
-      scheduleState();
-    }
-  });
 
   // =====================================================================================================================
   // Demo mode (`--demo`, `--demo=dense`): simulated sessions, subagents, plans and events covering every state.
@@ -1554,7 +657,7 @@ function createEngine(config, demoMode, lifetime, publisher) {
         out.agentsRunning = out.subagents.filter(a => a.state === 'running').length;
         if (out.status === 'busy' || out.status === 'needs-you') out.lastActivityAt = now;
         return out;
-      }).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+      }).sort(compareSessions);
       const tokensToday = list.reduce((acc, s) => addTokens(acc, s.tokensTree), zero());
       const planList = dense ? [plan] : [plan, chunkPlan, smallPlan, ...quietPlans];
       const agents = [];
@@ -1567,12 +670,13 @@ function createEngine(config, demoMode, lifetime, publisher) {
             active: a.state === 'running', ...evidence.get(a.id) });
         }
       }
-      const { board, turnedOn } = followBoards(agents, planList, { now, track, floor: t0 - 3 * 3600_000 });
-      for (const { P, node, flag } of turnedOn) {
+      const { board, turnedOn } = followBoards(agents, planList, { now, track, unclaimedMs, stalledMs, floor: t0 - 3 * 3600_000 });
+      for (const mark of turnedOn) {
+        const { P, node, flag } = mark;
         const key = `${P.key}#${node.id}:${flag}`;
         if (announced.has(key)) continue;
         announced.add(key);
-        addFeed({ project: P.plan.project }, 'plan', `${P.plan.title}: ${node.id} ${MARK_WORDS[flag]}`);
+        addFeed({ project: P.plan.project }, 'plan', boardMarkText(mark));
       }
       const alerts = alertsFor(list, acct, now, demoAlerts, x => x.currentTool);
       return {
@@ -1842,7 +946,7 @@ ${BOARD_HEADER}
     const runs = 200, track2 = new Map();
     for (let k = 0; k < runs; k++) {
       const list = fleet(), t0 = performance.now();
-      followBoards(list, many, { now: k * 250, track: track2, floor: 0 });
+      followBoards(list, many, { now: k * 250, track: track2, unclaimedMs, stalledMs, floor: 0 });
       ms += performance.now() - t0;
     }
     console.log(`      cost: ${(ms / runs).toFixed(3)} ms per snapshot for ${items} items in ${many.length} plans and 30 agents (average of ${runs})`);
@@ -1893,7 +997,10 @@ ${BOARD_HEADER}
     process.exit(failed ? 1 : 0);
   }
 
-  return { start, project: projectSnapshot, ingestHook, reportUsage: config.acceptUsage ? onUsage : undefined, selftest };
+  return {
+    start, update: updateSnapshot, ingestHook, selftest,
+    reportUsage: config.acceptUsage ? value => externalUsage.report(value, Date.now()) : undefined,
+  };
 }
 
 // =====================================================================================================================

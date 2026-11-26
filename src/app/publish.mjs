@@ -1,4 +1,28 @@
+import { VERSION } from '../config.mjs';
+import { codexTree, endedLongAgo, sessionView } from '../domain/sessions.mjs';
+import { totalsFor } from '../domain/usage.mjs';
 import { withClock } from '../contract/snapshot.mjs';
+
+const STATUS_ORDER = { 'needs-you': 0, busy: 1, idle: 2, ended: 3 };
+
+export const compareSessions = (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.lastActivityAt || 0) - (a.lastActivityAt || 0);
+
+export function publicSessions(sessions, now, projectFor, findSession) {
+  return codexTree([...sessions]
+    .filter(s => (s.shown || s.agent === 'codex') && !endedLongAgo(s, now) && (s.inRegistry || s.tail || s.lastHookAt))
+    .map(s => sessionView(s, now, projectFor))
+    .sort(compareSessions), findSession);
+}
+
+export function projectLiveSnapshot({
+  now, startedAt, host, hooksInstalled, codex, sessions, projects, plans, board, alerts, account, externalUsage, push, tokensToday,
+}) {
+  return {
+    now, uptime: now - startedAt, demo: false, version: VERSION, host, hooksInstalled,
+    codex, sessions, ...externalUsage, projects, plans, board, alerts, push, account,
+    totals: totalsFor(sessions, plans, tokensToday),
+  };
+}
 
 const MASK = '•••';
 const VALUE = String.raw`("[^"]*"|'[^']*'|[^\s"';&,]+)`;
@@ -49,7 +73,7 @@ const PUBLIC_FEED_LIMIT = 200;
 const UPDATE_INTERVAL_MS = 250;
 
 /** Owns the redacted projection and commits feed lines in the same update as their snapshot. */
-export function createPublisher(project) {
+export function createPublisher(updateState) {
   const { redact, redactDeep } = createRedactor();
   const listeners = new Set();
   let snapshot;
@@ -67,7 +91,7 @@ export function createPublisher(project) {
     const now = Date.now();
     projecting = true;
     try {
-      const state = redactDeep(project(now));
+      const state = redactDeep(updateState(now));
       snapshot = Object.freeze({ ...state, feed: Object.freeze(recent.slice().reverse()) });
       lastUpdateAt = now;
     } finally {
