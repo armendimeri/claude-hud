@@ -28,8 +28,8 @@ export async function freePort() {
  * is HUD_CODEX_DIRS, and `dir` is HOME. `env` (an object, or a function of `dir` that returns one) overrides any of it. With `start: false` nothing runs until
  * `restart()`, so a test can write files the HUD must find at its start.
  *
- * Returns { base, port, dir, claude, codex, state(), until(predicate, ms), post(event), stream(), stop(), restart(),
- * stderr(), close() }. `close()` stops the HUD and deletes `dir`; call it from `t.after`.
+ * `launch()` starts the child without waiting for readiness. `restart()` waits for health. `spawnCli(args, options)`
+ * runs a Node command under the same isolated environment. `close()` stops the HUD and deletes `dir`.
  */
 export async function startHud({ demo = false, env = {}, start = true } = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hud-test-'));
@@ -43,13 +43,19 @@ export async function startHud({ demo = false, env = {}, start = true } = {}) {
   const childEnv = { ...process.env,
     HOME: dir, USERPROFILE: dir, CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex, HUD_CODEX_DIRS: extraCodex,
     HUD_CLAUDE_DIRS: '', HUD_NO_AUTOINSTALL: '1', HUD_PORT: String(port), HUD_LAN: '0', HUD_BEDROCK_REGION: '',
-    HUD_RECORD: '', ...(typeof env === 'function' ? env(dir) : env) };
+    HUD_RECORD: '', HUD_PUSH_URL: '', HUD_ACCEPT_USAGE: '0', ...(typeof env === 'function' ? env(dir) : env) };
   let child = null, errors = '';
 
-  const up = async () => {
-    child = spawn(process.execPath, args, { windowsHide: true, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+  const spawnCli = (cliArgs, options) => spawn(process.execPath, cliArgs, { windowsHide: true, ...options, env: childEnv });
+  const launch = () => {
+    assert.ok(!child || child.exitCode !== null || child.signalCode !== null, 'stop the previous HUD before launch');
+    child = spawnCli(args, { stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.resume();
     child.stderr.on('data', b => { errors += b; });
+    return child;
+  };
+  const up = async () => {
+    launch();
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       if (child.exitCode !== null) assert.fail(`hud.mjs exited with ${child.exitCode}: ${errors}`);
@@ -62,7 +68,7 @@ export async function startHud({ demo = false, env = {}, start = true } = {}) {
     if (child && child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
   };
   const hud = {
-    base, port, dir, claude, codex, extraCodex,
+    base, port, dir, claude, codex, extraCodex, launch, spawnCli,
     get child() { return child; },
     stderr: () => errors,
     state: async () => (await fetch(base + '/api/state')).json(),

@@ -1,0 +1,47 @@
+{
+  "commonKeys": ["account", "alerts", "board", "demo", "external", "externalError", "feed", "hooksInstalled", "host", "now", "plans", "projects", "push", "sessions", "totals", "uptime", "version"],
+  "live": {
+    "demo": false,
+    "hooksInstalled": false,
+    "account": null,
+    "alerts": [],
+    "external": [],
+    "externalError": null,
+    "push": { "enabled": false, "lastError": null }
+  },
+  "liveSession": {
+    "id": "contract-claude-1", "agent": "claude", "pid": 92001, "project": "fixture", "cwd": "/fixture",
+    "name": null, "title": null, "entrypoint": null, "version": null, "status": "busy", "needsYou": null,
+    "provider": "anthropic", "model": "claude-opus-5-5", "modelRaw": "claude-opus-5-5", "effort": null, "branch": null,
+    "startedAt": 1795688670000, "lastActivityAt": 1795688700001, "endedAt": null,
+    "currentTool": { "name": "Bash", "summary": "git status", "since": 1795688700001 },
+    "tools": 1, "startedBy": null,
+    "tokens": { "input": 1, "output": 2, "cacheRead": 0, "cacheWrite": 0 },
+    "tokensTree": { "input": 1, "output": 2, "cacheRead": 0, "cacheWrite": 0 },
+    "pulse": { "start": 1795688640000, "perMin": [2] },
+    "turn": { "startedAt": 1795688700000, "lastMs": null },
+    "context": { "used": 1, "window": 1000000, "pct": 0 }, "subagents": [], "agentsRunning": 0, "work": null
+  },
+  "livePlan": {
+    "project": "fixture", "slug": "contract-plan", "title": "Contract fixture", "path": "/fixture/docs/plans/contract-plan/STATUS.md",
+    "format": "standard", "size": "phased", "state": null, "stateDate": null,
+    "phases": [{
+      "id": "P1", "name": "First item", "agent": "first", "state": "todo", "stateRaw": "todo", "since": null,
+      "waitsFor": [], "notes": null, "group": "Board", "kind": "item", "model": null, "effort": null, "handoff": false, "waitsForOther": []
+    }],
+    "runs": [], "needsYou": [], "lastLog": [], "touchedAt": 1795688670000, "history": []
+  },
+  "liveFeed": { "at": 1795688700001, "sessionId": "contract-claude-1", "project": "fixture", "kind": "tool", "text": "Bash · git status" },
+  "demo": {
+    "demo": true,
+    "host": "STARK-01",
+    "hooksInstalled": true,
+    "externalError": null,
+    "push": { "enabled": false, "lastError": null },
+    "account": { "fiveHour": { "pct": 42.03, "resetsAt": 1795697340000 }, "sevenDay": { "pct": 31, "resetsAt": 1795965180000 }, "fetchedAt": 1795688700000 }
+  },
+  "demoCodex": {
+    "agent": "codex", "project": "FidiaCRM", "title": "Clients: contact length limits (UX-12)",
+    "entrypoint": "cli", "provider": "openai", "model": "gpt-6-astra", "branch": "clients/UX-12"
+  }
+}

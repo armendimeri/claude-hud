@@ -7,7 +7,7 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 | ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |
 |---|---|---|---|---|---|---|---|---|
 | P0 | Decisions | human | — | — | accepted | 2026-11-26 | — | D1–D7 accepted and Q4 answered |
-| P1 | Capture the baseline | `baseline` | P0 | Opus 5.5 / high | todo | | | Runs in the worktree after the D7 setup |
+| P1 | Capture the baseline | `baseline` | P0 | Opus 5.5 / high | accepted | 2026-11-26 | [P1-baseline](handoffs/P1-baseline.md) | 49 tests and 11 Edge layouts passed. Hook p95 overhead was 16.51 ms |
 | P2 | Serve native browser assets | `assets` | P1 | Opus 5.5 / high | todo | | | Preserve existing routes and rendering |
 | P3 | Extract the browser store | `client-data` | P2 | Opus 5.5 / high | todo | | | Shared data, connection and selectors |
 | P4 | Prove a new full-page view | `activity` | P3 | Sonnet 5.5 / high | todo | | | First milestone |
@@ -52,6 +52,7 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 - 2026-11-26 · planner · — · Review applied. Added the live-deployment finding, D7 (git and worktree), the URL rules for the Activity preview, Out of scope, and numeric startup, memory and hook gates. Owner answered Q1–Q3 as recommended. D1–D7 still await P0.
 - 2026-11-26 · planner · — · During the review, `73c0351` and `a3605d9` landed and this checkout moved to `hud-architecture`. `docs/plans/hud-0-3/` is deleted in the working tree but not committed. D7 and the Kickoff setup no longer match (Q4, deferred by the owner). Resolve Q4 before P0 is accepted.
 - 2026-11-26 · human · P0 · Accepted D1–D7 and answered Q4 as recommended. Commit only the architecture plan on `hud-architecture`, switch the original checkout to `hud-0-3`, and add the worktree from the existing `hud-architecture` branch.
+- 2026-11-26 · baseline · P1 · Handed off synthetic contract coverage and performance evidence. Self-test, 49 Node tests and 11 Edge layouts passed. Recorded the hook timing overage and the open 0.3 live memory gate.
 
 ## Kickoff
 
