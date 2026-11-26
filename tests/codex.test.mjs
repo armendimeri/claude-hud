@@ -101,8 +101,11 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
       assert.ok(Array.isArray(first.data.sessions));
     } finally { stream.close(); }
   });
-  await t.test('split UTF-8 lines, tool output discard, questions and turn completion', async () => {
-    const rec = Buffer.from(record('response_item', { type: 'function_call', call_id: 'call2', name: 'exec_command', arguments: JSON.stringify({ cmd: 'echo café' }) }));
+  await t.test('large records split across reads, UTF-8, tool output discard, questions and turn completion', async () => {
+    const rec = Buffer.from(record('response_item', {
+      type: 'function_call', call_id: 'call2', name: 'exec_command',
+      arguments: JSON.stringify({ padding: 'x'.repeat(384 * 1024), cmd: 'echo café' }),
+    }));
     const split = rec.indexOf(Buffer.from('é')) + 1;
     await fs.appendFile(main, rec.subarray(0, split)); await pause(300);
     assert.equal((await state()).sessions.find(x => x.id === 'codex:shared-id').tools, 1);

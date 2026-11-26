@@ -435,7 +435,7 @@ function newInfo() {
 function getTail(file) {
   const key = file.toLowerCase();
   let t = tails.get(key);
-  if (!t) { t = { file, offset: 0, rest: Buffer.alloc(0), reading: false, again: false, info: newInfo(), owner: null }; tails.set(key, t); }
+  if (!t) { t = { file, offset: 0, rest: [], reading: false, again: false, info: newInfo(), owner: null }; tails.set(key, t); }
   t.info.rootBedrock = !!rootOf(file)?.bedrock;   // read again each time: the flag can change while the HUD runs
   return t;
 }
@@ -443,6 +443,7 @@ function getTail(file) {
 // `api-request` lines are small and read for their model id; `api-request-blob` / `-shape` lines (up to ~200 KB) are not.
 const API_REQUEST_PREFIX = '{"type":"api-request",';
 const SKIP_LINE_PREFIXES = ['{"type":"api-request', '{"type":"file-history', '{"type":"atis-latch', '{"type":"queue-operation', '{"type":"last-prompt'];
+const TRANSCRIPT_READ_BYTES = 128 * 1024;
 
 async function readTail(t) {
   if (t.reading) { t.again = true; return; }
@@ -454,7 +455,7 @@ async function readTail(t) {
       let st;
       try { st = await fsp.stat(t.file); } catch { break; }
       if (st.size < t.offset) {
-        t.offset = 0; t.rest = Buffer.alloc(0); t.info = newInfo();
+        t.offset = 0; t.rest.length = 0; t.info = newInfo();
         if (t.format === 'codex' && t.owner) {
           const s = t.owner.session;
           s.hookStatus = null; s.hookStatusAt = 0; s.needsYou = null;
@@ -464,7 +465,7 @@ async function readTail(t) {
       if (st.size === t.offset) continue;
       const fh = await fsp.open(t.file, 'r');
       try {
-        const buf = Buffer.allocUnsafe(1 << 22);
+        const buf = Buffer.allocUnsafe(Math.min(TRANSCRIPT_READ_BYTES, st.size - t.offset));
         while (t.offset < st.size) {
           const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, st.size - t.offset), t.offset);
           if (!bytesRead) break;
@@ -481,12 +482,20 @@ async function readTail(t) {
 }
 
 function consume(t, chunk) {
-  const buf = t.rest.length ? Buffer.concat([t.rest, chunk]) : chunk;
-  const nl = buf.lastIndexOf(10);
-  if (nl < 0) { t.rest = Buffer.from(buf); return; }
-  const text = buf.toString('utf8', 0, nl);
-  t.rest = Buffer.from(buf.subarray(nl + 1));
-  for (const line of text.split('\n')) if (line) processLine(t, line);
+  let start = 0;
+  for (let nl = chunk.indexOf(10); nl >= 0; nl = chunk.indexOf(10, start)) {
+    let line = chunk.subarray(start, nl);
+    if (t.rest.length) {
+      t.rest.push(line);
+      line = Buffer.concat(t.rest);
+      t.rest.length = 0;
+    }
+    if (line.length) processLine(t, line.toString('utf8'));
+    start = nl + 1;
+  }
+  // The read buffer is reused. Copy only the fragments that outlive this read
+  // and assemble them once, after the line's newline arrives.
+  if (start < chunk.length) t.rest.push(Buffer.from(chunk.subarray(start)));
 }
 
 function processLine(t, line) {
