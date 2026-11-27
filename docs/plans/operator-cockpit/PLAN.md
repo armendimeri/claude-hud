@@ -131,7 +131,7 @@ The coordinator records the base revision and dispatches prepared briefs after t
 
 **Starting prompt for P0**
 
-> I approve the proposed operator-cockpit plan and its P0 defaults. Act as kickoff coordinator in the claude-hud repository. Read docs/plans/operator-cockpit/PLAN.md, STATUS.md and CONTRACTS.md in that directory. Complete P0, prepare a shared base containing the plan, and preserve unrelated working-tree changes. Start P1, P1-01, P5 and P6 in separate worktrees using the prompts and model/effort choices under P0. If you cannot launch a lane, return its exact prompt, model, effort, base revision and worktree path so I can launch it. Report which lanes actually started.
+> I approve the proposed operator-cockpit plan and its P0 defaults. Act as kickoff coordinator in the claude-hud repository. Read docs/plans/operator-cockpit/PLAN.md, STATUS.md and CONTRACTS.md in that directory. Complete P0, prepare a shared base containing the plan, and preserve unrelated working-tree changes. Start P1, P1-01, P5 and P6 in separate worktrees using the prompts and model/effort choices under P0. If you cannot launch a lane, return its exact prompt, model, effort, base revision and worktree path so I can launch it. Report which lanes actually started. Create handoffs/P0.md at pickup and checkpoint each lane as it starts so an interrupted kickoff can resume without duplicate launches.
 
 **Next assignments after P0**
 
@@ -139,25 +139,25 @@ The coordinator records the base revision and dispatches prepared briefs after t
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P0 is accepted.
 
-> Execute operator-cockpit/P1 in your assigned claude-hud worktree. Read P1 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Capture the dashboard baseline and freeze shared synthetic fixtures for selection, history and action delivery. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P1.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P1 in your assigned claude-hud worktree. Read P1 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Capture the dashboard baseline and freeze shared synthetic fixtures for selection, history and action delivery. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P1.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P1-01](#p1-01) · Prove sparse and dense screen layouts**  
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P0 is accepted.
 
-> Execute operator-cockpit/P1-01 in your assigned claude-hud worktree. Read P1-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Produce sparse and dense laptop layouts and a narrow-screen layout showing waiting, inspection and exit. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P1-01.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P1-01 in your assigned claude-hud worktree. Read P1-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Produce sparse and dense laptop layouts and a narrow-screen layout showing waiting, inspection and exit. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P1-01.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P5](#p5) · Prove Claude session capabilities**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P0 is accepted.
 
-> Execute operator-cockpit/P5 in your assigned claude-hud worktree. Read P5 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Probe Claude Code in disposable terminal and VS Code sessions. Record which operations reach the original session. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P5.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P5 in your assigned claude-hud worktree. Read P5 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Probe Claude Code in disposable terminal and VS Code sessions. Record which operations reach the original session. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P5.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P6](#p6) · Prove Codex session capabilities**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P0 is accepted.
 
-> Execute operator-cockpit/P6 in your assigned claude-hud worktree. Read P6 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Probe Codex in disposable terminal and VS Code sessions. Record which operations reach the original thread and turn. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P6.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P6 in your assigned claude-hud worktree. Read P6 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P0 are present. Probe Codex in disposable terminal and VS Code sessions. Record which operations reach the original thread and turn. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P6.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 ### Fixture-driven implementation
 
@@ -185,7 +185,7 @@ The inspector uses frozen inputs and fixture clients. Medium effort covers its f
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P2 and P3 are accepted.
 
-> Execute operator-cockpit/P7 in your assigned claude-hud worktree. Read P7 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P2, P3 are present. Wire the lazy cockpit route and shared inspector. Verify navigation restoration, fallback and zero cold-entry 3D requests. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P7.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P7 in your assigned claude-hud worktree. Read P7 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P2, P3 are present. Wire the lazy cockpit route and shared inspector. Verify navigation restoration, fallback and zero cold-entry 3D requests. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P7.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 ### UI and runtime integration
 
@@ -212,13 +212,13 @@ The runner translates established HUD tokens into dense, narrow and keyboard-acc
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P1 and P1-01 are accepted.
 
-> Execute operator-cockpit/P2 in your assigned claude-hud worktree. Read P2 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the lazy-loadable 3D scene and prove stable layout, idle rendering and GPU cleanup. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P2.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P2 in your assigned claude-hud worktree. Read P2 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the lazy-loadable 3D scene and prove stable layout, idle rendering and GPU cleanup. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P2.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P3](#p3) · Build shared session inspector**  
 Anthropic: Sonnet 5.5 / medium · OpenAI: GPT 6.2 Sol / medium  
 Ready when P1 and P1-01 are accepted.
 
-> Execute operator-cockpit/P3 in your assigned claude-hud worktree. Read P3 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the shared card and cockpit inspector against fixture clients. Prove selection and draft isolation. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P3.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P3 in your assigned claude-hud worktree. Read P3 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the shared card and cockpit inspector against fixture clients. Prove selection and draft isolation. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P3.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P2
 
@@ -244,7 +244,7 @@ Stable scene layout, GPU disposal and hidden-tab rendering must work together ac
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P2 and P3 are accepted.
 
-> Execute operator-cockpit/P7 in your assigned claude-hud worktree. Read P7 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P2, P3 are present. Wire the lazy cockpit route and shared inspector. Verify navigation restoration, fallback and zero cold-entry 3D requests. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P7.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P7 in your assigned claude-hud worktree. Read P7 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P2, P3 are present. Wire the lazy cockpit route and shared inspector. Verify navigation restoration, fallback and zero cold-entry 3D requests. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P7.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P7
 
@@ -269,7 +269,7 @@ Route history, lazy imports, existing HUD panels and one shared stream have to s
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P7 and P8 are accepted.
 
-> Execute operator-cockpit/P7-01 in your assigned claude-hud worktree. Read P7-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7, P8 are present. Connect the inspector to real private history in Cards and Cockpit. Verify live append, older-page scroll and bounded reads. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P7-01.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P7-01 in your assigned claude-hud worktree. Read P7-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7, P8 are present. Connect the inspector to real private history in Cards and Cockpit. Verify live append, older-page scroll and bounded reads. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P7-01.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P7-01
 
@@ -294,7 +294,7 @@ The HTTP and UI contracts are established, but paging, pairing expiry and stale 
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P7-01 and P8-01 and P9 and P10 are accepted.
 
-> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 ### Protocol, correctness and verification
 
@@ -322,43 +322,43 @@ The runner must freeze interfaces shared by several teams and distinguish real s
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P1 and P1-01 are accepted.
 
-> Execute operator-cockpit/P2 in your assigned claude-hud worktree. Read P2 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the lazy-loadable 3D scene and prove stable layout, idle rendering and GPU cleanup. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P2.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P2 in your assigned claude-hud worktree. Read P2 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the lazy-loadable 3D scene and prove stable layout, idle rendering and GPU cleanup. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P2.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P3](#p3) · Build shared session inspector**  
 Anthropic: Sonnet 5.5 / medium · OpenAI: GPT 6.2 Sol / medium  
 Ready when P1 and P1-01 are accepted.
 
-> Execute operator-cockpit/P3 in your assigned claude-hud worktree. Read P3 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the shared card and cockpit inspector against fixture clients. Prove selection and draft isolation. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P3.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P3 in your assigned claude-hud worktree. Read P3 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P1-01 are present. Build the shared card and cockpit inspector against fixture clients. Prove selection and draft isolation. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P3.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P4](#p4) · Read private history on demand**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 is accepted.
 
-> Execute operator-cockpit/P4 in your assigned claude-hud worktree. Read P4 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1 are present. Build bounded Claude and Codex history readers. Prove pagination, rotation and parent/child isolation. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P4.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P4 in your assigned claude-hud worktree. Read P4 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1 are present. Build bounded Claude and Codex history readers. Prove pagination, rotation and parent/child isolation. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P4.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P8](#p8) · Pair local operator and serve history**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 and P4 are accepted.
 
-> Execute operator-cockpit/P8 in your assigned claude-hud worktree. Read P8 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P4 are present. Implement local pairing, authorized private history routes and source resolution. Verify LAN denial and graceful shutdown. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P8.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P8 in your assigned claude-hud worktree. Read P8 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P4 are present. Implement local pairing, authorized private history routes and source resolution. Verify LAN denial and graceful shutdown. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P8.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P8-01](#p8-01) · Validate, dispatch and reconcile actions**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 is accepted.
 
-> Execute operator-cockpit/P8-01 in your assigned claude-hud worktree. Read P8-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1 are present. Implement action validation, deduplication and receipt reconciliation with a fake adapter. Prove that an ambiguous retry dispatches at most once. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P8-01.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P8-01 in your assigned claude-hud worktree. Read P8-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1 are present. Implement action validation, deduplication and receipt reconciliation with a fake adapter. Prove that an ambiguous retry dispatches at most once. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P8-01.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P9](#p9) · Implement verified Claude actions**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 and P5 are accepted.
 
-> Execute operator-cockpit/P9 in your assigned claude-hud worktree. Read P9 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P5 are present. Implement only the Claude adapter capabilities demonstrated by P5. Prove target binding and observed-only fallback. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P9.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P9 in your assigned claude-hud worktree. Read P9 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P5 are present. Implement only the Claude adapter capabilities demonstrated by P5. Prove target binding and observed-only fallback. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P9.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 **[P10](#p10) · Implement verified Codex actions**  
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 and P6 are accepted.
 
-> Execute operator-cockpit/P10 in your assigned claude-hud worktree. Read P10 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P6 are present. Implement only the Codex adapter capabilities demonstrated by P6. Prove turn/request binding and observed-only fallback. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P10.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P10 in your assigned claude-hud worktree. Read P10 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P6 are present. Implement only the Codex adapter capabilities demonstrated by P6. Prove turn/request binding and observed-only fallback. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P10.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P4
 
@@ -383,7 +383,7 @@ Byte-bound pagination, partial UTF-8 records and parent/child transcript isolati
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 and P4 are accepted.
 
-> Execute operator-cockpit/P8 in your assigned claude-hud worktree. Read P8 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P4 are present. Implement local pairing, authorized private history routes and source resolution. Verify LAN denial and graceful shutdown. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P8.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P8 in your assigned claude-hud worktree. Read P8 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P4 are present. Implement local pairing, authorized private history routes and source resolution. Verify LAN denial and graceful shutdown. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P8.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P5
 
@@ -408,7 +408,7 @@ The probe has to distinguish a message reaching Claude Code from an answer resol
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 and P5 are accepted.
 
-> Execute operator-cockpit/P9 in your assigned claude-hud worktree. Read P9 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P5 are present. Implement only the Claude adapter capabilities demonstrated by P5. Prove target binding and observed-only fallback. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P9.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P9 in your assigned claude-hud worktree. Read P9 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P5 are present. Implement only the Claude adapter capabilities demonstrated by P5. Prove target binding and observed-only fallback. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P9.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P6
 
@@ -433,7 +433,7 @@ The probe has to verify Codex thread ownership and interpret version-specific re
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P1 and P6 are accepted.
 
-> Execute operator-cockpit/P10 in your assigned claude-hud worktree. Read P10 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P6 are present. Implement only the Codex adapter capabilities demonstrated by P6. Prove turn/request binding and observed-only fallback. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P10.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P10 in your assigned claude-hud worktree. Read P10 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P1, P6 are present. Implement only the Codex adapter capabilities demonstrated by P6. Prove turn/request binding and observed-only fallback. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P10.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P8
 
@@ -459,7 +459,7 @@ Private history must enforce local authorization, one-use pairing and validated 
 Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high  
 Ready when P7 and P8 are accepted.
 
-> Execute operator-cockpit/P7-01 in your assigned claude-hud worktree. Read P7-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7, P8 are present. Connect the inspector to real private history in Cards and Cockpit. Verify live append, older-page scroll and bounded reads. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P7-01.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P7-01 in your assigned claude-hud worktree. Read P7-01 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7, P8 are present. Connect the inspector to real private history in Cards and Cockpit. Verify live append, older-page scroll and bounded reads. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P7-01.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P8-01
 
@@ -484,7 +484,7 @@ Concurrent submissions, ambiguous acknowledgements and retries require reasoning
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P7-01 and P8-01 and P9 and P10 are accepted.
 
-> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P9
 
@@ -509,7 +509,7 @@ The adapter must preserve Claude request identity and expose only actions demons
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P7-01 and P8-01 and P9 and P10 are accepted.
 
-> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P10
 
@@ -534,7 +534,7 @@ The adapter must map HUD identities to Codex threads, turns and pending requests
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P7-01 and P8-01 and P9 and P10 are accepted.
 
-> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P11 in your assigned claude-hud worktree. Read P11 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P7-01, P8-01, P9, P10 are present. Integrate the dispatcher and verified providers. Publish original-session evidence and report cockpit, history and control outcomes separately. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P11.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P11
 
@@ -559,7 +559,7 @@ The runner reconciles browser, server and provider behavior and verifies each cl
 Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high  
 Ready when P11 is accepted.
 
-> Execute operator-cockpit/P12 in your assigned claude-hud worktree. Read P12 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P11 are present. Independently verify the combined release archive, initial-load budget, real GPU path, privacy and supported native controls. Record outstanding gates. Follow the phase scope and run its exit checks. Write docs/plans/operator-cockpit/handoffs/P12.md with the revision, results and limitations. Return the eligible next prompts and both runner choices to the coordinator.
+> Execute operator-cockpit/P12 in your assigned claude-hud worktree. Read P12 in docs/plans/operator-cockpit/PLAN.md and the shared CONTRACTS.md in that directory. Verify the accepted inputs from P11 are present. Independently verify the combined release archive, initial-load budget, real GPU path, privacy and supported native controls. Record outstanding gates. Follow the phase scope and run its exit checks. Follow the checkpoint and stop rules in “Handoff, merge and recovery” from the start. Update docs/plans/operator-cockpit/handoffs/P12.md with the revision, results and limitations. On completion return the eligible next prompts and both runner choices to the coordinator.
 
 #### P12
 
@@ -583,6 +583,10 @@ Independent verification spans the archive, performance baseline, real GPU path,
 P12 closes the implementation sequence. Send the owner the archive revision, release-check results, verified provider matrix and any open gates. For a failed required gate, return the failing check to the phase owner listed above with its existing model choices. Deployment requires a separate owner decision.
 
 ## Handoff, merge and recovery
+
+Each runner, including the kickoff coordinator and final reviewer, maintains one durable file at `docs/plans/operator-cockpit/handoffs/<ID>.md` in its assigned worktree. On pickup, read any existing handoff and inspect the branch and working tree before continuing. Create the file before starting work if it is missing. Update it after each numbered step or meaningful result, before a planned pause, and before returning on completion, blockage or an orderly stop. An abrupt termination may prevent a final write; the last saved checkpoint and working tree are the recovery source.
+
+Record the phase ID, worktree path, branch, base/current commit, uncommitted files, last completed step, commands and actual results, outstanding checks, and the exact next command or action. For a blocked or stopped phase, record the reason and resume the **same phase**. For completed work, record its exit evidence and successor prompts. The coordinator links the checkpoint on the board, uses partial or blocked for unfinished work, and releases dependent phases only after acceptance. If a runner disappears, the coordinator inspects the worktree and records what can be verified before reassigning it.
 
 Every handoff states ID and revision, inputs/versions, changed paths, commands with results, failing cases fixed, remaining limitations, and exact next consumer. Attach synthetic captures or fixture IDs; scrub home directories and credentials. A passing mock result and a verified native result get separate rows. The coordinator checks that each dependency revision is present before accepting a handoff. Re-run the named regression checks on the combined revision whenever two branches touched an integration seam sequentially.
 

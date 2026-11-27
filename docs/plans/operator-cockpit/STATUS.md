@@ -8,8 +8,8 @@ Choose either model/effort pair in Notes for every row. At dispatch, record the 
 
 | ID | Item | Agent | Depends on | Model / effort | State | Since | Handoff | Notes |
 |---|---|---|---|---|---|---|---|---|
-| P0 | Accept implementation defaults | human | — | — | todo |  | — | Anthropic: Sonnet 5.5 / medium · OpenAI: GPT 6.2 Sol / medium · Owner approves |
-| P1 | Freeze interfaces and capture baseline | contract | P0 | — | todo |  | — | Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high · S |
+| P0 | Accept implementation defaults | human | — | — | done | 2026-11-27 | [P0](handoffs/P0.md) | Owner approved the P1 start |
+| P1 | Freeze interfaces and capture baseline | contract | P0 | Codex API session | doing | 2026-11-27 | [P1](handoffs/P1.md) | Anthropic: Opus 5.5 / high · OpenAI: GPT 6.2 Astra / high · S |
 | P1-01 | Prove sparse and dense screen layouts | design | P0 | — | todo |  | — | Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high · S |
 | P2 | Build stable 3D scene | scene | P1, P1-01 | — | todo |  | — | Anthropic: Sonnet 5.5 / high · OpenAI: GPT 6.2 Sol / high · M |
 | P3 | Build shared session inspector | inspector | P1, P1-01 | — | todo |  | — | Anthropic: Sonnet 5.5 / medium · OpenAI: GPT 6.2 Sol / medium · M |
@@ -27,9 +27,9 @@ Choose either model/effort pair in Notes for every row. At dispatch, record the 
 
 ## Decisions (P0)
 
-- [ ] Start the operator-first cockpit with a stable layout, HTML detail panel and optional discreet display.
-- [ ] Keep private chat on demand and controls local. Expose actions per verified session capability.
-- [ ] Use the proposed laptop performance budgets and four-slot schedule as the initial implementation targets.
+- [x] Start the operator-first cockpit with a stable layout, HTML detail panel and optional discreet display.
+- [x] Keep private chat on demand and controls local. Expose actions per verified session capability.
+- [x] Use the proposed laptop performance budgets and four-slot schedule as the initial implementation targets.
 
 ## Kickoff
 
