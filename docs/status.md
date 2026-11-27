@@ -19,6 +19,7 @@ It serves live and synthetic state over HTTP and SSE.
 
 ## Active plans
 
+- The operator cockpit, private session history and connected agent controls are proposed. [Implementation board](plans/operator-cockpit/STATUS.md)
 - HUD 0.3 release verification is deferred. [HUD 0.3 board](plans/hud-0-3/STATUS.md)
 - The workflow migration is queued under P3-03. [Workflow board](plans/agent-workflow/STATUS.md)
 
