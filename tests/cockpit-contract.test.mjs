@@ -3,7 +3,8 @@ import test from 'node:test';
 import { createHudStore } from '../src/web/data/store.mjs';
 import { viewStatus } from '../src/web/components/sessions.mjs';
 import { bedrock, child, createFixtureStore, expected, parent, selection, selectionKey, sibling, snapshots, timeline, times } from './fixtures/cockpit/public.mjs';
-import { canaries, capabilities, commands, createFixtureAdapter, createFixtureClient, errors, histories, receipts, targets } from './fixtures/cockpit/private.mjs';
+import { canaries, capabilities, commands, createFixtureAdapter, createFixtureClient, deliveryCases,
+  errors, histories, historyPages, receipts, targets } from './fixtures/cockpit/private.mjs';
 
 test('frozen public snapshots seed the live browser store and exclude every private canary', () => {
   let connection;
@@ -63,6 +64,11 @@ test('private history is keyed by the entire selection and can arrive after anot
     for (const [, other] of entities.filter(([, text]) => text !== marker)) assert.ok(!JSON.stringify(page).includes(other));
   }
   assert.equal(new Set(Object.values(histories).flatMap(page => page.entries.map(({ id }) => id))).size, 9);
+  const pages = [historyPages.older, historyPages.latest, historyPages.newer];
+  const eventTimes = pages.flatMap(page => page.entries.map(entry => entry.at));
+  assert.deepEqual(eventTimes, [...eventTimes].sort((a, b) => a - b));
+  assert.deepEqual(historyPages.empty.entries, []);
+  assert.ok(historyPages.latest.before && historyPages.latest.after);
   await assert.rejects(defaults.history(selection(sibling.sessionId, child.agentId)), errors.unavailable);
   assert.deepEqual(await defaults.capabilities(sibling), capabilities.observed);
   assert.deepEqual(await defaults.capabilities(bedrock), capabilities.unsupported);
@@ -98,6 +104,9 @@ test('action examples bind choices and permissions to the intended turn and requ
   assert.equal(commands.prompt.turnId, null);
   assert.equal(commands.steer.turnId, capabilities.active.activeTurnId);
   assert.equal(commands.steer.requestId, null);
+  assert.equal(deliveryCases.stale.dispatchCount, 0);
+  assert.deepEqual(deliveryCases.reconnect.receiptOrder.map(receipt => receipt.status), ['pending', 'delivery-unknown', 'acknowledged']);
+  assert.equal(deliveryCases.reconnect.dispatchCount, 1);
   const adapter = createFixtureAdapter();
   assert.deepEqual(await adapter.dispatch(targets.parent, commands.answer), receipts.unknown);
   assert.deepEqual(await adapter.reconcile(targets.parent, receipts.unknown), receipts.acknowledged);

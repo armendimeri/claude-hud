@@ -65,6 +65,10 @@ A paired browser session establishes control on the local PC. The initial read-o
 
 Use plain JS modules and JSDoc. The names below are the common seam between worktrees. A local implementation can introduce private helpers without changing callers.
 
+The frozen public exports are `snapshots`, `timeline`, `selectionKey`, `expected` and `createFixtureStore(initialFrame?)` in [public.mjs](../../../tests/fixtures/cockpit/public.mjs). The store exposes `getSnapshot()`, `getConnection()`, `getServerTime()` and `subscribe(listener)` like the existing HUD store. Tests drive it with `setFrame(frame)`. A frame carries the snapshot, the expected selection and the connection status. A reconnect frame can reuse the last snapshot.
+
+[private.mjs](../../../tests/fixtures/cockpit/private.mjs) exports keyed history DTOs, cursor examples, capabilities, commands, receipts, server-resolved fixture targets and `deliveryCases`. The documents and fixtures use `nativeSessionId` for the adapter's verified native session or thread ID and `connectionGeneration` for its current connection. `createFixtureClient(overrides?)` and `createFixtureAdapter(overrides?)` accept scripted async results. Tests can hold a history response across selection changes and inspect the adapter's `calls` array. The dispatcher owns idempotency, so use `deliveryCases` as expected results and assert provider calls at the dispatcher seam.
+
 | Producer → consumer | Interface | Caller responsibilities |
 |---|---|---|
 | P7 → P2 | `mountScene(host, {store, actions, motion, signal}) => close`. Actions include `select({sessionId,agentId})`, `getProject()` and `subscribeProject(listener)`. | Shell owns module loading and outer signal. Scene owns renderer, selection hit targets and their teardown. Close is synchronous and safe twice. |

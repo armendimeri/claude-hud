@@ -18,6 +18,14 @@ export const histories = freeze({
   [selectionKey(child)]: page(canaries.child, 'child'),
   [selectionKey(sibling)]: page(canaries.sibling, 'sibling'),
 });
+export const historyPages = freeze({
+  older: { entries: [{ id: 'parent:3', at: times[0] - 1000, kind: 'user', text: 'Prepare a synthetic export.' }],
+    before: null, after: 'fixture-after-parent:3', gap: null },
+  latest: { ...histories[selectionKey(parent)], before: 'fixture-before-parent:11' },
+  newer: { entries: [{ id: 'parent:112', at: times[5], kind: 'assistant', text: 'The export uses today.' }],
+    before: null, after: 'fixture-after-parent:112', gap: null },
+  empty: { entries: [], before: null, after: 'fixture-after-empty', gap: null },
+});
 
 const epoch = 'fixture-instance-1';
 const turnId = 'fixture-turn-1';
@@ -84,6 +92,16 @@ export const targets = freeze({
   child: { selection: child, provider: 'anthropic', nativeSessionId: 'session-fixture-child', connectionGeneration: null },
   sibling: { selection: sibling, provider: 'openai', nativeSessionId: 'thread-fixture-B', connectionGeneration: null },
   bedrock: { selection: bedrock, provider: 'bedrock', nativeSessionId: 'session-fixture-C', connectionGeneration: null },
+});
+export const deliveryCases = freeze({
+  stale: { target: targets.parent, command: commands.stale, capabilities: capabilities.withdrawn,
+    error: errors.stale, dispatchCount: 0 },
+  reconnect: { target: targets.parent, command: commands.answer, retry: commands.duplicate,
+    mutation: commands.conflictingReuse, capabilities: capabilities.multiple, receiptOrder: [
+      receipts.pending, receipts.unknown, receipts.acknowledged,
+    ], reuseError: errors.conflict, dispatchCount: 1 },
+  immediate: { target: targets.parent, command: commands.answer, capabilities: capabilities.multiple,
+    receiptOrder: [receipts.immediate], dispatchCount: 1 },
 });
 
 function reject(dto) {
