@@ -90,10 +90,13 @@ to one per session per minute and 20 in a rolling hour. The setting is off by de
 
 ## Setting it up
 
-1. Clone this repository or extract the complete source archive to the folder where the HUD will run. Keep
-   `hud.mjs`, `hud-hook.mjs`, and `src/` together. The server resolves the browser modules and stylesheet from
-   `src/` beside `hud.mjs`, so you can launch it from another working directory.
-2. Run `node hud.mjs` (or `node hud.mjs autostart on` to have it start at every logon).
+1. Install Node.js 22 and make `node` available on PATH.
+2. Clone the repository or extract a complete source archive into the folder where the HUD will run. To build the
+   archive from a checkout, use `git archive --format=zip --prefix=claude-hud/ -o ../claude-hud.zip HEAD` at the
+   revision you want to deploy. Keep `hud.mjs`, `hud-hook.mjs`, and the complete `src/` tree together in the
+   extracted `claude-hud/` folder. No dependency install or build step is required.
+3. From any working directory, run `node "C:/path/to/claude-hud/hud.mjs"`. On Windows, run the same command
+   with `autostart on` to register it at logon. Add `--lan` to that registration if you want LAN access.
 
 That's all: each time it starts, the HUD installs its hooks into every Claude Code folder it watches (`~/.claude` and
 any `~/.claude-*`), so there's nothing else to run. Open sessions pick the hooks up by themselves. Set

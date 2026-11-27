@@ -6,7 +6,7 @@ import { projectInfo } from './projects.mjs';
 const PLAN_POLL_MS = 10_000;             // recover missed file events and documentation folders created later
 const PLAN_TOP_DIRS = ['docs', 'Documentation', 'doc'];
 const PLAN_FILE_RE = /^(?:.*[-_])?(?:status|plan)\.md$|^(?:handoff|rollout)\.md$/i;
-const PLAN_SKIP_DIRS = new Set(['_template', 'node_modules', 'bin', 'obj', 'handoff', 'handoffs', 'archive', 'archives', '.git']);
+export const PLAN_SKIP_DIRS = new Set(['_template', 'node_modules', 'bin', 'obj', 'handoff', 'handoffs', 'archive', 'archives', '.git']);
 
 export function createPlanFiles({ lifetime, parseCandidate, onScan, onDrop }) {
   const roots = new Map();

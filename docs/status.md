@@ -1,6 +1,6 @@
 # Status
 
-*Last rewritten 2026-11-26 after handing off the project, board, usage and alert extraction.*
+*Last rewritten 2026-11-27 after handing off CLI, demos, and packaging.*
 
 ## The project in one paragraph
 
@@ -9,15 +9,17 @@ It serves live and synthetic state over HTTP and SSE.
 
 ## Where things stand
 
-- P0 through P6 are accepted. P6 is committed at `7b843d7`. P7 and P8 await review in `../claude-hud-arch`.
-- The runtime now composes separate project, board, account and external usage sources. Board links, mark clocks,
-  alerts and phone push keep the v1 snapshot and stream behavior. [P7 handoff](plans/hud-architecture/handoffs/P7-boards.md)
-- The CLI self-test, 63 Node checks and 15 Edge layouts passed. Seven HTTP snapshots and ten SSE frames matched
-  the pre-P7 fixture replay.
+- P7 and P8 were accepted and committed as `645a1dc` and `a0ae048` in `../claude-hud-arch`.
+- P9 separated CLI commands, Windows setup and the demo runtime. The extracted ZIP passed 88 self-checks,
+  66 Node checks and 15 Edge layouts. Its median startup reached the first full frame 48.38 ms after the
+  P1 comparison result, within the 100 ms tolerance.
+- The optimized archive passed the required 30-run hook gate. Two additional batches measured p95
+  overheads of 29.57 and 45.23 ms against the 15 ms limit.
+  [P9 handoff](plans/hud-architecture/handoffs/P9-packaging.md)
 
 ## Active plans
 
-- HUD architecture has P7 and P8 handed off. P9 can review them and finish the CLI, demos and packaging.
+- HUD architecture has P9 handed off. P10 can start its independent review and final verification.
   [HUD architecture](plans/hud-architecture/STATUS.md)
 - HUD 0.3 release verification is deferred with the last live memory gate open.
   [HUD 0.3](plans/hud-0-3/STATUS.md)
@@ -26,8 +28,8 @@ It serves live and synthetic state over HTTP and SSE.
 
 ## What is next
 
-- P9 reviews P7 and P8 and verifies the CLI, demo paths and bundled installation.
-  [P9 plan](plans/hud-architecture/PLAN.md#13-p9-finish-cli-demos-and-packaging)
+- P10 runs parity, performance, and deployment verification. It also documents the architecture and rollback.
+  [P10 plan](plans/hud-architecture/PLAN.md#14-p10-verify-and-close)
 
 ## Waiting on you
 
@@ -36,6 +38,7 @@ It serves live and synthetic state over HTTP and SSE.
 
 ## The last session
 
-P7 accepted P6 and separated discovery, board rules, usage and alerts. The fixture replay verified that live
-SSE links and stable plan records stay independent and that feed, plan and state events keep their order.
-[P7 handoff](plans/hud-architecture/handoffs/P7-boards.md)
+The owner approved a targeted forwarder startup edit. The hook skips opening stdout during a normal forward.
+All 66 Node tests and the additional held-open stdin check passed. The optimized archive met the 15 ms
+budget in the required 30-run batch. All three measurements are recorded for P10.
+[P9 handoff](plans/hud-architecture/handoffs/P9-packaging.md)

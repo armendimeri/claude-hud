@@ -44,8 +44,18 @@ export function slimHookPayload(p, at) {
 export function runHook() {
   const finish = () => process.exit(0);
   const quiet = () => true;
-  process.stdout.write = quiet;
-  process.stderr.write = quiet;
+  // Suppress writes without eagerly opening stdout or stderr.
+  for (const name of ['stdout', 'stderr']) {
+    const descriptor = Object.getOwnPropertyDescriptor(process, name);
+    Object.defineProperty(process, name, {
+      ...descriptor,
+      get() {
+        const stream = descriptor.get.call(this);
+        stream.write = quiet;
+        return stream;
+      },
+    });
+  }
   process.on('uncaughtException', finish);
   process.on('unhandledRejection', finish);
   process.removeAllListeners('warning');

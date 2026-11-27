@@ -4,7 +4,7 @@ import { MINUTE_MS } from './models.mjs';
 import { oneLine, truncate } from './tools.mjs';
 
 const PLAN_WRITE_MS = 60_000;            // a board change this soon after an agent wrote the file is that agent's
-const HISTORY_MAX = 50;                  // state changes kept per plan, in memory
+export const HISTORY_MAX = 50;                  // state changes kept per plan, in memory
 const OWNER_AGENTS = /^(human|owner)$/i;
 const MARK_WORDS = { unclaimed: 'board not updated', stalled: 'stalled', early: 'started early' };
 

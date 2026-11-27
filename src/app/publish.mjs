@@ -14,12 +14,13 @@ export function publicSessions(sessions, now, projectFor, findSession) {
     .sort(compareSessions), findSession);
 }
 
-export function projectLiveSnapshot({
-  now, startedAt, host, hooksInstalled, codex, sessions, projects, plans, board, alerts, account, externalUsage, push, tokensToday,
+/** @returns {Omit<import('../contract/snapshot.mjs').HudSnapshot, 'feed'>} */
+export function projectSnapshot({
+  now, startedAt, demo = false, host, hooksInstalled, codex, sessions, projects, plans, board, alerts, account, externalUsage, push, tokensToday,
 }) {
   return {
-    now, uptime: now - startedAt, demo: false, version: VERSION, host, hooksInstalled,
-    codex, sessions, ...externalUsage, projects, plans, board, alerts, push, account,
+    now, uptime: now - startedAt, demo, version: VERSION, host, hooksInstalled,
+    ...(codex !== undefined && { codex }), sessions, ...externalUsage, projects, plans, board, alerts, push, account,
     totals: totalsFor(sessions, plans, tokensToday),
   };
 }
@@ -36,7 +37,7 @@ const REDACTIONS = [
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, MASK],
 ];
 
-function createRedactor() {
+export function createRedactor() {
   const redactCache = new Map();
 
   function redact(s) {

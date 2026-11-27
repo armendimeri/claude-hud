@@ -26,7 +26,7 @@ export function cleanCell(c) {
     .replace(/<[^>]+>/g, '')
     .replace(/\*\*|__|`/g, ''));
 }
-function splitRow(line) {
+export function splitRow(line) {
   let s = line.trim();
   if (s.startsWith('|')) s = s.slice(1);
   if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);

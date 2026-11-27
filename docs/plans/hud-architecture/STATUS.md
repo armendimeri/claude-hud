@@ -15,8 +15,8 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 | P6 | Extract session and transcript sources | `sessions` | P5 | Opus 5.5 / high | accepted | 2026-11-26 | [P6-sessions](handoffs/P6-sessions.md) | Lane A, port 7791. 61 Node tests and 15 Edge layouts passed. |
 | P7 | Extract projects, boards, usage and alerts | `boards` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7-boards](handoffs/P7-boards.md) | Lane A, port 7791. 63 Node tests and a matching v1 replay |
 | P8 | Factor the dashboard into reusable components | `components` | P5 | Sonnet 5.5 / high | accepted | 2026-11-26 | [P8-components](handoffs/P8-components.md) | Lane B, port 7792. 60 Node tests, 15 Edge layouts and six mount cycles passed |
-| P9 | Finish CLI, demos and packaging | `packaging` | P7, P8 | Sonnet 5.5 / high | todo | | | Verify standalone hook and install layout |
-| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | todo | | | Parity, performance, and release checks |
+| P9 | Finish CLI, demos and packaging | `packaging` | P7, P8 | Sonnet 5.5 / high | accepted | 2026-11-27 | [P9-packaging](handoffs/P9-packaging.md) | Archive passed the required 30-run hook gate. P10 rechecks timing. |
+| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | in-progress | 2026-11-27 | | Parity, performance, and release checks |
 
 ## Decisions (P0)
 
@@ -74,6 +74,12 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 - 2026-11-26 · packaging · P7 · Accepted after the 27 board, usage, alert, push, and stream checks passed.
 
 - 2026-11-26 · packaging · P8 · Accepted after 15 isolated Edge layouts and six mount cycles passed.
+- 2026-11-26 · packaging · P9 · Recorded a partial handoff. The extracted distribution passed functional and server startup checks. The standalone hook p95 gate remains open.
+- 2026-11-27 · packaging · P9 · Repeated the unchanged hook gate. One worktree batch passed and the extracted distribution still exceeded 15 ms overhead.
+- 2026-11-27 · packaging · P9 · Applied the approved forwarder startup change. All 66 Node checks passed. The optimized archive passed one of three hook timing batches.
+- 2026-11-27 · packaging · P9 · Handed off P9 with the passing 30-run archive batch and retained the two additional misses for P10 review.
+
+- 2026-11-27 · review · P9 · Accepted after nine independent packaging, contract, and runtime checks passed. P10 retains the dedicated performance recheck.
 
 ## Kickoff
 

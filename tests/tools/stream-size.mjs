@@ -1,4 +1,4 @@
-// Usage: node tests/tools/stream-size.mjs (<base url> | --demo | --demo=dense | --baseline) [--seconds=30]
+// Usage: node tests/tools/stream-size.mjs (<base url> | --demo | --demo=dense | --baseline | --hooks) [--seconds=30]
 // A URL is read-only. Demo and baseline modes start isolated HUDs. The baseline also samples Windows process counters.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -18,10 +18,11 @@ const opt = name => {
 const seconds = Number(opt('seconds') ?? 30);
 const demo = opt('demo');
 const baseline = args.includes('--baseline');
+const hooks = args.includes('--hooks');
 const url = args.find(a => !a.startsWith('--'));
-if (!Number.isFinite(seconds) || seconds <= 0 || Number(Boolean(url)) + Number(demo !== undefined) + Number(baseline) !== 1 ||
+if (!Number.isFinite(seconds) || seconds <= 0 || Number(Boolean(url)) + Number(demo !== undefined) + Number(baseline) + Number(hooks) !== 1 ||
     (baseline && (!Number.isSafeInteger(seconds) || seconds < 3 || process.platform !== 'win32'))) {
-  console.error('Usage: node tests/tools/stream-size.mjs (<base url> | --demo | --demo=dense | --baseline) [--seconds=30]');
+  console.error('Usage: node tests/tools/stream-size.mjs (<base url> | --demo | --demo=dense | --baseline | --hooks) [--seconds=30]');
   console.error('--baseline requires Windows and a whole number of seconds (at least 3)');
   process.exit(2);
 }
@@ -137,6 +138,7 @@ async function measureHooks(hud) {
   });
   receiver.listen(hud.port, '127.0.0.1');
   await once(receiver, 'listening');
+  const input = JSON.stringify(hookInput);
   const commands = [
     { label: 'node -e ""', args: ['-e', ''], samples: [] },
     { label: 'node hud.mjs hook', args: [script, 'hook'], samples: [] },
@@ -150,7 +152,8 @@ async function measureHooks(hud) {
         const child = hud.spawnCli(command.args, { stdio: ['pipe', 'pipe', 'pipe'] });
         let output = '';
         for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { output += chunk; });
-        child.stdin.end(command === commands[0] ? undefined : JSON.stringify(hookInput));
+        child.stdin.on('error', error => { if (error.code !== 'EPIPE') throw error; });
+        child.stdin.end(input);
         const [code] = await once(child, 'close');
         command.samples.push(performance.now() - start);
         assert.equal(code, 0);
@@ -160,7 +163,9 @@ async function measureHooks(hud) {
     assert.equal(received, 60, 'both hook commands delivered all synthetic posts');
     console.log(`Hook startup through exit: 30 interleaved runs per command, ${received} posts to a loopback 204 receiver`);
     for (const command of commands) console.log(`  ${command.label} p95: ${percentile(command.samples, 0.95).toFixed(2)} ms`);
-    console.log(`  standalone overhead vs bare Node: ${(percentile(commands[2].samples, 0.95) - percentile(commands[0].samples, 0.95)).toFixed(2)} ms`);
+    const overhead = percentile(commands[2].samples, 0.95) - percentile(commands[0].samples, 0.95);
+    console.log(`  standalone overhead vs bare Node: ${overhead.toFixed(2)} ms (15 ms budget)`);
+    return overhead;
   } finally {
     await new Promise(resolve => receiver.close(resolve));
   }
@@ -208,6 +213,7 @@ if (url) {
   const hud = await startHud({ demo: demo === 'dense' ? 'dense' : demo !== undefined, start: false });
   try {
     if (baseline) await measureBaseline(hud);
+    else if (hooks) process.exitCode = (await measureHooks(hud)) > 15 ? 1 : 0;
     else {
       await hud.restart();
       reportStream(await measureStream(hud.base), `Isolated ${demo === 'dense' ? 'dense demo' : 'demo'} SSE`);
