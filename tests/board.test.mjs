@@ -110,6 +110,7 @@ test('restart rebuilds transcript links and starts with fresh history and mark c
   await board({ dir: cwd }, 'secondary', standard(['P2', 'in-progress']));
   const before = await hud.until(s => plan(s, other)?.history.length === 1);
   assert.deepEqual(session(before, id).subagents[0].work.items, [workItem(other, 'P2', 'name')]);
+  assert.ok(before.board.items[other + '#P2'].agents.some(agent => agent.agentId === 'board-worker' && agent.active));
   assert.deepEqual(plan(before, other).history[0], {
     at: plan(before, other).history[0].at, id: 'P2', from: 'handed-off', to: 'in-progress', sessionId: id, agentId: 'board-worker',
   });

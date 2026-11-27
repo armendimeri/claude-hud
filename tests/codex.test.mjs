@@ -113,6 +113,16 @@ test('Claude and Codex coexist, update incrementally, and survive restart', { ti
     assert.equal(s.sessions.find(x => x.id === 'codex:shared-id').currentTool, null);
     assert.ok(!JSON.stringify(s).includes('PRIVATE_OUTPUT'));
   });
+  await t.test('a visible Codex session becomes ended after the silence threshold', async () => {
+    const lastActivity = Date.now() - 10 * 60000 + 8000;
+    const at = new Date(lastActivity).toISOString();
+    await fs.writeFile(path.join(logs, 'rollout-expiring.jsonl'), meta('expiring', 'cli', at) +
+      record('event_msg', { type: 'task_started' }, at));
+    const expiring = state => state.sessions.find(x => x.id === 'codex:expiring');
+    await until(state => expiring(state)?.status === 'busy');
+    const ended = expiring(await until(state => expiring(state)?.status === 'ended', 15000));
+    assert.equal(ended.endedAt, lastActivity);
+  });
   await t.test('expired session resumes and a newly created rollout is discovered', async () => {
     await fs.appendFile(stale, record('event_msg', { type: 'task_started' }));
     await until(s => s.sessions.find(x => x.id === 'codex:stale')?.status === 'busy');

@@ -8,6 +8,18 @@ import { ENDED_KEEP_MS } from '../domain/sessions.mjs';
 // `api-request` lines are small and read for their model id; `api-request-blob` / `-shape` lines (up to ~200 KB) are not.
 const API_REQUEST_PREFIX = '{"type":"api-request",';
 const SKIP_LINE_PREFIXES = ['{"type":"api-request', '{"type":"file-history', '{"type":"atis-latch', '{"type":"queue-operation', '{"type":"last-prompt'];
+const API_REQUEST_CHAR_LIMIT = 65536;
+const PREFIX_BYTES = Math.max(API_REQUEST_PREFIX.length, ...SKIP_LINE_PREFIXES.map(prefix => prefix.length));
+
+function skipLargeLine(bytes) {
+  if (bytes.length <= API_REQUEST_CHAR_LIMIT) return false;
+  const prefix = bytes.toString('utf8', 0, PREFIX_BYTES);
+  if (prefix.startsWith(API_REQUEST_PREFIX)) {
+    // The model parser limits UTF-16 length. Leave multibyte records near that limit to the parser.
+    return bytes.length > 3 * API_REQUEST_CHAR_LIMIT;
+  }
+  return SKIP_LINE_PREFIXES.some(skip => prefix.startsWith(skip));
+}
 
 async function readJson(file) { try { return JSON.parse((await fsp.readFile(file, 'utf8')).replace(/^\uFEFF/, '')); } catch { return null; } }
 
@@ -16,7 +28,7 @@ export function createClaudeTranscripts({ roots, lifetime, reader, summarizeTool
   closeSub, onChange }) {
   const readTail = reader.read;
   function getTail(file) {
-    const t = reader.open(file, processLine);
+    const t = reader.open(file, processLine, undefined, skipLargeLine);
     const key = file.toLowerCase();
     t.info.rootBedrock = !!roots.find(root => key.startsWith(root.projects.toLowerCase() + path.sep))?.bedrock;
     return t;
@@ -45,7 +57,7 @@ export function createClaudeTranscripts({ roots, lifetime, reader, summarizeTool
   }
 
   function onApiRequestLine(t, line) {
-    if (line.length > 65536) return;
+    if (line.length > API_REQUEST_CHAR_LIMIT) return;
     let j;
     try { j = JSON.parse(line); } catch { return; }
     const model = j?.params?.model;

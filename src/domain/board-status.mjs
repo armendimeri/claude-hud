@@ -84,6 +84,7 @@ export function createPlanState({ boardTrack, agentLabel, pushFeed, clock }) {
   const plans = new Map();        // project and relative path, possibly shared by multiple worktrees
   const planWrites = new Map();   // last write per board file
   const planHistory = new Map();  // state changes by public plan key
+  let view;
 
   function noteWrite(file, sessionId, agentId, at) {
     if (!sessionId) return;
@@ -129,7 +130,8 @@ export function createPlanState({ boardTrack, agentLabel, pushFeed, clock }) {
       const pkey = `${project}|${path.relative(root, plan.path)}`.toLowerCase();
       found.add(pkey);
       const prev = plans.get(pkey);
-      if (prev && prev.rootKey !== key && prev.mtime > mtime) continue;
+      if (prev?.plan === plan || (prev && prev.rootKey !== key && prev.mtime > mtime)) continue;
+      view = undefined;
       if (prev) diffPlan(prev.plan, plan);
       plans.set(pkey, { plan, mtime, rootKey: key });
     }
@@ -137,13 +139,18 @@ export function createPlanState({ boardTrack, agentLabel, pushFeed, clock }) {
   }
 
   function removeMissing(key, found) {
-    for (const [id, plan] of plans) if (plan.rootKey === key && !found?.has(id)) plans.delete(id);
+    for (const [id, plan] of plans) {
+      if (plan.rootKey !== key || found?.has(id)) continue;
+      plans.delete(id);
+      view = undefined;
+    }
   }
 
   function views() {
-    return [...plans.values()].map(({ plan, mtime }) => ({
-      ...plan, touchedAt: Math.round(mtime), history: planHistory.get(planKeyOf(plan)) || [],
-    })).sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title));
+    // Parsed plan records are replaced on file changes. Copy history before reusing a view.
+    return view ??= Object.freeze([...plans.values()].map(({ plan, mtime }) => ({
+      ...plan, touchedAt: Math.round(mtime), history: planHistory.get(planKeyOf(plan))?.slice() || [],
+    })).sort((a, b) => a.project.localeCompare(b.project) || a.title.localeCompare(b.title)));
   }
 
   return { noteWrite, applyScan, dropRoot: key => removeMissing(key), views };

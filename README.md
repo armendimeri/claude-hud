@@ -98,6 +98,8 @@ to one per session per minute and 20 in a rolling hour. The setting is off by de
 3. From any working directory, run `node "C:/path/to/claude-hud/hud.mjs"`. On Windows, run the same command
    with `autostart on` to register it at logon. Add `--lan` to that registration if you want LAN access.
 
+For isolated deployment verification and Windows rollback, see the [architecture guide](docs/ARCHITECTURE.md#windows-deployment-and-rollback).
+
 That's all: each time it starts, the HUD installs its hooks into every Claude Code folder it watches (`~/.claude` and
 any `~/.claude-*`), so there's nothing else to run. Open sessions pick the hooks up by themselves. Set
 `HUD_NO_AUTOINSTALL=1` to make it leave `settings.json` alone; `node hud.mjs install` does the same by hand.

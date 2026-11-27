@@ -536,6 +536,17 @@ try {
           console.log(`pass ${name} at ${width}x${height}: ${actual.sessions} sessions, ${actual.feed} recent events, ${actual.columns} columns`);
         }
       }
+      await dense.stop();
+      await until("document.querySelector('.activity-connection[data-status=reconnecting]')",
+        'the Activity preview detects the dense demo server stopping');
+      const page = await evaluate(`window.activityBeforeRestart = document.querySelector('.activity-sessions li');
+        performance.timeOrigin`);
+      await dense.restart();
+      await until(`performance.timeOrigin === ${page} && document.querySelector('.activity-connection[data-status=live]')
+        && document.querySelector('.activity-sessions li') && !window.activityBeforeRestart.isConnected`,
+        'the Activity preview renders a fresh full frame after the dense demo server restarts');
+      await evaluate('delete window.activityBeforeRestart');
+      console.log('pass Activity reconnects to the real dense demo stream without navigation');
     } finally {
       await dense.close();
     }

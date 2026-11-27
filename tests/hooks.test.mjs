@@ -49,6 +49,32 @@ test('Windows registry sessions require the original process when procStart is r
   await hud.until(s => find(s, active)?.status === 'ended');
 });
 
+test('large Claude records preserve neighboring events and valid multibyte model metadata', async t => {
+  const hud = await startHud({ start: false });
+  t.after(() => hud.close());
+  const id = sid(), bedrockModel = 'us.anthropic.claude-opus-5-5-v1:0';
+  await registry(hud, id, { pid: process.pid });
+  await transcript(hud, id, [
+    { type: 'api-request', params: { model: bedrockModel, padding: 'x'.repeat(220000) } },
+    { type: 'api-request-blob', customTitle: 'Ignored record', padding: 'x'.repeat(220000) },
+    said(id),
+  ]);
+  await hud.restart();
+  const session = state => state.sessions.find(value => value.id === id);
+  const initial = session(await hud.until(state => session(state)?.tokens.output === 2));
+  assert.equal(initial.provider, 'anthropic');
+  assert.notEqual(initial.title, 'Ignored record');
+
+  await transcript(hud, id, [
+    { type: 'api-request', params: { model: bedrockModel, padding: 'é'.repeat(40000) } },
+    { type: 'custom-title', customTitle: 'Published after the model record' },
+  ]);
+  const updated = session(await hud.until(state => session(state)?.title === 'Published after the model record'));
+  assert.equal(updated.modelRaw, bedrockModel);
+  assert.equal(updated.provider, 'bedrock');
+  assert.equal(updated.tokens.output, 2);
+});
+
 test('hook events drive the session state', { timeout: 60000 }, async t => {
   const hud = await startHud();
   t.after(() => hud.close());

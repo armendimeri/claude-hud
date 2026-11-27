@@ -2,11 +2,12 @@ import os from 'node:os';
 import { readConfig, VERSION } from '../config.mjs';
 
 async function serve(config, demoMode) {
-  const { createHttpServer } = await import('../http/server.mjs');
+  const [{ createHttpServer }, runtimeModule] = await Promise.all([
+    import('../http/server.mjs'),
+    demoMode ? import('../demo/runtime.mjs') : import('../app/live.mjs'),
+  ]);
   const { lan, host, port } = config;
-  const runtime = demoMode
-    ? (await import('../demo/runtime.mjs')).createDemoRuntime(config, demoMode)
-    : (await import('../app/live.mjs')).createLiveRuntime(config);
+  const runtime = demoMode ? runtimeModule.createDemoRuntime(config, demoMode) : runtimeModule.createLiveRuntime(config);
   const http = createHttpServer({ config, source: runtime.source, writer: runtime.writer });
   const close = () => Promise.all([http.close(), runtime.close()]);
   process.on('uncaughtException', error => console.error('error:', error));

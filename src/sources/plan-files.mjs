@@ -8,13 +8,17 @@ const PLAN_TOP_DIRS = ['docs', 'Documentation', 'doc'];
 const PLAN_FILE_RE = /^(?:.*[-_])?(?:status|plan)\.md$|^(?:handoff|rollout)\.md$/i;
 export const PLAN_SKIP_DIRS = new Set(['_template', 'node_modules', 'bin', 'obj', 'handoff', 'handoffs', 'archive', 'archives', '.git']);
 
+function fileStamp(stat) {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+}
+
 export function createPlanFiles({ lifetime, parseCandidate, onScan, onDrop }) {
   const roots = new Map();
 
   function ensureRoot(root, project) {
     const key = root.toLowerCase();
     if (roots.has(key)) return;
-    const rec = { root, project, watchers: new Map(), timer: null, scanning: false, scanAgain: false, lastScanAt: 0 };
+    const rec = { root, project, watchers: new Map(), candidates: new Map(), timer: null, scanning: false, scanAgain: false, lastScanAt: 0 };
     roots.set(key, rec);
     scanRoot(key);
   }
@@ -73,16 +77,32 @@ export function createPlanFiles({ lifetime, parseCandidate, onScan, onDrop }) {
     const info = await projectInfo(rec.root);
     const root = { root: rec.root, project: rec.project };
     const candidates = [];
-    for (const f of files) {
+    const next = new Map();
+    for (const file of files) {
       if (lifetime.signal.aborted) return;
-      let st, text, planText = null;
-      try { st = await fsp.stat(f); text = await fsp.readFile(f, 'utf8'); } catch { continue; }
-      if (/status\.md$/i.test(f)) { try { planText = await fsp.readFile(path.join(path.dirname(f), 'PLAN.md'), 'utf8'); } catch {} }
-      const candidate = parseCandidate({ file: f, mtime: st.mtimeMs, text, planText }, root);
-      if (candidate) candidates.push(candidate);
+      let stat;
+      try { stat = await fsp.stat(file); } catch { continue; }
+      const stamp = fileStamp(stat);
+      const companion = /status\.md$/i.test(file) ? path.join(path.dirname(file), 'PLAN.md') : null;
+      let companionStamp = null;
+      if (companion) {
+        try { companionStamp = fileStamp(await fsp.stat(companion)); } catch {}
+      }
+      let entry = rec.candidates.get(file);
+      if (entry?.stamp !== stamp || entry?.companionStamp !== companionStamp) {
+        let text, planText = null;
+        try { text = await fsp.readFile(file, 'utf8'); } catch { continue; }
+        if (companionStamp !== null) {
+          try { planText = await fsp.readFile(companion, 'utf8'); } catch { companionStamp = undefined; }
+        }
+        entry = { stamp, companionStamp, candidate: parseCandidate({ file, mtime: stat.mtimeMs, text, planText }, root) };
+      }
+      next.set(file, entry);
+      if (entry.candidate) candidates.push(entry.candidate);
     }
     if (lifetime.signal.aborted || roots.get(key) !== rec) return;
     rec.info = info;
+    rec.candidates = next;
     onScan(key, root, candidates);
   }
 

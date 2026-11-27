@@ -37,12 +37,17 @@ const REDACTIONS = [
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, MASK],
 ];
 
+const MAX_CACHED_LINE_LENGTH = 512;
+const REDACTION_CACHE_LIMIT = 1 << 20;
+
 export function createRedactor() {
   const redactCache = new Map();
+  let cachedCharacters = 0;
 
   function redact(s) {
     if (typeof s !== 'string' || s.length < 4) return s;
-    const hit = redactCache.get(s);
+    const cacheable = s.length <= MAX_CACHED_LINE_LENGTH;
+    const hit = cacheable ? redactCache.get(s) : undefined;
     if (hit !== undefined) return hit;
     let out = s;
     for (const [re, rep] of REDACTIONS) out = out.replace(re, rep);
@@ -53,8 +58,15 @@ export function createRedactor() {
       if (!/\d/.test(run) || !/[A-Za-z]/.test(run)) return run;
       return Math.max(...run.split(/[/_-]/).map(p => p.length)) >= 20 ? MASK : run;
     });
-    if (redactCache.size > 20_000) redactCache.clear();
-    redactCache.set(s, out);
+    if (cacheable) {
+      const added = s.length + out.length;
+      if (cachedCharacters + added > REDACTION_CACHE_LIMIT) {
+        redactCache.clear();
+        cachedCharacters = 0;
+      }
+      redactCache.set(s, out);
+      cachedCharacters += added;
+    }
     return out;
   }
 
@@ -63,7 +75,9 @@ export function createRedactor() {
     if (typeof v === 'string') return NO_REDACT.has(key) ? v : redact(v);
     if (Array.isArray(v)) return Object.freeze(v.map(x => redactDeep(x, key)));
     if (v && typeof v === 'object') {
-      return Object.freeze(Object.fromEntries(Object.entries(v).map(([k, value]) => [k, redactDeep(value, k)])));
+      const result = { ...v };
+      for (const field of Object.keys(result)) result[field] = redactDeep(result[field], field);
+      return Object.freeze(result);
     }
     return v;
   }
@@ -78,6 +92,7 @@ export function createPublisher(updateState) {
   const { redact, redactDeep } = createRedactor();
   const listeners = new Set();
   let snapshot;
+  let lastPlans, safePlans;
   let recent = [];
   let lines = [];
   let timer = null;
@@ -92,8 +107,22 @@ export function createPublisher(updateState) {
     const now = Date.now();
     projecting = true;
     try {
-      const state = redactDeep(updateState(now));
-      snapshot = Object.freeze({ ...state, feed: Object.freeze(recent.slice().reverse()) });
+      const state = { ...updateState(now) };
+      for (const field of Object.keys(state)) {
+        const value = state[field];
+        if (field === 'plans' && Array.isArray(value) && Object.isFrozen(value)) {
+          // Live plan views keep their identity until the parsed records or history change.
+          if (lastPlans !== value) {
+            lastPlans = value;
+            safePlans = redactDeep(value, field);
+          }
+          state[field] = safePlans;
+        } else {
+          state[field] = redactDeep(value, field);
+        }
+      }
+      state.feed = Object.freeze(recent.slice().reverse());
+      snapshot = Object.freeze(state);
       lastUpdateAt = now;
     } finally {
       projecting = false;

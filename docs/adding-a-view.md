@@ -37,3 +37,16 @@ Use the [store fixture tests](../tests/browser-store.test.mjs) for selectors and
 The [Edge smoke test](../tests/browser-smoke.mjs) uses wire fixtures for Activity and for repeated
 mounts of all three views. It also checks real demo streams, dashboard navigation, links, kiosk
 and the Activity fallback on an isolated live-mode instance.
+
+## Activity example
+
+The change set consists of the [view module](../src/web/views/activity.mjs), its
+[registry entry](../src/web/view-registry.mjs), its [stylesheet](../src/web/styles/activity.css)
+and the [asset allowlist entries](../src/http/assets.mjs). The page shell is shared across
+registered page views.
+
+Run the fixture store tests with `node --test tests/browser-store.test.mjs`. The browser smoke
+test uses the same store with a fixture EventSource to check Activity's first frame,
+project selection, retry and teardown. It also opens the preview against normal and dense
+demo streams. The restart checks verify that the real SSE transport reseeds state and
+reconciles the feed. [Browser smoke](../tests/browser-smoke.mjs)

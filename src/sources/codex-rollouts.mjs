@@ -124,11 +124,11 @@ export function createCodexRollouts({ directories, lifetime, reader, redact, sum
         // Do not follow symlinks or inspect other CODEX_HOME files (notably auth.json).
         if (e.isDirectory() && depth < 3 && /^\d+$/.test(e.name)) { await visit(file, depth + 1); continue; }
         if (!e.isFile() || !/^rollout-.*\.jsonl$/.test(e.name)) continue;
-        let st;
-        try { st = await fsp.stat(file); } catch { continue; }
-        const existing = reader.find(file);
-        if (!existing && st.mtimeMs < since) continue;
-        const t = reader.open(file, processCodexLine, reset);
+        let t = reader.find(file);
+        if (!t) {
+          try { if ((await fsp.stat(file)).mtimeMs < since) continue; } catch { continue; }
+          t = reader.open(file, processCodexLine, reset);
+        }
         await reader.read(t);
         const s = t.owner?.session;
         if (s) onIdle(s, t.info.lastTs, Date.now());

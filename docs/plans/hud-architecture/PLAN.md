@@ -1,6 +1,6 @@
 # Claude HUD architecture and refactor plan
 
-Status: **accepted** · Written 2026-11-26 · Checked against the code 2026-11-26 · [Implementation board](STATUS.md)
+Status: **verified** 2026-11-27 · Written 2026-11-26 · Checked against the code 2026-11-26 · [Implementation board](STATUS.md)
 
 ## 1. Goal
 

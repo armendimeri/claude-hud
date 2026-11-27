@@ -17,6 +17,15 @@ export function createSse(source) {
   let lastStateAt = 0;
 
   const frame = (event, body) => `event: ${event}\ndata: ${body}\n\n`;
+  let lastPlans, lastPlansBody;
+  function encodePlans(plans) {
+    if (!Object.isFrozen(plans)) return JSON.stringify({ plans });
+    if (lastPlans !== plans || lastPlansBody === undefined) {
+      lastPlans = plans;
+      lastPlansBody = JSON.stringify({ plans });
+    }
+    return lastPlansBody;
+  }
 
   function flush() {
     timer = null;
@@ -24,7 +33,7 @@ export function createSse(source) {
     const snapshot = pending;
     pending = null;
     lastStateAt = Date.now();
-    const plansBody = JSON.stringify({ plans: snapshot.plans });
+    const plansBody = encodePlans(snapshot.plans);
     const state = streamState(snapshot);
     const stateBody = JSON.stringify(state);
     let plansFrame, stateFrame;
@@ -62,7 +71,7 @@ export function createSse(source) {
     const snapshot = source.readSnapshot();
     res.write('retry: 2000\n\n' + frame('state', JSON.stringify({ ...snapshot, full: true })));
     clients.set(res, {
-      plansBody: JSON.stringify({ plans: snapshot.plans }),
+      plansBody: encodePlans(snapshot.plans),
       stateBody: JSON.stringify(streamState(snapshot)),
     });
     res.once('close', () => {

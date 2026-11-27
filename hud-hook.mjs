@@ -64,20 +64,24 @@ export function runHook() {
   const port = portFrom(process.env.HUD_PORT) ?? 7777;
   const chunks = [];
   let size = 0;
-  process.stdin.on('data', chunk => {
+  const input = process.stdin;
+  input.on('data', chunk => {
     size += chunk.length;
     if (size > HOOK_STDIN_MAX) return finish();
     chunks.push(chunk);
   });
-  process.stdin.on('error', finish);
-  process.stdin.on('end', () => {
+  input.on('error', finish);
+  input.on('end', () => {
     let body;
-    try { body = JSON.stringify(slimHookPayload(JSON.parse(Buffer.concat(chunks).toString('utf8')), at)); } catch { return finish(); }
-    // One fixed loopback POST. Drain the response until its connection closes.
+    try {
+      const bytes = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, size);
+      body = JSON.stringify(slimHookPayload(JSON.parse(bytes.toString('utf8')), at));
+    } catch { return finish(); }
+    // One fixed loopback POST. The HUD sends a response after processing the event.
     const socket = createConnection({ host: LOOPBACK, port });
     socket.on('error', finish);
     socket.on('end', finish);
-    socket.resume();
+    socket.once('data', finish);
     socket.write(
       `POST /event HTTP/1.1\r\nHost: ${LOOPBACK}:${port}\r\nConnection: close\r\n` +
       `Content-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n` +

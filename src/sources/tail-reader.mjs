@@ -6,12 +6,12 @@ const fileIdentity = stat => stat.ino ? stat.dev + ':' + stat.ino : null;
 
 export function createTailReader({ task, signal, onChange, createInfo }) {
   const tails = new Map();
-  function open(file, onLine, onReset) {
+  function open(file, onLine, onReset, skipLine) {
     const key = file.toLowerCase();
     let tail = tails.get(key);
     if (!tail) {
       tail = { file, offset: 0, identity: null, rest: [], reading: false, again: false,
-        info: createInfo(), owner: null, onLine, onReset };
+        info: createInfo(), owner: null, onLine, onReset, skipLine };
       tails.set(key, tail);
     }
     return tail;
@@ -67,7 +67,7 @@ export function createTailReader({ task, signal, onChange, createInfo }) {
         line = Buffer.concat(t.rest);
         t.rest.length = 0;
       }
-      if (line.length) t.onLine(t, line.toString('utf8'));
+      if (line.length && !t.skipLine?.(line)) t.onLine(t, line.toString('utf8'));
       start = nl + 1;
     }
     // The read buffer is reused. Copy only the fragments that outlive this read

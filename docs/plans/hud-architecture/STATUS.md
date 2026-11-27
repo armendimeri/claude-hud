@@ -16,7 +16,7 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 | P7 | Extract projects, boards, usage and alerts | `boards` | P6 | Opus 5.5 / high | accepted | 2026-11-26 | [P7-boards](handoffs/P7-boards.md) | Lane A, port 7791. 63 Node tests and a matching v1 replay |
 | P8 | Factor the dashboard into reusable components | `components` | P5 | Sonnet 5.5 / high | accepted | 2026-11-26 | [P8-components](handoffs/P8-components.md) | Lane B, port 7792. 60 Node tests, 15 Edge layouts and six mount cycles passed |
 | P9 | Finish CLI, demos and packaging | `packaging` | P7, P8 | Sonnet 5.5 / high | accepted | 2026-11-27 | [P9-packaging](handoffs/P9-packaging.md) | Archive passed the required 30-run hook gate. P10 rechecks timing. |
-| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | in-progress | 2026-11-27 | | Parity, performance, and release checks |
+| P10 | Verify and close | `review` | P9 | Opus 5.5 / high | handed-off | 2026-11-27 | [P10-review](handoffs/P10-review.md) | Verified staged release gates after performance fixes |
 
 ## Decisions (P0)
 
@@ -80,6 +80,12 @@ Implementation board for the [architecture plan](PLAN.md). Follow the repository
 - 2026-11-27 · packaging · P9 · Handed off P9 with the passing 30-run archive batch and retained the two additional misses for P10 review.
 
 - 2026-11-27 · review · P9 · Accepted after nine independent packaging, contract, and runtime checks passed. P10 retains the dedicated performance recheck.
+
+- 2026-11-27 · review · P10 · Recorded functional, stream and deployment passes. Live CPU exceeded 1% on both builds, and standalone hook batches straddled the 15 ms limit.
+
+- 2026-11-27 · review · P10 · Resumed with owner authorization to address the verification findings.
+
+- 2026-11-27 · review · P10 · Verified the staged release after fixing transcript, snapshot, startup and redaction costs. Recorded live resource passes and both passing and slower hook batches.
 
 ## Kickoff
 

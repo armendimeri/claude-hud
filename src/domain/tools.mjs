@@ -3,7 +3,13 @@ import { MINUTE_MS } from './models.mjs';
 
 export function str(v) { return typeof v === 'string' ? v : ''; }
 export function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
-export function truncate(s, n) { s = str(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+export function truncate(s, n) {
+  s = str(s);
+  if (s.length <= n) return s;
+  const trimmed = s.slice(0, n - 1) + '…';
+  // Small rendered summaries should not hold a large transcript string through a V8 slice.
+  return s.length > 2048 ? Buffer.from(trimmed, 'utf16le').toString('utf16le') : trimmed;
+}
 export function oneLine(s) { return str(s).replace(/\s+/g, ' ').trim(); }
 
 export const AGENT_TOOLS = new Set(['Agent', 'Task']);

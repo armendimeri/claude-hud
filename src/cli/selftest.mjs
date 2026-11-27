@@ -84,6 +84,9 @@ export function selftest({ port: PORT, hostname: HOSTNAME, unclaimedMs, stalledM
   check('redact: max_tokens survives', redact('max_tokens: 64000'), 'max_tokens: 64000');
 
   check('summary Bash, 80 characters', summarizeTool('Bash', { command: 'x'.repeat(100) }, null).length, 80);
+  const longCommand = 'echo --token private-' + 'x'.repeat(16_000) + ' ' + 'y'.repeat(100);
+  check('summary Bash redacts long commands before truncating',
+    summarizeTool('Bash', { command: longCommand }, null), 'echo --token ••• ' + 'y'.repeat(62) + '…');
   check('summary Read relative', summarizeTool('Read', { file_path: 'C:\\repo\\src\\a.cs' }, 'C:\\repo'), 'src/a.cs');
   check('summary WebFetch drops the query', summarizeTool('WebFetch', { url: 'https://x.test/a/b?token=1' }, null), 'x.test/a/b');
 
