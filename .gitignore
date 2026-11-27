@@ -3,3 +3,4 @@ node_modules/
 .hud-tmp/
 /.vs/claude-hud/FileContentIndex
 /.vs/slnx.sqlite
+/.vs
