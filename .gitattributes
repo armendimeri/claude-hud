@@ -1,0 +1,3 @@
+# Test pages for the cockpit scene and inspector. They load fixtures from tests/ and are not part of a release.
+src/web/cockpit/harness export-ignore
+src/web/inspector/harness export-ignore

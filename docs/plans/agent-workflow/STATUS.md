@@ -9,12 +9,9 @@ first and updates it last.
 |---|---|---|---|---|---|---|---|---|
 | P0 | Decisions | human | — | — | accepted | 2026-10-29 | — | W1–W16 confirmed as proposed |
 | P1 | Standard, templates, skills, kit | `standard` | P0 | Opus 5.5 / high | accepted | 2026-10-29 | [P1-standard](handoffs/P1-standard.md) | Kit installed by the user 2026-10-29 (Q1) |
-| P3-01 | Migrate TourCMS | `migrate` | P1 | Sonnet 5.5 / high | todo | | | Runs in TourCMS · lane A |
-| P3-02 | Migrate ImPOS-Maui | `migrate` | P1 | Sonnet 5.5 / high | todo | | | Runs in ImPOS-Maui · lane B |
-| P3-03 | Migrate claude-hud | `migrate` | P1 | Sonnet 5.5 / medium | todo | | | Runs in claude-hud · lane C · only between two HUD items |
-| P3-04 | Migrate FidiaCRM | `migrate` | P1, O-1 | Opus 5.5 / high | todo | | | Runs in FidiaCRM |
-| O-1 | FidiaCRM has no run going (R15–R17 done or paused) | owner | — | — | todo | | | Unlocks P3-04 |
-| P4 | Review, standard v1.0, close | `review` | P3-01–P3-04 | Opus 5.5 / high | todo | | | Runs in claude-hud |
+| P4 | Review, standard v1.0, close | `review` | P1 | Opus 5.5 / high | todo | | | Runs in claude-hud · claude-hud only, no other repo (2026-11-28) |
+
+P3-01–P3-04 and O-1 were removed on 2026-11-28 (see the log); their IDs aren't reused.
 
 States: `todo` → `in-progress` → `handed-off` → `accepted` (by a different agent). Also `blocked` (needs you, see
 Questions), `partial` (part of the gate met) and `bounced` (the check failed).
@@ -56,9 +53,7 @@ formalises:
    `handed-off`, add a log line, and end with the report in PLAN §4.10.
 
 **Always:**
-- P3 agents work **in the target repo**, change only its docs, CLAUDE.md and skills (never code), and write
-  their handoff here: `C:\Users\armen\source\repos\armendimeri\claude-hud\docs\plans\agent-workflow\handoffs\`.
-- Never convert a board while one of its items is `in-progress`. Never touch FidiaCRM while a run is going.
+- **Never change any file outside this repo** (owner, 2026-11-28). Reading other repos is fine.
 - `~/.claude` changes only through `workflow/kit.mjs` (and `settings.json` only through `hud.mjs install`).
 - Never read `~/.claude/.credentials.json` or `~/.claude/sessions/*.key`; never copy a secret into any file.
 - Git: each project's own mode (W10). In this repo: no commits unless you ask; never add a remote.
@@ -84,10 +79,6 @@ formalises:
 | Item | Open Claude Code in | Model | Effort |
 |---|---|---|---|
 | P1 | `C:\Users\armen\source\repos\armendimeri\claude-hud` | Opus 5.5 | high |
-| P3-01 | `…\TourCMS` | Sonnet 5.5 | high |
-| P3-02 | `…\ImPOS-Maui` | Sonnet 5.5 | high |
-| P3-03 | `…\claude-hud` | Sonnet 5.5 | medium |
-| P3-04 | `…\FidiaCRM` | Opus 5.5 | high |
 | P4 | `…\claude-hud` | Opus 5.5 | high |
 
 > You are the agent for item `<ID>` of the agent workflow standard. Follow the protocol in
@@ -97,3 +88,11 @@ formalises:
 > add it under Questions, and stop.
 - 2026-10-29 · user · P2 · WasteManagement2 removed from this plan: the P2 pilot row, its gate (incl. the "real item run" that tied the rollout to a WasteManagement2 feature), its kickoff and the P2 handoff are deleted; W3, W10 and W15 no longer mention it; P3-01–P3-04 now depend on P1. The `workflow/` fixes made during the pilot stay (CLAUDE.user "Start", STANDARD §5 Runs and §15 header mapping, adopting.md draft/finished plans and secrets, README install note). Cost finding kept for P4: an item agent reads ~17.3 KB vs ~15.4 KB with the old protocol.
 - 2026-10-29 · user · — · Q1 answered: kit installed (`kit.mjs status`: workflow, workflow-plan, workflow-run, workflow-close linked; `~/.claude/CLAUDE.md` holds only the import). `apple-design` not linked, as planned. P3-01–P3-03 can start; P3-04 still waits for O-1.
+- 2026-11-27 · migrate · P3-01 · P1 is `accepted` on the board (nothing to re-check for a docs-only item that depends only on it); P3-01 claimed, `in-progress`.
+- 2026-11-27 · migrate · P3-01 · TourCMS migrated (docs only, no code changed): CLAUDE.md, status, roadmap (B-1…B-33), checks.md, design-system.md, modules.md, three plans with boards, apple-design copy removed, 40 ADR Status lines converted. `hud.mjs lint` on TourCMS: Repository clean. One bullet added to workflow/skills/workflow-run/adopting.md. Finding for P3-02/P3-04: lint reads `^Status:` only, real ADRs use `- **Status:**`. `handed-off`.
+- 2026-11-27 · PM (coordinator) · P3-01 · Gate re-checked: `hud.mjs lint ../TourCMS` → Repository clean; TourCMS `git status` shows only `.md` changes plus the pre-existing untracked `TourCMS/dotnet-tools.json`. `accepted`. Owner still commits TourCMS (message in the handoff).
+- 2026-11-27 · migrate · P3-02 · P1 is `accepted` on the board (docs-only item depending only on it, nothing to re-check); P3-02 claimed, `in-progress`.
+- 2026-11-28 · user · O-1 · Owner confirms no FidiaCRM run is going. `accepted`. P3-04 can start (queued after P3-02, one lane at a time).
+- 2026-11-28 · PM (coordinator) · P3-02 · Agent stopped mid-run while the owner questions the rollout. ImPOS-Maui left half-migrated (uncommitted): topic folders moved under docs/plans/, BACKLOG → roadmap, subscriptions → ADR 0001, product-photos folders → plans/till-photos; code comments still point at old docs/<topic> paths. No handoff written. `partial`.
+- 2026-11-28 · user · P3 · Owner: this plan must not change other projects ("never part of the plan for me"). P3-03 and P3-04 `blocked` on Q2; no migration agent will be started.
+- 2026-11-28 · user · P3 · Migrations dropped: this plan changes no other project. TourCMS and ImPOS-Maui restored to exactly their pre-migration state (`git restore` + agent-created files removed; TourCMS keeps its own untracked `TourCMS/dotnet-tools.json`; ImPOS-Maui `git status` empty). P3-01–P3-04, O-1, their handoffs and kickoff rows removed. The `workflow/skills/workflow-run/adopting.md` lessons stay for P4 to review. P4 now depends on P1 and closes the plan inside claude-hud; the standard applies to new projects, or to a project when the owner opens a session there and asks.

@@ -82,7 +82,7 @@ function brandMark() {
     s('circle', { cx: 14, cy: 14, r: 7, 'stroke-width': 1, opacity: .6 }),
     s('circle', { cx: 14, cy: 14, r: 3, fill: 'var(--arc)', stroke: 'none' }));
 }
-export function topBar({ now, motion, reactor, odo, audio, voice }) {
+export function topBar({ now, motion, reactor, odo, audio, voice, openCockpit = null }) {
   const sub = h('span', { class: 'brand-sub label' });
   const mini = reactor({ size: 36, mini: true }), miniN = odo();
   const clockT = h('span', { class: 'clock-t mono' }), clockD = h('span', { class: 'clock-d label' }), clockU = h('span', { class: 'clock-u label' });
@@ -99,12 +99,15 @@ export function topBar({ now, motion, reactor, odo, audio, voice }) {
     prefs.set('notify', perm === 'granted'); set(perm === 'granted');
     if (perm === 'denied') no.el.dataset.tip = 'Notifications: blocked in the browser settings';
   });
+  const cockpit = openCockpit && h('button', { class: 'btn cockpit-open', type: 'button', 'data-cockpit-open': '',
+    'aria-label': 'Open Cockpit', 'data-tip': 'Open the 3D cockpit (falls back to a list)', on: { click: event => openCockpit(event.currentTarget) } },
+    icon('cockpit'), h('span', { text: 'Cockpit' }));
   const el = h('header', { class: 'top' },
     h('div', { class: 'brand' }, brandMark(), h('span', { class: 'wordmark', text: 'HUD' }), sub),
     h('div', { class: 'mini', 'aria-hidden': 'true' }, mini.el, miniN.el),
     h('div', { class: 'clock' }, clockT, clockD, clockU),
     h('div', { class: 'top-chips' }, demo, hooks),
-    h('div', { class: 'top-r' }, stream, fx.el, vo.el, so.el, no.el));
+    h('div', { class: 'top-r' }, cockpit, stream, fx.el, vo.el, so.el, no.el));
   let started = null;
   return {
     el,

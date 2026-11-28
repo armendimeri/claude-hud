@@ -1,0 +1,109 @@
+/* Cockpit shell (operator-cockpit P7). Loaded as a <link> only when the cockpit or an inspector opens; never
+   imported by hud.css. Uses the foundation tokens and only the 11, 13, 15 and 18 px type sizes. */
+
+/* ---- the dashboard's inspector overlay (Cards and Network) ---- */
+.insp-host { position: fixed; z-index: 40; top: 0; right: 0; bottom: 0; width: min(400px, 100vw); overflow: auto; background: var(--deep); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(0, 0, 0, .5); }
+@media (max-width: 599px) { .insp-host { width: 100vw; border-left: 0; } }
+
+/* ---- the page ---- */
+.cockpit { position: relative; z-index: 1; display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 8px; height: 100vh; height: 100dvh; padding: 16px 24px; }
+.cockpit > .bg { z-index: -1; }
+.cockpit > .cp-bar { grid-row: 1; } .cockpit > .cp-recon { grid-row: 2; } .cockpit > .cp-attn { grid-row: 3; }
+.cockpit > .cp-away { grid-row: 4; } .cockpit > .cp-main { grid-row: 5; } .cockpit > .cp-strip { grid-row: 6; }
+.cp-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 56px; padding: 6px 12px; background: var(--glass); border: 1px solid var(--line); }
+.cp-bar .btn, .cp-exit-sheet .btn, .cp-recon .btn, .cp-attn-d .btn { height: 44px; min-width: 44px; }
+.cp-bar .btn span, .cp-pre .btn span { white-space: nowrap; }
+.cp-title { color: var(--ink-2); font-size: 11px; margin-right: auto; }
+.cp-title:focus-visible { outline-offset: 4px; }
+.cp-scope { height: 44px; max-width: 220px; padding: 0 12px; background: var(--deep); color: var(--ink); border: 1px solid var(--line); font: 600 13px/16px var(--f-body); }
+.cp-scope:disabled { color: var(--ink-2); opacity: 1; }
+.cp-counts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+.cp-count { display: inline-flex; align-items: baseline; gap: 6px; color: var(--ink-2); }
+.cp-count b { font-size: 18px; line-height: 24px; color: var(--ink); }
+.cp-count[data-k="working"] b { color: var(--amber); } .cp-count[data-k="needs"] b { color: var(--alert); } .cp-count[data-k="agents"] b { color: var(--agent); }
+.cp-conn { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
+.cp-conn[data-s="live"] .stream-dot { background: var(--ok); }
+.cp-conn:not([data-s="live"]) .stream-dot { background: var(--amber); }
+.cp-discreet[aria-pressed="true"] { background: var(--arc); color: var(--void); border-color: var(--arc); }
+.cp-recon { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 2px 12px; background: rgba(255, 181, 71, .1); border: 1px solid rgba(255, 181, 71, .45); color: var(--amber); }
+.cp-recon .ic { flex: none; }
+.cp-recon-t { flex: 1; min-width: 0; color: var(--ink); }
+.cp-attn:empty, .cp-away:empty { display: none; }
+.cp-attn .banners, .cp-away .away-summary { position: static; margin: 0; }
+.cp-attn-d { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 2px 12px; border: 1px solid var(--alert); background: rgba(255, 77, 94, .1); color: var(--alert); }
+.cp-attn-d-t { flex: 1; color: var(--ink); font-weight: 600; }
+
+/* ---- the map and the inspector ---- */
+.cp-main { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; border: 1px solid var(--line); background: rgba(8, 17, 28, .6); }
+.cp-main[data-insp="side"] { grid-template-columns: minmax(0, 1fr) 400px; }
+.cp-stage { position: relative; min-width: 0; min-height: 240px; overflow: hidden; }
+.cp-scene { position: absolute; inset: 0; }
+.cp-narrow-note { position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 24px; padding: 0 12px; line-height: 24px; color: var(--ink-2); background: rgba(8, 17, 28, .88); border-bottom: 1px solid var(--arc-06); }
+.cp-stage:has(> .cp-narrow-note:not([hidden])) .cp-scene { top: 24px; }
+.cp-insp { min-width: 0; overflow: auto; background: rgba(8, 17, 28, .97); border-left: 1px solid var(--line); }
+.cp-main[data-insp="none"] > .cp-insp { display: none; }
+.cp-main[data-insp="overlay"] > .cp-insp { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: 400px; max-width: 100%; background: var(--deep); }
+.cp-main[data-insp="sheet"] > .cp-insp { position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; top: 112px; background: var(--deep); border-left: 0; border-top: 1px solid var(--line); }
+.cp-insp-loading, .cp-insp-failed { padding: 16px; color: var(--ink-2); }
+.cp-insp-failed { display: grid; gap: 12px; justify-items: start; }
+
+/* ---- drawers ---- */
+.cp-drawer { position: absolute; z-index: 6; top: 0; bottom: 0; left: 0; width: min(440px, 100%); display: flex; flex-direction: column; background: var(--deep); border-right: 1px solid var(--line); box-shadow: 12px 0 32px rgba(0, 0, 0, .5); }
+.cp-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 4px 4px 16px; border-bottom: 1px solid var(--line); }
+.cp-drawer-head .btn { height: 44px; min-width: 44px; padding: 0 12px; }
+.cp-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.cp-drawer-body .panel { margin: 0; }
+.cp-drawer-body .p-plans .pc, .cp-drawer-body .p-plans .pb { max-height: none; overflow: visible; }
+.cp-vitals { display: grid; gap: 12px; }
+.cp-feed-list { display: grid; }
+.cp-feed-row { display: grid; grid-template-columns: 56px minmax(0, 120px) minmax(0, 1fr); align-items: baseline; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border-bottom: 1px solid var(--arc-06); color: var(--ink); text-align: left; }
+button.cp-feed-row:hover { background: var(--arc-06); }
+.cp-feed-row .label { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-feed-row time { color: var(--ink-2); font-size: 11px; }
+.cp-feed-t { min-width: 0; overflow-wrap: anywhere; }
+.cp-feed-empty { padding: 16px; color: var(--ink-2); }
+
+/* ---- bottom strip ---- */
+.cp-strip { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 0 0 12px; background: var(--glass); border: 1px solid var(--line); }
+.cp-strip .btn { height: 44px; border-radius: 0; }
+.cp-last { display: flex; align-items: baseline; flex: 1; gap: 12px; min-width: 0; }
+.cp-last-tag { flex: none; color: var(--ok); }
+.cp-last-text { flex: 0 1 auto; min-width: 0; color: var(--ink); }
+.cp-last-age { flex: none; color: var(--ink-2); font-size: 11px; }
+
+/* ---- exit confirmation while discreet ---- */
+.cp-exit-sheet { position: fixed; z-index: 50; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; gap: 12px; width: min(520px, calc(100vw - 24px)); padding: 20px; background: var(--deep); border: 1px solid var(--arc-35); box-shadow: 0 0 0 100vmax rgba(4, 7, 13, .7); }
+.cp-exit-sheet p { color: var(--ink-2); }
+.cp-exit-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* ---- before the scene is ready, or if it cannot load ---- */
+.cp-pre { display: block; height: auto; min-height: 100vh; }
+.cp-pre-note { margin: 12px 0; color: var(--ink-2); }
+.cp-pre-list { display: grid; margin-top: 8px; border: 1px solid var(--line); background: rgba(8, 17, 28, .6); }
+.cp-scene .cp-pre-list { position: absolute; inset: 0; margin: 0; border: 0; overflow: auto; align-content: start; }
+.cp-pre-row { display: grid; grid-template-columns: 132px minmax(0, 160px) minmax(0, 1fr); align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 16px; border-bottom: 1px solid var(--arc-06); color: var(--ink); font: 600 13px/16px var(--f-body); }
+.cp-pre-row:hover { background: var(--arc-06); }
+.cp-pre-row .label { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-pre-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-pre-sub .cp-pre-row { padding-left: 40px; }
+
+/* ---- discreet and narrow ---- */
+.cockpit[data-discreet="on"] .away-needs { display: none; }
+.cockpit[data-narrow="true"] .cs-status { display: none; }
+.cockpit[data-narrow="true"] .cockpit-scene:not([data-mode="3d"]) .cs-list { top: 0; }
+@media (max-width: 899px) { .cockpit { padding: 12px; } .cp-title { display: none; } .cp-counts { order: 9; width: 100%; } }
+@media (max-width: 599px) {
+  .cp-bar .btn span { display: none; }
+  .cp-bar .cp-exit span { display: inline; }
+  .cp-bar { gap: 8px; }
+  .cp-exit { order: 0; } .cp-scope { order: 1; flex: 1 1 120px; min-width: 120px; max-width: none; } .cp-conn { order: 2; } .cp-tool { order: 3; }
+  .cp-conn-w { display: none; }
+  .cp-pre-row { grid-template-columns: 112px minmax(0, 1fr); }
+  .cp-pre-row .label:nth-of-type(2) { display: none; }
+  .cp-pre-title { grid-column: 1 / -1; }
+  .cp-feed-row { grid-template-columns: 48px minmax(0, 1fr); }
+  .cp-feed-row .label { display: none; }
+  .cp-last-tag { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .cockpit * { animation: none !important; transition: none !important; } }
+.rm .cockpit * { animation: none !important; transition: none !important; }

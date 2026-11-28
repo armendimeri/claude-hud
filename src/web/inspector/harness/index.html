@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector harness</title>
+<link rel="stylesheet" href="/src/web/styles/foundation.css">
+<link rel="stylesheet" href="/src/web/inspector/inspector.css">
+<style>
+  /* Isolated harness (P3). Not served by the HUD; P7 owns asset registration and placement. */
+  html, body { height: 100%; overflow: hidden; }
+  #stage { position: absolute; inset: 0; display: flex; }
+  #scene { flex: 1; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  #scene button { min-height: 44px; padding: 0 16px; border: 1px solid var(--line); color: var(--ink); }
+  #host { width: 400px; flex: none; height: 100%; }
+  #host:empty { width: 0; }
+  @media (max-width: 599px) { #stage { flex-direction: column; } #scene { flex: none; height: 112px; overflow: hidden; } #host { width: 100%; flex: 1; min-height: 0; } }
+</style>
+</head>
+<body>
+<div id="stage"><div id="scene" role="group" aria-label="Scene stand-in"></div><div id="host"></div></div>
+<script type="module" src="/src/web/inspector/harness/harness.mjs"></script>
+</body>
+</html>

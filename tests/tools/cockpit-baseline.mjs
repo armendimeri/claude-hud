@@ -1,6 +1,6 @@
 // node tests/tools/cockpit-baseline.mjs [--baseline-dir=PATH | --baseline-url=URL]
 //   [--candidate-dir=PATH | --candidate-url=URL] [--loads=20] [--idle-ms=30000]
-//   [--output=PATH] [--gpu]
+//   [--baseline-revision=SHA] [--candidate-revision=SHA] [--output=PATH] [--gpu]
 import assert from 'node:assert/strict';
 import { spawn, fork, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -39,16 +39,29 @@ async function serve(directory) {
   process.send({ url: 'http://' + host + ':' + port });
 }
 
-async function buildTarget(label, directory, url, cleanup) {
+// Report the checkout's own HEAD. An extracted archive inside another checkout has no revision of its own,
+// so Git's repository root must equal the selected directory, or the caller must pass it explicitly.
+function directoryRevision(cwd, explicit) {
+  if (explicit) {
+    assert.match(explicit, /^[0-9a-f]{7,64}$/i, 'Revision must be a hex commit id');
+    return explicit.toLowerCase();
+  }
+  const git = args => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  try {
+    if (path.resolve(git(['rev-parse', '--show-toplevel'])) !== cwd) return null;
+    return git(['rev-parse', 'HEAD']);
+  } catch { return null; }
+}
+
+async function buildTarget(label, directory, url, cleanup, explicitRevision) {
   assert.ok(!(directory && url), 'Choose a directory or URL for ' + label);
   if (url) {
     const parsed = new URL(url);
     assert.ok(['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password);
-    return { label, url: parsed.href, source: 'url', revision: null };
+    return { label, url: parsed.href, source: 'url', revision: explicitRevision ?? null };
   }
   const cwd = path.resolve(directory ?? baseDir);
-  let revision = null;
-  try { revision = execFileSync('git', ['-C', cwd, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch {}
+  const revision = directoryRevision(cwd, explicitRevision);
   const child = fork(fileURLToPath(import.meta.url), ['--fixture-server', cwd], {
     silent: true, windowsHide: true, env: { ...process.env, HUD_NO_AUTOINSTALL: '1' },
   });
@@ -250,8 +263,8 @@ async function benchmark(options) {
   assert.ok(Number.isSafeInteger(loads) && loads > 0 && Number.isSafeInteger(idleMs) && idleMs > 0);
   const cleanup = [];
   try {
-    const baseline = await buildTarget('baseline', options['baseline-dir'], options['baseline-url'], cleanup);
-    const candidate = await buildTarget('candidate', options['candidate-dir'], options['candidate-url'], cleanup);
+    const baseline = await buildTarget('baseline', options['baseline-dir'], options['baseline-url'], cleanup, options['baseline-revision']);
+    const candidate = await buildTarget('candidate', options['candidate-dir'], options['candidate-url'], cleanup, options['candidate-revision']);
     const targets = [baseline, candidate];
     const executable = process.env.HUD_TEST_BROWSER || browserDefault;
     const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'hud-cockpit-baseline-'));
@@ -271,14 +284,22 @@ async function benchmark(options) {
     let port;
     for (let i = 0; i < 100 && !port; i++) {
       if (browserError) throw browserError;
-      if (browserProcess.exitCode !== null) throw new Error('Browser exited with ' + browserProcess.exitCode);
+      // Some Edge builds exit the launcher with code 0 once the real browser is detached, so a clean exit is
+      // only an error when no debugging endpoint appeared.
       try { port = Number((await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); }
-      catch { await pause(100); }
+      catch {
+        if (browserProcess.exitCode) throw new Error('Browser exited with ' + browserProcess.exitCode);
+        await pause(100);
+      }
     }
     assert.ok(port, 'Chromium debugging endpoint started');
     const version = await (await fetch('http://' + host + ':' + port + '/json/version')).json();
     const browser = await connect(version.webSocketDebuggerUrl);
-    cleanup.push(browser.close);
+    cleanup.push(async () => {
+      // A detached browser outlives the launcher process, so ask it to quit before the profile is removed.
+      try { await Promise.race([browser.call('Browser.close'), pause(3000)]); } catch {}
+      browser.close();
+    });
     const device = await browser.call('SystemInfo.getInfo');
     await browser.call('Target.createTarget', { url: 'about:blank' });
     const sample = (target, action) => {
@@ -360,6 +381,7 @@ if (process.argv[2] === '--fixture-server') {
   const { values } = parseArgs({ options: {
     'baseline-dir': { type: 'string' }, 'baseline-url': { type: 'string' },
     'candidate-dir': { type: 'string' }, 'candidate-url': { type: 'string' },
+    'baseline-revision': { type: 'string' }, 'candidate-revision': { type: 'string' },
     loads: { type: 'string' }, 'idle-ms': { type: 'string' }, output: { type: 'string' }, gpu: { type: 'boolean' },
   } });
   await benchmark(values);

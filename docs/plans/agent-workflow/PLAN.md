@@ -88,7 +88,7 @@ Proposed defaults, confirmed in STATUS.md (P0) before P1 starts. ★ = changes w
 | W12 ★ | Questions and the end-of-session report | At most four open questions, each with the recommended answer first. Sensible defaults are decided and reported, not asked. Every project ends a session with the same report (§4.10), finishing with paste-ready Next prompts. | One habit, so you read every project's report the same way. |
 | W13 | One status file per project | `docs/status.md`, rewritten (not added to) at the end of every session. A plan's STATUS.md stays per plan. | One place says where a project stands. |
 | W14 | HUD support | The HUD reads this standard, plus the old formats until a project is migrated. `node hud.mjs lint <repo>` checks a repo against §4. Unticked decisions and unanswered questions show as "needs you". | Instant visibility; lint stops projects drifting apart again. |
-| W15 ★ | Rollout order | TourCMS, ImPOS-Maui and claude-hud in parallel, straight after P1 (no pilot; changed 2026-10-29). FidiaCRM goes last, after its running runs (R15–R17) end. Never during an item that's `in-progress`. | Lowest risk first, and nothing running is disturbed. |
+| W15 ★ | Rollout | **Changed 2026-11-28 by the owner: this plan migrates no project and changes no file outside this repo.** The standard applies to new projects, and to an existing project only when the owner opens a session there and asks. | The owner never wanted other projects changed from here. |
 | W16 ★ | One shared design skill | One `apple-design` at user level. Project tokens and overrides live in that project's `docs/design-system.md`, which the skill reads first and which wins. FidiaCRM's section 0 rules move into its design-system.md. | The three copies have already diverged. |
 
 ## 4. The standard (the contract P1 writes up in full)
@@ -337,7 +337,7 @@ The HUD reads:
 `node hud.mjs lint <repo>` reports every place a repo differs from §4. The old formats (§2) keep working until a
 project is migrated.
 
-## 5. Rollout
+## 5. Adopting the standard in a project (only when the owner asks, in that project)
 
 ### 5.1 Migrating one project (one run, done in that project)
 
@@ -372,12 +372,11 @@ The agent works in the target repo and changes docs only, never code.
 |---|---|---|---|
 | P0 | human | The decisions in STATUS.md | — |
 | P1 | `standard` | `workflow/` in this repo: STANDARD.md, `CLAUDE.user.md`, templates, the three workflow skills and the merged `apple-design`, `conformance.md`, `kit.mjs`; this plan's own files | L |
-| P3-01 … P3-04 | `migrate` | One repo each: TourCMS, ImPOS-Maui, claude-hud, FidiaCRM. Docs only, plus fixes to `workflow/` the migration shows are needed. | M each |
-| P4 | `review` | Conformance across all four repos, standard v1.0, closing this plan | M |
+| P4 | `review` | Inside this repo only: review `workflow/` (including the `adopting.md` lessons), standard v1.0, closing this plan | S |
 
-There is no P2: the pilot was removed from this plan on 2026-10-29 (see STATUS log), and the ID isn't reused.
-Agents for P3 run in the target repo, change nothing in it but docs, CLAUDE.md and skills, and write their
-handoff into this folder (`handoffs/`). The kickoff prompts in STATUS.md give the full paths.
+There is no P2: the pilot was removed on 2026-10-29. There is no P3: the migrations were removed on 2026-11-28 by
+the owner (W15); no item of this plan changes a file outside this repo. §5 is kept only as the recipe for when the
+owner asks a session in another project to adopt the standard. Neither ID is reused.
 
 **P1 exit gate:**
 - [ ] `workflow/STANDARD.md` covers all of §4 and states each rule once. The skills and templates link to it
@@ -395,15 +394,9 @@ handoff into this folder (`handoffs/`). The kickoff prompts in STATUS.md give th
       today's protocol, as evidence that it costs less.
 - [ ] This plan's STATUS.md and the HUD's STATUS.md use the §4.5 board.
 
-**P3-xx exit gate (each):**
-- [ ] §5.1 is done; no code changed; in-flight work untouched; lint clean, or `conformance.md` ticked with
-      evidence.
-
 **P4 exit gate:**
-- [ ] In each of the four repos, a fresh agent answers "where does this project stand, what's next, what's
-      waiting on me?" from the same three files.
-- [ ] Kickoff prompts are two lines or fewer everywhere.
-- [ ] The HUD shows every project's plans with no old-format warnings.
+- [ ] No file outside this repo changed.
+- [ ] The HUD still reads the other projects' old formats (W14) without errors.
 - [ ] STANDARD.md is marked v1.0; lasting knowledge has moved into `workflow/`; this plan folder is deleted.
 
 ## 7. Follow-ups (not in this plan)

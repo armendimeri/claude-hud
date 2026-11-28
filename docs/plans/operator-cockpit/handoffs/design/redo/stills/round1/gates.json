@@ -1,0 +1,17 @@
+{
+  "mode": "d3d11",
+  "dsf": 1,
+  "at": "2026-11-28T00:50:37.489Z",
+  "runs": {
+    "gates": {
+      "openingAtLoad": true,
+      "openingEndedAfterMs": 1859,
+      "beforeKey": true,
+      "afterKey": false,
+      "afterClick": false,
+      "reducedMotionOpening": false,
+      "effectsOffOpening": false,
+      "discreetLeaks": []
+    }
+  }
+}

@@ -51,6 +51,9 @@ A developer working across several agents should be able to glance at the screen
 
 ### Visual direction and public spaces
 
+> **Superseded for the scene's look and motion on 2026-11-28:** see [Visual redo](#visual-redo-added-2026-11-28)
+> (V1, V2). The discreet-display and accessibility rules below still hold.
+
 Use the HUD’s typography and status vocabulary, a restrained luminous core, fine depth cues and readable screen-space labels. Use one brief pulse for a real event or handoff, then settle. Preserve labels and icons alongside color. Keep the default camera still, offer explicit orbit and reset, and respect reduced motion. In a shared space, offer a one-action **discreet display** that aliases names and replaces chat, paths, commands, free-text labels and tooltips with counts and statuses. Hide an already-open inspector immediately. This is local screen privacy. A glance should communicate organized work with no presentation setup.
 
 ## Screen specification and HUD coverage
@@ -618,3 +621,62 @@ Use one isolated worktree per active lane, one coordinator for board edits and i
 - In cockpit, measure p95 frame time while orbiting a dense scene (proposed target 33 ms on the operator’s laptop), then verify idle/hidden behavior. Expect bounded retained resources after warm-up across ten cycles. Respect reduced motion and recover from context loss or GPU unavailability.
 - With a keyboard only, locate the oldest waiting agent, read its last exchange, answer, and return to the previous view. With a dense scene at normal laptop size, the operator should be able to identify the waiting state within two seconds. Inspect discreet display before and after new events for leaked identifying text.
 - Run `node hud.mjs selftest`, `node tests/run-all.mjs`, and the repository’s Edge smoke and archive checks, including native GPU manually if browser smoke uses software rendering. Exercise loopback and LAN, active and ended sessions, both providers and an unsupported client. Store only synthetic or scrubbed evidence.
+
+## Visual redo (added 2026-11-28)
+
+The owner rejected the P2 scene on first sight: "it looks like a game from 20 years ago … nowhere near the quality
+and Iron Man / JARVIS-like style … to look super cool when opening". Solid flat hex blocks with clip-art icons were
+piled on one thick ellipse. That is neither the P1-01 frames nor [DESIGN.md](../../DESIGN.md) §1 ("holographic
+tactical display … cinematic in the spirit of film UI").
+
+### Why it came out like this
+
+1. **This plan diluted the direction.** "Visual direction" above asked for a *restrained* core, a *still* camera
+   and one pulse that *settles*. It never mentioned holograms, an opening sequence or the boot that DESIGN.md §6
+   already defines. The agents built what the plan said.
+2. **The look was never specified in 3D.** P1-01 made flat 2D HTML frames. P2 then had to invent materials, glow,
+   scale and icons on its own, and chose solid fills and big glyphs for legibility.
+3. **No gate judged the look.** Gates covered tests, frame time and layout rules. P1-01 listed "owner taste review"
+   as unverified, and the coordinator accepted it anyway. P2 was checked in headless software WebGL.
+4. **No real data in review.** Frames used synthetic dense scenes. With three real sessions, the scale and overlap
+   looked nothing like them.
+
+### Redo decisions (★ = changes what you see)
+
+| # | Decision | Proposal |
+|---|---|---|
+| V1 ★ | Direction | **JARVIS hologram.** Everything is drawn as light, not solid objects: translucent cyan wireframe and edge-lit nodes, additive glow with bloom, thin rotating HUD rings with tick marks and arc segments, a central arc-reactor core, scan lines, faint particles and a hex grid floor that fades into depth. Status keeps its DESIGN.md colours and words. It replaces the "restrained / still camera / settle" wording above. |
+| V2 ★ | Opening | **A cinematic entry every time the cockpit opens,** at most 2.5 s, skipped by any click or key, off with EFFECTS off or reduced motion. The grid draws outward, the reactor ignites, rings spin up and lock, project clusters and nodes materialise with a scan line, labels type in, "COCKPIT ONLINE". Then a slow ambient camera drift (explicit orbit and reset stay). |
+| V3 ★ | Look before code | P2-01 delivers still frames **and** a running prototype of the scene and opening with your real sessions. You approve it (O-1) before P2-02 starts. P2-02 is accepted only side by side against the approved prototype, on the native GPU, by you. |
+| V4 | Keep the plumbing | Keep `layout.mjs`, projection, selection, the scene interface in CONTRACTS, the inspector, the route and history. Only the drawing in `scene.mjs`, its stylesheet and the cockpit chrome styling change. |
+| V5 | Performance | Keep the plan's laptop budget (p95 orbit ≤ 33 ms on the Iris Xe). Vendor three 0.180.0's post-processing (bloom) next to the existing files. If the budget fails, quality steps down automatically (bloom resolution, then particles), never to the old look. |
+| V6 | Rest of the plan | Visual work pauses until O-1. P7 stays `handed-off` (not accepted) until P2-02 is in. Data and control items (P8-01, P5, P6) may continue, one lane at a time. P7-01 waits for P2-02. |
+
+### P2-01 · Cinematic look study
+
+**Agent** `look` · **Opus 5.5 / high** · depends on P1-01 · lane A · port 7791.
+
+**Scope.** Under `handoffs/design/redo/` only, plus its handoff. A standalone prototype page that imports the
+vendored three.js and renders the scene from a fixture **and** from the live `/api/state` of a HUD on any port.
+Includes the opening sequence, idle ambient motion, a working session, a waiting (red) session, subagents, a
+completion pulse, a selected cluster and discreet mode. Three still frames: sparse real data (about three sessions),
+dense (24) and selected-with-inspector. Read DESIGN.md §1–§6, the P1-01 frames and `src/web/cockpit/scene.mjs`
+(what to replace).
+
+**Gate.** The prototype runs from a URL in the handoff. The frames are captured on the native GPU at 1440 × 900.
+Measured p95 frame time while orbiting dense is under budget. A short note lists what the prototype borrowed from
+DESIGN.md and what is new. Then the item is `handed-off` and **O-1 waits on you.** No test can accept it.
+
+### P2-02 · Rebuild the scene to the approved look
+
+**Agent** `scene` · **Opus 5.5 / high** · depends on P2-01, O-1 · lane A.
+
+**Scope.** `src/web/cockpit/scene.mjs`, `scene.css`, new vendored post-processing under `src/web/vendor/three/`
+(registered in `src/http/assets.mjs`), `src/web/styles/cockpit.css` (top bar, attention row and activity strip in
+DESIGN.md glass with cut corners), `tests/cockpit-layout.test.mjs` updates. The CONTRACTS scene interface is
+unchanged.
+
+**Gate.**
+- The full suite and the software-WebGL harness pass, and the zero-3D-at-startup gate still holds.
+- Native Iris Xe orbit p95 is under budget, and reduced motion and EFFECTS off skip the opening.
+- You compare the 7790 preview side by side with the P2-01 prototype and say yes.

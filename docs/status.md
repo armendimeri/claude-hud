@@ -1,6 +1,6 @@
 # Status
 
-*Last rewritten 2026-11-27 after verifying the HUD architecture plan.*
+*Last updated 2026-11-27 after handing off operator cockpit P7.*
 
 ## The project in one paragraph
 
@@ -19,12 +19,13 @@ It serves live and synthetic state over HTTP and SSE.
 
 ## Active plans
 
-- The operator cockpit, private session history and connected agent controls are proposed. [Implementation board](plans/operator-cockpit/STATUS.md)
+- The operator cockpit public-data preview is ready for review. P7 handed off the lazy route and shared inspector after passing 132 tests and the native Edge smoke. [Implementation board](plans/operator-cockpit/STATUS.md)
 - HUD 0.3 release verification is deferred. [HUD 0.3 board](plans/hud-0-3/STATUS.md)
 - The workflow migration is queued under P3-03. [Workflow board](plans/agent-workflow/STATUS.md)
 
 ## What is next
 
+- P7-01 connects private history in Cards and Cockpit after P7 is accepted. [P7-01 scope](plans/operator-cockpit/PLAN.md#p7-01)
 - Use the staged deployment and rollback commands for an owner-approved switchover.
   [Windows deployment and rollback](ARCHITECTURE.md#windows-deployment-and-rollback)
 
@@ -34,6 +35,4 @@ It serves live and synthetic state over HTTP and SSE.
 
 ## The last session
 
-Bounded the redaction cache, removed redundant transcript and board work, and shortened
-the hook response path. Verified cold startup after loading the HTTP and runtime
-modules concurrently. The browser test exercised Activity reconnecting to a restarted demo.
+Resumed and handed off P7. Fixed inspector selection and discreet navigation, and verified zero cockpit requests at dashboard startup and one SSE stream. The repeat measured a 7.9% increase in startup p95 against P1, above the proposed 5% target. [P7 handoff](plans/operator-cockpit/handoffs/P7.md)

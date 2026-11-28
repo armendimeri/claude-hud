@@ -5,26 +5,24 @@ import { h, setData, show, txt } from './components/dom.mjs';
 import { ticker } from './components/feed.mjs';
 import { fmtAge } from './components/format.mjs';
 import { createLifetime } from './components/lifetime.mjs';
-import { createNotifications, happenings } from './components/notifications.mjs';
 import { createPlanPanel } from './components/plan-panel.mjs';
 import { createSessionPanel } from './components/session-panel.mjs';
 import { createTiming } from './components/timing.mjs';
 import { createTooltip } from './components/tooltip.mjs';
 import { createVitalsComponents, externals } from './components/vitals.mjs';
-import { createAwayRefresh } from './data/away.mjs';
 import { selectLastFinish } from './data/selectors.mjs';
 
 /** Compose the dashboard panels and own cross-panel focus and notifications. */
-export function mountDashboard(mount, { store, transport, actions, motion, kiosk, requested, views }) {
+export function mountDashboard(mount, { store, actions, motion, kiosk, effects, requested, views }) {
   const lifetime = createLifetime();
   const now = store.getServerTime;
   const timing = createTiming(now);
-  const effects = createDisplayEffects(lifetime, motion);
-  const { odo, reconcile } = effects;
+  const display = createDisplayEffects(lifetime, motion);
+  const { odo, reconcile } = display;
   const tip = createTooltip(lifetime);
   const { reactor, vitals } = createVitalsComponents({ now, odo });
-  const { banners, awaySummary } = createAlertComponents({ motion, timing, effects });
-  const { audio, voice, announce } = createNotifications(lifetime);
+  const { banners, awaySummary } = createAlertComponents({ motion, timing, effects: display });
+  const { audio, voice } = effects;
   let project = actions.getProject(), state = null, booted = false, exHidden = null, lastAt = null;
 
   const api = {
@@ -33,9 +31,12 @@ export function mountDashboard(mount, { store, transport, actions, motion, kiosk
     open: id => jump(id),
     project: name => { if (name) setProject(project === name ? null : name); },
     focused: () => project,
+    /** Open the shared inspector for a card, row, pinned card or subagent row. */
+    inspect: kiosk ? null : (selection, opener) => actions.inspect(selection, { opener }),
   };
   const away = awaySummary(() => alerts.visibility());
-  const top = topBar({ now, motion, reactor, odo, audio, voice });
+  const top = topBar({ now, motion, reactor, odo, audio, voice,
+    openCockpit: kiosk ? null : opener => actions.openCockpit(opener) });
   const alerts = banners(api, away.el);
   const conn = h('div', { class: 'conn', hidden: true, role: 'status' },
     h('span', { class: 'label conn-w' }), h('span', { class: 'mono conn-m' }));
@@ -95,7 +96,6 @@ export function mountDashboard(mount, { store, transport, actions, motion, kiosk
   showFocus();
 
   function render(snapshot) {
-    const previous = state;
     state = snapshot;
     const boot = !booted && document.documentElement.classList.contains('booting');
     top.update(state);
@@ -117,7 +117,6 @@ export function mountDashboard(mount, { store, transport, actions, motion, kiosk
     plans.update(state, project, booted);
     tick.sync(state.feed);
     tick.done(selectLastFinish(state, project));
-    if (previous) announce(happenings(previous, state), state);
     booted = true;
   }
   function tickConnectionAge() {
@@ -136,13 +135,11 @@ export function mountDashboard(mount, { store, transport, actions, motion, kiosk
   }
 
   if (motion.ambient) bootDashboard(lifetime, tick);
-  const refresh = createAwayRefresh({ transport, isHidden: () => document.hidden, onSummary: away.update });
-  lifetime.listen(document, 'visibilitychange', refresh.visibilityChanged);
-  lifetime.onClose(refresh.close);
+  // Notifications and the away summary are page effects: the page decides what changed and hands the summary here.
+  lifetime.onClose(effects.onAway(away.update));
   lifetime.onClose(store.subscribe(update => {
     if (update.type === 'connection') {
       showConnection();
-      if (update.resumedSince !== undefined) void refresh.resumed(update.resumedSince);
     } else if (update.type === 'feed') {
       tick.add(update.line, store.getSnapshot().feed);
     } else if (state !== store.getSnapshot()) {

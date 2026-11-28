@@ -64,8 +64,52 @@ function createLifetime() {
   };
 }
 
-/** Connects the application engine to an instance-local publisher, writer and lifecycle. */
-export function createRuntime(createEngine) {
+const OPERATOR_CLOSING = JSON.stringify({ code: 'closing', message: 'The HUD is closing.' });
+
+/**
+ * The optional private operator service (operator-cockpit P8). Nothing is imported or constructed until the first
+ * private request, so a HUD that nobody pairs with never loads the operator modules or reads private history.
+ * @param {() => Promise<{handle: Function, close: () => Promise<void>}>} load
+ */
+function createOperatorSlot(load) {
+  let service = null;
+  let closed = false;
+  const unavailable = res => {
+    if (res.headersSent || res.destroyed) return;
+    res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+    res.end(OPERATOR_CLOSING);
+  };
+  return {
+    async handle(req, res, context) {
+      if (closed) return unavailable(res);
+      service ??= load();
+      let active;
+      try {
+        active = await service;
+      } catch (error) {
+        service = null;
+        console.error('operator service failed to start:', error?.name || 'Error');
+        return unavailable(res);
+      }
+      if (closed) return unavailable(res);
+      return active.handle(req, res, context);
+    },
+    get loaded() { return service !== null; },
+    async close() {
+      closed = true;
+      const active = service && await service.catch(() => null);
+      await active?.close();
+    },
+  };
+}
+
+/**
+ * Connects the application engine to an instance-local publisher, writer and lifecycle.
+ * @param {Function} createEngine
+ * @param {{operator?: object}} [options]  test and integration overrides for the operator service
+ *   (open, resolveAdapter, createDispatcher, clock, verifyAcl).
+ */
+export function createRuntime(createEngine, { operator: operatorOptions = {} } = {}) {
   const lifetime = createLifetime();
   const events = new EventEmitter();
   const publisher = createPublisher(now => engine.update(now));
@@ -74,6 +118,9 @@ export function createRuntime(createEngine) {
   let started = false;
   let closing;
   let writes = [];
+  const operator = engine.operator ? createOperatorSlot(() => import('../operator/routes.mjs').then(module => module.createOperatorService({
+    ...engine.operator, readSnapshot: () => started && !closing ? publisher.readSnapshot() : null, ...operatorOptions,
+  }))) : null;
 
   function flushWrites() {
     const batch = writes;
@@ -120,10 +167,13 @@ export function createRuntime(createEngine) {
   }
 
   async function closeRuntime() {
+    // Abort pending private reads and invalidate operator credentials before the engine's sources stop.
+    const operatorClosed = operator?.close();
     publisher.close();
     events.removeAllListeners();
     for (const { resolve } of writes) resolve(unavailable);
     writes = [];
+    await operatorClosed;
     await lifetime.close();
   }
 
@@ -134,6 +184,7 @@ export function createRuntime(createEngine) {
       ingestHook: value => queue(engine.ingestHook, value),
       ...(engine.reportUsage && { reportUsage: value => queue(engine.reportUsage, value) }),
     },
+    operator,
     close,
   };
 }

@@ -3,7 +3,8 @@ import { createExternalUsage } from '../domain/usage.mjs';
 import { createHookSource } from '../sources/hooks.mjs';
 import { createDemo } from './scenario.mjs';
 
-export function createDemoRuntime(config, mode) {
+/** @param {{operator?: object}} [options]  overrides for the private operator service (tests). */
+export function createDemoRuntime(config, mode, options) {
   return createRuntime((lifetime, publisher) => {
     let demo;
     const ingestHook = createHookSource({ recordFile: config.recordFile, redactDeep: publisher.redactDeep, onEvent: null });
@@ -13,6 +14,8 @@ export function createDemoRuntime(config, mode) {
       update: now => demo.project(now),
       ingestHook,
       reportUsage: externalUsage ? value => externalUsage.report(value, Date.now()) : undefined,
+      // Demo history is synthetic: no roots, no file opener and no provider adapter, whatever profiles exist here.
+      operator: { kind: 'demo', operatorDir: config.operatorDir },
     };
-  });
+  }, options);
 }

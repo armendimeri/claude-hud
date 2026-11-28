@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cockpit look study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Orbitron:wght@500;700&family=Rajdhani:wght@600;700&display=swap">
+<link rel="stylesheet" href="holo.css">
+</head>
+<body class="booting">
+  <div id="stage" class="stage" aria-hidden="true">
+    <canvas id="leaders" class="leaders"></canvas>
+    <div id="labels" class="labels"></div>
+  </div>
+
+  <header class="top panel-glass" data-boot="1">
+    <div class="top-l">
+      <button class="pill back" type="button"><svg viewBox="0 0 16 16" class="gl"><path d="M10 3L5 8l5 5"/></svg>DASHBOARD</button>
+      <div class="mark"><span class="mark-glyph" aria-hidden="true"><i></i><i></i></span>COCKPIT</div>
+      <button class="pill proj" type="button"><span class="k">PROJECT</span>All projects<svg viewBox="0 0 16 16" class="gl"><path d="M4 6l4 4 4-4"/></svg></button>
+    </div>
+    <div class="top-r">
+      <div class="count"><b id="n-sessions">0</b><span>SESSIONS</span></div>
+      <div class="count" data-c="amber"><b id="n-working">0</b><span>WORKING</span></div>
+      <div class="count" data-c="alert" id="c-waiting"><b id="n-waiting">0</b><span>NEEDS YOU</span></div>
+      <div class="count" data-c="agent"><b id="n-subs">0</b><span>SUBAGENTS</span></div>
+      <div class="live" id="live"><i></i><span id="live-word">LIVE</span></div>
+      <button class="pill tog" id="effects" type="button" aria-pressed="true" title="Ambient motion and the opening"><svg viewBox="0 0 16 16" class="gl"><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/><circle cx="8" cy="8" r="2.5"/></svg>EFFECTS</button>
+      <button class="pill tog" id="discreet" type="button" aria-pressed="false" title="Hide names (D)"><svg viewBox="0 0 16 16" class="gl"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><path d="M2.5 13.5l11-11"/></svg>DISCREET</button>
+    </div>
+  </header>
+
+  <div class="attention" id="attention" hidden data-boot="2">
+    <span class="att-glyph"><svg viewBox="0 0 16 16" class="gl"><path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3M8 11.6v.1"/></svg>NEEDS YOU</span>
+    <span class="att-project" id="att-project"></span>
+    <span class="att-title" id="att-title"></span>
+    <span class="att-reason" id="att-reason"></span>
+    <span class="att-more" id="att-more"></span>
+    <span class="att-time" id="att-time"></span>
+    <button class="pill att-btn" id="att-inspect" type="button">INSPECT<svg viewBox="0 0 16 16" class="gl"><path d="M6 3l5 5-5 5"/></svg></button>
+  </div>
+
+  <main class="grid">
+    <section class="frame" id="frame" data-boot="3">
+      <i class="br tl"></i><i class="br tr"></i><i class="br bl"></i><i class="br br2"></i>
+      <div class="frame-top">
+        <span class="ft-l"><span class="ft-dot"></span><span id="frame-count">—</span></span>
+        <span class="ft-r" id="readout">AZ +00.0° · EL +34.0° · ZOOM 1.00</span>
+      </div>
+      <div class="frame-ticks" aria-hidden="true"></div>
+      <div class="online" id="online" hidden><em></em><span></span><em></em></div>
+      <div class="frame-bottom">
+        <div class="legend">
+          <span data-c="alert"><svg viewBox="0 0 16 16" class="gl"><path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3M8 11.6v.1"/></svg>NEEDS YOU</span>
+          <span data-c="amber"><svg viewBox="0 0 16 16" class="gl"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5"/><circle cx="8" cy="8" r="1.6" class="gf"/></svg>WORKING</span>
+          <span data-c="agent"><svg viewBox="0 0 16 16" class="gl"><circle cx="8" cy="8" r="5.5" stroke-dasharray="7 4.5"/></svg>SUBAGENTS</span>
+          <span data-c="ok"><svg viewBox="0 0 16 16" class="gl"><circle cx="8" cy="8" r="6"/><path d="M5.2 8.2l1.9 1.9 3.8-4"/></svg>DONE</span>
+          <span data-c="arc"><svg viewBox="0 0 16 16" class="gl"><circle cx="8" cy="8" r="5"/></svg>IDLE</span>
+        </div>
+        <div class="ctrls">
+          <span class="perf" id="perf"></span>
+          <button class="pill sm" id="replay" type="button" title="Replay the opening (R)"><svg viewBox="0 0 16 16" class="gl"><path d="M5 3.5v9l7-4.5z"/></svg>REPLAY</button>
+          <button class="pill sm" id="reset" type="button" title="Reset the view (0)"><svg viewBox="0 0 16 16" class="gl"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v2.5h2.5"/></svg>RESET VIEW</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="inspector panel-glass" id="inspector" hidden>
+      <i class="br tl"></i><i class="br br2"></i>
+      <div class="i-head">
+        <div class="i-chips" id="i-chips"></div>
+        <button class="i-close" id="i-close" type="button" aria-label="Close the inspector"><svg viewBox="0 0 16 16" class="gl"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+      <h2 class="i-title" id="i-title"></h2>
+      <div class="i-state" id="i-state"></div>
+      <div class="i-sec">ACTIVITY</div>
+      <div class="i-rows" id="i-rows"></div>
+      <div id="i-conv">
+        <div class="i-sec">CONVERSATION</div>
+        <div class="i-note">The last exchange loads on demand when the cockpit is built (P7-01). This study shows only the frame.</div>
+      </div>
+      <div class="i-reply"><div class="i-input">Follow-up unavailable · observed only</div><button class="pill" type="button" disabled>SEND</button></div>
+    </aside>
+  </main>
+
+  <footer class="strip panel-glass" data-boot="4">
+    <div class="ticker" id="ticker"><div class="tline" data-tag="SYSTEM"><span class="tt">--:--:--</span><span class="tg">SYSTEM</span><span class="tp"></span><span class="tx">Initialising</span></div></div>
+    <div class="src">
+      <span class="src-k">LOOK STUDY · DATA</span>
+      <button class="seg" data-src="sparse" type="button">SPARSE</button>
+      <button class="seg" data-src="dense" type="button">DENSE</button>
+      <button class="seg" data-src="live" type="button">LIVE</button>
+      <span class="src-err" id="live-err"></span>
+    </div>
+  </footer>
+
+  <script type="module" src="main.mjs"></script>
+</body>
+</html>

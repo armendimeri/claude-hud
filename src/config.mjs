@@ -26,7 +26,17 @@ export function readConfig({ env = process.env, argv = process.argv.slice(2), ho
     pushUrl: env.HUD_PUSH_URL?.trim(),
     unclaimedMs: positiveNumber(env.HUD_UNCLAIMED_MS, 3 * 60_000),
     stalledMs: positiveNumber(env.HUD_STALLED_MS, 30 * 60_000),
+    operatorDir: operatorDir(env, home),
   };
+}
+
+/** Per-user private folder for operator pairing tickets (operator-cockpit P8). HUD_OPERATOR_DIR overrides it. */
+function operatorDir(env, home) {
+  if (env.HUD_OPERATOR_DIR?.trim()) return path.resolve(env.HUD_OPERATOR_DIR.trim());
+  const base = process.platform === 'win32'
+    ? env.LOCALAPPDATA || path.join(home, 'AppData', 'Local')
+    : env.XDG_STATE_HOME || path.join(home, '.local', 'state');
+  return path.join(path.resolve(base), 'claude-hud', 'operator');
 }
 
 function positiveNumber(value, fallback) {

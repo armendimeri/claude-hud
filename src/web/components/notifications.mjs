@@ -47,7 +47,12 @@ function needsPhrase(x) {
   if (k === 'input') return `${p} is waiting for you`;
   return `${p} needs you`;
 }
-export function createNotifications(lifetime) {
+/**
+ * Sound, speech and browser notifications. `discreet()` is read at the moment of each event: while it is true
+ * nothing identifying leaves the page (a generic phrase replaces the spoken text, system notifications are not
+ * created) and `silence()` drops whatever speech is queued or being spoken.
+ */
+export function createNotifications(lifetime, { discreet = () => false } = {}) {
   const audio = (() => {
     let ctx = null, last = 0;
     const TONES = { needs: [[740, 0, .05], [554, .055, .05]], agent: [[523, 0, .04], [784, .045, .045]], done: [[1046, 0, .07]], session: [[440, 0, .06]],
@@ -95,10 +100,12 @@ export function createNotifications(lifetime) {
     });
     return {
       say(text) { if (!synth || q[q.length - 1] === text) return; if (q.length > 4) q.shift(); q.push(text); pump(); },
+      cancel() { q.length = 0; if (utterance || synth?.speaking) { try { synth.cancel(); } catch { /* nothing speaking */ } } },
       get name() { const v = pick(); return v ? v.name : null; },
     };
   })();
   function notify(title, body, tag) {
+    if (discreet()) return false;
     if (!prefs.get('notify', false) || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return false;
     try { new Notification(title, { body, tag, silent: false }); return true; } catch { return false; }
   }
@@ -108,22 +115,22 @@ export function createNotifications(lifetime) {
       const sound = prefs.get('sound', false), speak = prefs.get('voice', false);
       for (const e of list) {
         if (e.type === 'needs-you') {
-          if (sound) audio.play('needs'); if (speak) voice.say(needsPhrase(e.x));
+          if (sound) audio.play('needs'); if (speak) voice.say(discreet() ? 'A session needs you' : needsPhrase(e.x));
           notify(`${e.x.project || 'A session'} needs you`, `${e.x.needsYou.reason} · ${e.x.title || e.x.name || ''}`, 'needs-' + e.x.id);
         } else if (e.type === 'phase') {
           const big = ['handed-off', 'blocked', 'bounced'].includes(e.n.state);
           if (sound) audio.play('plan');
           if (big) {
             const w = e.n.state === 'handed-off' ? 'handed off' : e.n.state === 'blocked' ? 'is blocked' : 'bounced';
-            if (speak) voice.say(`Phase ${e.n.id} ${w}`);
+            if (speak && !discreet()) voice.say(`Phase ${e.n.id} ${w}`);
             notify(`${e.plan.title}: ${e.n.id} ${w}`, `${e.plan.project} · ${e.n.name || ''}`, 'plan-' + e.plan.slug + e.n.id);
           }
         } else if (e.type === 'board-mark') {
-          if (sound) audio.play('plan'); if (speak) voice.say(e.text);
+          if (sound) audio.play('plan'); if (speak && !discreet()) voice.say(e.text);
         } else if (e.type === 'warning') {
           const title = e.alert.project || (e.alert.sessionId ? 'Session' : 'Claude account');
           if (sound) audio.play('plan');
-          if (speak) voice.say(`${title}. ${e.alert.text}`);
+          if (speak && !discreet()) voice.say(`${title}. ${e.alert.text}`);
           notify(`${title} warning`, e.alert.text, e.alert.id);
         } else if (e.type === 'sub-start') { if (sound) audio.play('agent'); }
         else if (e.type === 'sub-done') { if (sound) audio.play('done'); }
@@ -139,5 +146,5 @@ export function createNotifications(lifetime) {
   }
 
   const announce = announcer();
-  return { audio, voice, announce };
+  return { audio, voice, announce, silence: () => voice.cancel() };
 }

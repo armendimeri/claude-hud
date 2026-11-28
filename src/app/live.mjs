@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { createRuntime } from './runtime.mjs';
 import { createPhonePush } from './phone-push.mjs';
 import { projectSnapshot, publicSessions } from './publish.mjs';
@@ -25,8 +26,9 @@ import { accountView, createExternalUsage, dailyTokens } from '../domain/usage.m
 
 const POLL_MS = 3_000;
 
-export function createLiveRuntime(config) {
-  return createRuntime((lifetime, publisher, events) => createLiveEngine(config, lifetime, publisher, events));
+/** @param {{operator?: object}} [options]  overrides for the private operator service (tests, P11 integration). */
+export function createLiveRuntime(config, options) {
+  return createRuntime((lifetime, publisher, events) => createLiveEngine(config, lifetime, publisher, events), options);
 }
 
 // Compose live sources and domain state with the application publisher.
@@ -358,5 +360,11 @@ function createLiveEngine(config, lifetime, publisher, events) {
   return {
     start, update: updateSnapshot, ingestHook,
     reportUsage: config.acceptUsage ? value => externalUsage.report(value, Date.now()) : undefined,
+    // Private operator access (operator-cockpit P8): the runtime builds it lazily on the first private request.
+    // History resolves through this registry and reads only inside the configured transcript and rollout roots.
+    operator: {
+      kind: 'live', findSession, summarizeTool, operatorDir: config.operatorDir,
+      roots: { claude: ROOTS.map(root => root.projects), codex: CODEX_ROOTS.map(dir => path.join(dir, 'sessions')) },
+    },
   };
 }

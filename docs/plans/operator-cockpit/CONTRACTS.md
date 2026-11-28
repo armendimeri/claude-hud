@@ -50,6 +50,16 @@ All paths below use `/api/operator`. Require a locally paired session, never per
 - Private capabilities response fields are `epoch, revision, actionWindow, available[], activeTurnId, pending[], reason`. Each pending request includes its own ID, turn, kind and actual display fields. For questions return an array of question IDs, labels, choice IDs, choice count bounds and whether free text is allowed. For permission return the operation, scope and allowed single-request decisions. Support concurrent pending requests. When a provider cannot represent a pending request faithfully, omit its submit capability and offer the native surface. The opaque actionWindow signs the epoch, target, revision and expiry and travels back on each command. It is issued only for supported writes.
 - A display-only session with history can return `{"epoch":"i1","revision":"v1","actionWindow":null,"available":["history"],"activeTurnId":null,"pending":[],"reason":"observed_only"}`. Map unavailable source to 404, expired cursor or stale target to 409, bad shape to 400, unauthorized to 401/403, oversized body to 413 and temporarily disconnected provider to 503. A private endpoint never redirects to a transcript path.
 
+### History clarifications accepted with P4 (2026-11-27)
+
+These refine the history contract above. Details and rationale are in [the P4 handoff](handoffs/P4.md).
+
+- `gap` is `null` or `{records, reasons}`. `reasons` counts skipped records by `compacted`, `malformed`, `oversized`, `overflow` and `unknown`.
+- An entry cut at 8 KiB carries `truncated: true`.
+- An older page returns `after: null`, and a newer page returns `before: null`. The browser keeps the initial page's `after` for catch-up. The non-null `after` in the `historyPages.older` fixture is illustrative only.
+- Reader error codes: `bad_request` 400, `invalid_cursor` 400, `stale_cursor` 409, `unavailable` 404.
+- `source.provider` names the transcript format (`claude` or `codex`), not the model provider. P8 maps `anthropic` and `bedrock` targets to `claude`, and `openai` targets to `codex`.
+
 ## Operator access and action delivery
 
 A paired browser session establishes control on the local PC. The initial read-only cockpit opens immediately. Pair at the first private action, including opening real conversation history. For fixture demo history use synthetic sources only. Implement the pairing command in P8, document it in P11, and exercise it with a temporary profile.
@@ -60,6 +70,39 @@ A paired browser session establishes control on the local PC. The initial read-o
 4. Before awaiting the provider, reserve the action ID with target, body fingerprint and an expiry. For an authenticated target, look up a retained receipt before applying current-turn validation to a new action. An identical retry after turn completion returns the receipt without another call. Serialize competing replies to the same request. Identical retries return the original receipt; mismatched reuse returns 409. Two different IDs for the same pending decision can dispatch at most once. GET `/sessions/{key}/actions/{actionId}` returns pending, acknowledged, rejected, or delivery-unknown. After timeout, status remains unknown until reliable provider evidence arrives. UI text “resumed” requires a separate observed state transition. `serverRequest/resolved` alone also covers withdrawal.
 5. Keep a bounded per-instance journal (proposed 1,024 receipts, 30-minute recovery window). Store receipts, target and a keyed digest, never the action text. On overflow refuse new writes while in-flight or replayable entries occupy the limit. Issue commands with a server-issued expiring action window tied to epoch and revision; reject retries outside the window even after receipt expiry. After restart, reject old epoch writes and display “Check the native session before sending again.” The client stores only opaque receipt/target handles in tab session storage so refresh can reconcile. It never automatically retries a write or recreates an action on reconnect.
 6. Operator routes and adapters initialize on first private use. Provide no adapter and safe observed-only capabilities in demo/live until explicitly connected. Opening a chat, loading the dashboard, or inspecting a rollout must never start a paid agent session. Supporting provider-controlled launches later is a separate decision.
+
+### Operator access accepted with P8 (2026-11-27)
+
+These record what P8 built. The full error list and test evidence are in [the P8 handoff](handoffs/P8.md).
+
+- **Pairing:** `node hud.mjs operator pair [--port=<n>]` writes a one-time ticket (code digest, instance, port, five-minute expiry) to the per-user operator folder and prints the code only in that terminal. The folder must be readable only by the user, SYSTEM and Administrators. The HUD restricts a folder it just created; an existing folder is only checked. A failed check returns 503 `pairing_unavailable` while the public HUD keeps running.
+- **Routes** under `/api/operator`: `/instance`, `/pair` (exchange the code once), `/bootstrap` (same-origin anti-forgery token), plus the history, capability, action and receipt routes. The service loads on the first request. Without it every `/api/operator` path is 404.
+- **Session:** the HttpOnly, SameSite=Strict cookie `hud_operator_<port>` and the anti-forgery token are held in memory, so a restart invalidates them. Sessions last 12 hours, with at most 16 kept.
+- **Request checks:** loopback peer and Host only, same Origin (required on POST), no proxy headers, and `X-HUD-Operator` on every private route (`1` on instance/pair/bootstrap, the token elsewhere). Responses are never cacheable and never carry CORS headers.
+- **Extra statuses:** 405 for HEAD/OPTIONS, 415 for a non-JSON pair, 429 for too many attempts, 503 `actions_unavailable` until a dispatcher is registered. An action body is size-checked (413) before its target is resolved.
+- **Targets:** a Claude subagent's resolved target carries `nativeAgentId`, because it has no session ID of its own.
+- **P8-01 seam:** P8 lazily calls `createDispatcher({clock, epoch, resolveAdapter})` once. `submit` returns a receipt, `receipt` returns a receipt or `null`, and errors are thrown as `{code, message, status}` with provider text removed. Issuing and signing `actionWindow` is open for P8-01 and P11.
+- **Public projection note:** a Codex session's first user message already appears publicly as its title. Do not assume user prompts never appear in the public snapshot.
+
+### Scene interface accepted with P2 (2026-11-27)
+
+`mountScene` keeps the frozen signature. P2 added optional, additive members, listed in [the P2 handoff](handoffs/P2.md):
+
+- Actions: `getSelection`, `subscribeSelection`, `getDiscreet`, `subscribeDiscreet`.
+- Option: `loadThree`, an injectable loader for tests.
+- The returned `close` also exposes `setSelection`, `reset`, `retry`, `refresh`, `stats`, `screenOf`, `worldOf`, `keyOf`, `getMode` and `root`.
+- Three.js 0.180.0 (MIT) is vendored under `src/web/vendor/three/` and loaded only by dynamic `import()`. P7 registers it and excludes `src/web/cockpit/harness/` from the allowlist and the package.
+- **For P7:** the narrow 390 px composition from P1-01 is not built in 3D. P7 decides what narrow widths mount, for example a list-only mode. The scene does not handle Escape.
+
+### Inspector interface accepted with P3 (2026-11-27)
+
+`mountInspector(host, {selection, store, client, onClose, signal, ...}) => {select, close, root, inspect}` keeps the frozen shape. `createEntityCard` is the shared public card. Details are in [the P3 handoff](handoffs/P3.md).
+
+- Optional additive members: `getDiscreet`, `subscribeDiscreet`, `restoreFocus`, and `onClose({reason, selection})`.
+- A draft for a finished turn or a closed request is discarded with a notice, not retargeted.
+- Once "Show conversation" is pressed, it stays open across selection switches until close or discreet.
+- The panel handles Escape in the capture phase on `document` and calls `preventDefault`. The shell's Escape handler must check `event.defaultPrevented`.
+- The panel switches to the sheet layout below 600 px. P7 owns placement and width, and excludes `src/web/inspector/harness/` from the allowlist and the package.
 
 ## Interfaces to freeze in P1
 

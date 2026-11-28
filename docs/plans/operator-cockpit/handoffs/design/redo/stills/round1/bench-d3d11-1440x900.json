@@ -1,0 +1,167 @@
+{
+  "mode": "d3d11",
+  "dsf": 1,
+  "at": "2026-11-28T00:49:17.676Z",
+  "runs": {
+    "1440x900@1": {
+      "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "dpr": 1,
+      "canvas": [
+        1440,
+        900
+      ],
+      "post": {
+        "samples": 2,
+        "startDiv": 2,
+        "levels": 5,
+        "w": 1440,
+        "h": 900
+      },
+      "quality": 0,
+      "calls": 1,
+      "triangles": 2,
+      "programs": 12,
+      "nodes": 32,
+      "orbit": {
+        "intervalMs": {
+          "n": 446,
+          "over33": 0,
+          "mean": 17.75,
+          "p50": 16.7,
+          "p95": 33.3,
+          "p99": 33.4,
+          "max": 33.5
+        },
+        "cpuMs": {
+          "n": 446,
+          "over33": 0,
+          "mean": 10.34,
+          "p50": 9.7,
+          "p95": 15.1,
+          "p99": 17.8,
+          "max": 24.3
+        }
+      },
+      "drag": {
+        "intervalMs": {
+          "n": 531,
+          "over33": 0,
+          "mean": 17.01,
+          "p50": 16.7,
+          "p95": 16.9,
+          "p99": 33.3,
+          "max": 33.5
+        },
+        "cpuMs": {
+          "n": 531,
+          "over33": 0,
+          "mean": 9.91,
+          "p50": 9,
+          "p95": 15.6,
+          "p99": 17,
+          "max": 18.9
+        }
+      },
+      "idle": {
+        "intervalMs": {
+          "n": 292,
+          "over33": 0,
+          "mean": 17.01,
+          "p50": 16.7,
+          "p95": 16.9,
+          "p99": 33.4,
+          "max": 33.5
+        },
+        "cpuMs": {
+          "n": 292,
+          "over33": 0,
+          "mean": 10.53,
+          "p50": 9.4,
+          "p95": 16.9,
+          "p99": 18.8,
+          "max": 24.5
+        }
+      }
+    },
+    "1440x900@1.5": {
+      "renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A1) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "dpr": 1.25,
+      "canvas": [
+        1440,
+        900
+      ],
+      "post": {
+        "samples": 2,
+        "startDiv": 2,
+        "levels": 5,
+        "w": 1800,
+        "h": 1125
+      },
+      "quality": 0,
+      "calls": 1,
+      "triangles": 2,
+      "programs": 12,
+      "nodes": 32,
+      "orbit": {
+        "intervalMs": {
+          "n": 445,
+          "over33": 0,
+          "mean": 17.83,
+          "p50": 16.7,
+          "p95": 33.3,
+          "p99": 33.4,
+          "max": 33.6
+        },
+        "cpuMs": {
+          "n": 445,
+          "over33": 0,
+          "mean": 11.13,
+          "p50": 10.5,
+          "p95": 16.3,
+          "p99": 18,
+          "max": 25.5
+        }
+      },
+      "drag": {
+        "intervalMs": {
+          "n": 493,
+          "over33": 0,
+          "mean": 18.42,
+          "p50": 16.7,
+          "p95": 33.4,
+          "p99": 33.5,
+          "max": 33.6
+        },
+        "cpuMs": {
+          "n": 493,
+          "over33": 0,
+          "mean": 11.5,
+          "p50": 11.1,
+          "p95": 16.3,
+          "p99": 18.4,
+          "max": 22.3
+        }
+      },
+      "idle": {
+        "intervalMs": {
+          "n": 261,
+          "over33": 1.9,
+          "mean": 18.96,
+          "p50": 16.7,
+          "p95": 33.4,
+          "p99": 50,
+          "max": 66.7
+        },
+        "cpuMs": {
+          "n": 261,
+          "over33": 0,
+          "mean": 11.38,
+          "p50": 11,
+          "p95": 16.5,
+          "p99": 19.3,
+          "max": 20.2
+        }
+      }
+    }
+  }
+}

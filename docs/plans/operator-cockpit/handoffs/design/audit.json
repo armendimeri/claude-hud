@@ -1,0 +1,302 @@
+{
+  "edge": "headless, software rendering, fonts fall back to system faces",
+  "frames": {
+    "sparse-1440": {
+      "images": {
+        "plain": "1440x900",
+        "annotated": "1440x900",
+        "gray": "1440x900"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "sparse-1440",
+        "viewport": [
+          1440,
+          900
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 28,
+            "13": 17,
+            "18": 4
+          },
+          "primaryTargets": 9,
+          "labelled": 4,
+          "nodes": 4,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "none"
+        },
+        "pass": true
+      }
+    },
+    "sparse-1440-inspector": {
+      "images": {
+        "plain": "1440x900",
+        "annotated": "1440x900",
+        "gray": "1440x900"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "sparse-1440-inspector",
+        "viewport": [
+          1440,
+          900
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 44,
+            "13": 26,
+            "15": 2,
+            "18": 4
+          },
+          "primaryTargets": 13,
+          "labelled": 4,
+          "nodes": 4,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "side"
+        },
+        "pass": true
+      }
+    },
+    "dense-1440": {
+      "images": {
+        "plain": "1440x900",
+        "annotated": "1440x900",
+        "gray": "1440x900"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "dense-1440",
+        "viewport": [
+          1440,
+          900
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 64,
+            "13": 29,
+            "15": 1,
+            "18": 4
+          },
+          "primaryTargets": 23,
+          "labelled": 10,
+          "nodes": 16,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "side"
+        },
+        "pass": true
+      }
+    },
+    "sparse-1024": {
+      "images": {
+        "plain": "1024x768",
+        "annotated": "1024x768",
+        "gray": "1024x768"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "sparse-1024",
+        "viewport": [
+          1024,
+          768
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 43,
+            "13": 24,
+            "15": 2,
+            "18": 4
+          },
+          "primaryTargets": 13,
+          "labelled": 3,
+          "nodes": 4,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "overlay"
+        },
+        "pass": true
+      }
+    },
+    "dense-1024": {
+      "images": {
+        "plain": "1024x768",
+        "annotated": "1024x768",
+        "gray": "1024x768"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "dense-1024",
+        "viewport": [
+          1024,
+          768
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 60,
+            "13": 24,
+            "15": 1,
+            "18": 4
+          },
+          "primaryTargets": 23,
+          "labelled": 6,
+          "nodes": 16,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "overlay"
+        },
+        "pass": true
+      }
+    },
+    "discreet-1440": {
+      "images": {
+        "plain": "1440x900",
+        "annotated": "1440x900",
+        "gray": "1440x900"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "discreet-1440",
+        "viewport": [
+          1440,
+          900
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 20,
+            "13": 17,
+            "18": 4
+          },
+          "primaryTargets": 9,
+          "labelled": 4,
+          "nodes": 4,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "none",
+          "forbiddenChecked": 11
+        },
+        "pass": true
+      }
+    },
+    "fallback-1440": {
+      "images": {
+        "plain": "1440x900",
+        "annotated": "1440x900",
+        "gray": "1440x900"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "fallback-1440",
+        "viewport": [
+          1440,
+          900
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 28,
+            "13": 33,
+            "15": 2,
+            "18": 4
+          },
+          "primaryTargets": 14,
+          "labelled": 0,
+          "nodes": 0,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "side"
+        },
+        "pass": true
+      }
+    },
+    "narrow-1-waiting": {
+      "images": {
+        "plain": "390x844",
+        "annotated": "390x844",
+        "gray": "390x844"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "narrow-1-waiting",
+        "viewport": [
+          390,
+          844
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 15,
+            "13": 17,
+            "15": 4
+          },
+          "primaryTargets": 10,
+          "labelled": 1,
+          "nodes": 5,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "none"
+        },
+        "pass": true
+      }
+    },
+    "narrow-2-inspect": {
+      "images": {
+        "plain": "390x844",
+        "annotated": "390x844",
+        "gray": "390x844"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "narrow-2-inspect",
+        "viewport": [
+          390,
+          844
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 28,
+            "13": 25,
+            "15": 6
+          },
+          "primaryTargets": 14,
+          "labelled": 1,
+          "nodes": 5,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "sheet"
+        },
+        "pass": true
+      }
+    },
+    "narrow-3-exit": {
+      "images": {
+        "plain": "390x844",
+        "annotated": "390x844",
+        "gray": "390x844"
+      },
+      "sizeOk": true,
+      "audit": {
+        "frame": "narrow-3-exit",
+        "viewport": [
+          390,
+          844
+        ],
+        "fails": [],
+        "info": {
+          "fontSizes": {
+            "11": 12,
+            "13": 21,
+            "15": 4
+          },
+          "primaryTargets": 12,
+          "labelled": 1,
+          "nodes": 5,
+          "crowdedHitPairs": 0,
+          "inspectorMode": "none",
+          "forbiddenChecked": 10
+        },
+        "pass": true
+      }
+    }
+  }
+}

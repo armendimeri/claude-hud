@@ -1,0 +1,711 @@
+{
+  "mode": "software WebGL (SwiftShader)",
+  "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+  "edge": "headless",
+  "evidence": {
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "dpr": 1,
+    "quiet": {
+      "seconds": 5,
+      "sceneFrames": 0,
+      "rendererFrames": 0,
+      "rafRequests": 0
+    },
+    "wake": {
+      "framesForOneEvent": 1
+    },
+    "anchoring": {
+      "before": {
+        "width": 1392,
+        "Ledger": 0.1681,
+        "Reports": 0.749
+      },
+      "after": {
+        "width": 976,
+        "Ledger": 0.1594,
+        "Reports": 0.761
+      },
+      "deltaU": {
+        "Ledger": 0.0088,
+        "Reports": 0.012
+      }
+    },
+    "insertion": {
+      "inserted": [
+        "Aardvark/new-session-1 (+1 subagent, new project)",
+        "Ledger/new-session-2 (new member of an existing project)"
+      ],
+      "rows": [
+        {
+          "entity": "Ledger / Export",
+          "before": [
+            -40.184,
+            -10.496
+          ],
+          "after": [
+            -40.184,
+            -10.496
+          ],
+          "same": true
+        },
+        {
+          "entity": "Reports / Export",
+          "before": [
+            0,
+            20.992
+          ],
+          "after": [
+            0,
+            20.992
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Check totals",
+          "before": [
+            -35.507,
+            -17.138
+          ],
+          "after": [
+            -35.507,
+            -17.138
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Synthetic work 1",
+          "before": [
+            -30.831,
+            -10.496
+          ],
+          "after": [
+            -30.831,
+            -10.496
+          ],
+          "same": true
+        },
+        {
+          "entity": "Reports / Synthetic work 2",
+          "before": [
+            -4.677,
+            27.634
+          ],
+          "after": [
+            -4.677,
+            27.634
+          ],
+          "same": true
+        },
+        {
+          "entity": "Imports / Synthetic work 3",
+          "before": [
+            -20,
+            -4.428
+          ],
+          "after": [
+            -20,
+            -4.428
+          ],
+          "same": true
+        },
+        {
+          "entity": "Invoices / Synthetic work 4",
+          "before": [
+            20,
+            -4.428
+          ],
+          "after": [
+            20,
+            -4.428
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Synthetic work 5",
+          "before": [
+            -33.1,
+            -20.076
+          ],
+          "after": [
+            -33.1,
+            -20.076
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Synthetic work 9",
+          "before": [
+            -44.49,
+            -10.736
+          ],
+          "after": [
+            -44.49,
+            -10.736
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Synthetic work 13",
+          "before": [
+            -30.831,
+            -14.924
+          ],
+          "after": [
+            -30.831,
+            -14.924
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Synthetic work 17",
+          "before": [
+            -40.184,
+            -14.924
+          ],
+          "after": [
+            -40.184,
+            -14.924
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Synthetic work 21",
+          "before": [
+            -35.507,
+            -8.282
+          ],
+          "after": [
+            -35.507,
+            -8.282
+          ],
+          "same": true
+        },
+        {
+          "entity": "Reports +4",
+          "before": [
+            4.677,
+            27.634
+          ],
+          "after": [
+            4.677,
+            27.634
+          ],
+          "same": true
+        },
+        {
+          "entity": "Imports +4",
+          "before": [
+            -24.677,
+            2.214
+          ],
+          "after": [
+            -24.677,
+            2.214
+          ],
+          "same": true
+        },
+        {
+          "entity": "Invoices +4",
+          "before": [
+            15.323,
+            2.214
+          ],
+          "after": [
+            15.323,
+            2.214
+          ],
+          "same": true
+        },
+        {
+          "entity": "Ledger / Explore: Review export",
+          "before": [
+            -37.499,
+            -12.046
+          ],
+          "after": [
+            -37.499,
+            -12.046
+          ],
+          "same": true
+        }
+      ]
+    },
+    "insertionScreen": {
+      "cameraUntouched": {
+        "nodes": 8,
+        "screenMoved": 0,
+        "note": "the camera refits when new content would fall outside the view, so screen positions may shift while world positions do not"
+      },
+      "afterOrbit": {
+        "nodes": 8,
+        "screenMoved": 0
+      }
+    },
+    "closestPair": {
+      "distancePx": 31
+    },
+    "lifecycle": {
+      "cycles": 25,
+      "contexts": 15,
+      "lost": 15,
+      "disposal": {
+        "before": {
+          "geometries": 8,
+          "textures": 0,
+          "programs": 4
+        },
+        "afterResources": {
+          "geometries": 0,
+          "textures": 0,
+          "programs": 0
+        },
+        "afterRenderer": {
+          "geometries": 0,
+          "textures": 0,
+          "programs": 0,
+          "contextLost": true
+        },
+        "errors": 0
+      },
+      "liveObjects": {
+        "geometries": 8,
+        "objects": 22
+      },
+      "heapKiB": 38
+    },
+    "motion": {
+      "resetFramesNormal": 16,
+      "resetFramesReduced": 1
+    },
+    "denseLabels": {
+      "placed": 7,
+      "hidden": 2,
+      "forced": 0
+    },
+    "orbit": {
+      "drawMs": {
+        "n": 121,
+        "p50": 0.5,
+        "p95": 1.4,
+        "max": 35
+      },
+      "intervalMs": {
+        "n": 120,
+        "p50": 33.33,
+        "p95": 33.4,
+        "max": 583.31
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "note": "software rendering unless --native was used"
+    },
+    "sustainedOrbit": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "seconds": 3.23,
+      "frames": 102,
+      "fps": 31.6,
+      "intervalMs": {
+        "n": 102,
+        "p50": 33.3,
+        "p95": 49.9,
+        "max": 599.94
+      },
+      "drawMs": {
+        "n": 103,
+        "p50": 1,
+        "p95": 1.4,
+        "max": 34.4
+      }
+    }
+  },
+  "checks": [
+    {
+      "scenario": "cold",
+      "name": "no Three.js request before the scene mounts",
+      "pass": true,
+      "detail": "0 requests"
+    },
+    {
+      "scenario": "cold",
+      "name": "scene reaches 3d mode",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "cold",
+      "name": "Three.js modules were requested on mount and served",
+      "pass": true,
+      "detail": "[\"three.module.min.js:200\",\"three.core.min.js:200\"]"
+    },
+    {
+      "scenario": "cold",
+      "name": "exactly one canvas and one WebGL context",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "cold",
+      "name": "a frame was drawn",
+      "pass": true,
+      "detail": "{\"frames\":1,\"rendererFrames\":1,\"calls\":14}"
+    },
+    {
+      "scenario": "cold",
+      "name": "no waiting label was forced into a conflict",
+      "pass": true,
+      "detail": "{\"placed\":4,\"hidden\":0,\"forced\":0}"
+    },
+    {
+      "scenario": "cold",
+      "name": "DPR capped at 1.5",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "scenario": "idle",
+      "name": "no frame drawn over 5 s of quiet (scene counter)",
+      "pass": true,
+      "detail": "1 -> 1"
+    },
+    {
+      "scenario": "idle",
+      "name": "no frame drawn over 5 s of quiet (renderer.info.render.frame)",
+      "pass": true,
+      "detail": "1 -> 1"
+    },
+    {
+      "scenario": "idle",
+      "name": "no animation frame requested over 5 s of quiet (page counter)",
+      "pass": true,
+      "detail": "1 -> 1"
+    },
+    {
+      "scenario": "idle",
+      "name": "a clock-only snapshot draws no frame",
+      "pass": true,
+      "detail": "1 -> 1"
+    },
+    {
+      "scenario": "idle",
+      "name": "a clock-only snapshot is counted as a quiet event",
+      "pass": true,
+      "detail": "0 -> 1"
+    },
+    {
+      "scenario": "idle",
+      "name": "an event after idle draws a frame",
+      "pass": true,
+      "detail": "1 -> 2"
+    },
+    {
+      "scenario": "idle",
+      "name": "and the scene goes idle again",
+      "pass": true,
+      "detail": "2 -> 2"
+    },
+    {
+      "scenario": "idle",
+      "name": "a change while hidden requests no animation frame",
+      "pass": true,
+      "detail": "rAF 2 -> 2"
+    },
+    {
+      "scenario": "idle",
+      "name": "the hidden change is recorded, not drawn",
+      "pass": true,
+      "detail": "hiddenSkips 0 -> 1"
+    },
+    {
+      "scenario": "idle",
+      "name": "returning to visible draws exactly one revalidating frame",
+      "pass": true,
+      "detail": "2 -> 3"
+    },
+    {
+      "scenario": "anchoring",
+      "name": "node fractions stay put when the scene rectangle goes from 1392 to 976 wide",
+      "pass": true,
+      "detail": "{\"wide\":{\"width\":1392,\"height\":696,\"out\":{\"Ledger\":{\"u\":0.16814131411564004,\"v\":0.5411297393439672,\"x\":234.05270924897093,\"y\":376.6262985834012},\"Reports\":{\"u\":0.7490288121155768,\"v\":0.4077399766871752,\"x\":1042.6481064648829,\"y\":283.78702377427396}},\"fit\":52.7135009765625},\"narrow\":{\"width\":976,\"height\":696,\"out\":{\"Ledger\":{\"u\":0.1593766538852474,\"v\":0.5295997308077623,\"x\":155.55161419200147,\"y\":368.6014126422026},\"Reports\":{\"u\":0.7610302564801797,\"v\":0.43219442619560927,\"x\":742.7655303246554,\"y\":300.80732063214407}},\"fit\":72.608642578125},\"du\":{\"Ledger\":0.0088,\"Reports\":0.012}}"
+    },
+    {
+      "scenario": "insertion",
+      "name": "layout: every surviving node keeps its exact world position after an unrelated insertion",
+      "pass": true,
+      "detail": "{\"nodes\":16,\"moved\":0}"
+    },
+    {
+      "scenario": "insertion",
+      "name": "browser: world positions are identical after the insertion",
+      "pass": true,
+      "detail": "{\"nodes\":8}"
+    },
+    {
+      "scenario": "insertion",
+      "name": "browser: after the operator moved the camera an insertion changes no node on screen",
+      "pass": true,
+      "detail": "{\"nodes\":8,\"moved\":0}"
+    },
+    {
+      "scenario": "interaction",
+      "name": "a click on a node selects it through the shared callback",
+      "pass": true,
+      "detail": "[{\"sessionId\":\"claude:export/α\",\"agentId\":null}]"
+    },
+    {
+      "scenario": "interaction",
+      "name": "the callback is the only channel: a click sends no action",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "interaction",
+      "name": "the selection is mirrored in the accessible list",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "interaction",
+      "name": "a drag orbits the camera",
+      "pass": true,
+      "detail": "{\"before\":[0,52],\"after\":[-42,66.40000000000003]}"
+    },
+    {
+      "scenario": "interaction",
+      "name": "a drag selects nothing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "interaction",
+      "name": "a 2 px wobble is still a click",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "interaction",
+      "name": "zoom is limited at both ends",
+      "pass": true,
+      "detail": "{\"max\":3.2,\"min\":0.55}"
+    },
+    {
+      "scenario": "interaction",
+      "name": "tilt and azimuth are limited",
+      "pass": true,
+      "detail": "{\"elev\":20,\"az\":-80}"
+    },
+    {
+      "scenario": "interaction",
+      "name": "Reset view restores the home camera",
+      "pass": true,
+      "detail": "{\"zoom\":1,\"az\":0,\"elev\":52}"
+    },
+    {
+      "scenario": "interaction",
+      "name": "between two circles closer than 44 px the nearer node wins",
+      "pass": true,
+      "detail": "{\"distance\":\"31.0\"}"
+    },
+    {
+      "scenario": "interaction",
+      "name": "arrow keys and Enter select through the same callback",
+      "pass": true,
+      "detail": "[{\"sessionId\":\"codex:export/β\",\"agentId\":null}]"
+    },
+    {
+      "scenario": "interaction",
+      "name": "the list exposes aria-activedescendant",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "interaction",
+      "name": "Home and End jump to the first and last node",
+      "pass": true,
+      "detail": "{\"first\":{\"sessionId\":\"dense-3\",\"agentId\":null},\"last\":{\"sessionId\":\"codex:export/β\",\"agentId\":null}}"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "every WebGL context created was released (context lost) after 15 mount/close cycles",
+      "pass": true,
+      "detail": "{\"contexts\":15,\"raf\":{\"requested\":15,\"fired\":15,\"cancelled\":15},\"lost\":15,\"canvases\":0}"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "no canvas, scene root, label or listener is left in the page",
+      "pass": true,
+      "detail": "{\"probe\":{\"contexts\":12,\"raf\":{\"requested\":12,\"fired\":12,\"cancelled\":12},\"lost\":12,\"canvases\":0},\"listeners\":{\"project\":0,\"discreet\":0,\"motion\":0},\"sceneNodes\":0,\"labels\":0}"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "every animation frame the scenes requested has fired or was never left pending after close",
+      "pass": true,
+      "detail": "{\"requested\":15,\"fired\":15,\"cancelled\":15}"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "renderer.info.memory returns to zero geometries, textures and programs once owned resources are disposed",
+      "pass": true,
+      "detail": "[{\"before\":{\"geometries\":8,\"textures\":0,\"programs\":4},\"afterResources\":{\"geometries\":0,\"textures\":0,\"programs\":0},\"afterRenderer\":{\"geometries\":0,\"textures\":0,\"programs\":0,\"contextLost\":true},\"errors\":0},{\"before\":{\"geometries\":8,\"textures\":0,\"programs\":4},\"afterResources\":{\"geometries\":0,\"textures\":0,\"programs\":0},\"afterRenderer\":{\"geometries\":0,\"textures\":0,\"programs\":0,\"contextLost\":true},\"errors\":0},{\"before\":{\"geometries\":8,\"textures\":0,\"programs\":4},\"afterResources\":{\"geometries\":0,\"textures\":0,\"programs\":0},\"afterRenderer\":{\"geometries\":0,\"textures\":0,\"programs\":0,\"contextLost\":true},\"errors\":0}]"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "the context is lost after the renderer is disposed",
+      "pass": true,
+      "detail": "[{\"geometries\":0,\"textures\":0,\"programs\":0,\"contextLost\":true},{\"geometries\":0,\"textures\":0,\"programs\":0,\"contextLost\":true},{\"geometries\":0,\"textures\":0,\"programs\":0,\"contextLost\":true}]"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "disposal raised no error",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "live GPU object counts are identical on every cycle (no growth after warm-up)",
+      "pass": true,
+      "detail": "{\"geometries\":8,\"objects\":22,\"textures\":0,\"programs\":[4,4,4,4,4,4,4,4,4,4,4,4]}"
+    },
+    {
+      "scenario": "lifecycle",
+      "name": "JS heap after ten more cycles stays within 4 MB of the warm baseline",
+      "pass": true,
+      "detail": "38 KiB growth (3.6 -> 3.6 MiB)"
+    },
+    {
+      "scenario": "races",
+      "name": "closing before the import resolves creates no renderer and no canvas",
+      "pass": true,
+      "detail": "{\"contexts\":0,\"raf\":{\"requested\":0,\"fired\":0,\"cancelled\":0},\"lost\":0,\"canvases\":0}"
+    },
+    {
+      "scenario": "races",
+      "name": "enter, leave, enter before the import resolves mounts only the last scene",
+      "pass": true,
+      "detail": "{\"contexts\":1,\"raf\":{\"requested\":1,\"fired\":1,\"cancelled\":0},\"lost\":0,\"canvases\":1}"
+    },
+    {
+      "scenario": "races",
+      "name": "an aborted outer signal closes the scene and close() is safe twice",
+      "pass": true,
+      "detail": "{\"r\":[\"ok\"],\"closed\":true,\"scenes\":0}"
+    },
+    {
+      "scenario": "races",
+      "name": "no context or canvas survives an abort during loading",
+      "pass": true,
+      "detail": "{\"contexts\":1,\"raf\":{\"requested\":1,\"fired\":1,\"cancelled\":1},\"lost\":1,\"canvases\":0}"
+    },
+    {
+      "scenario": "fallback",
+      "name": "a rejected module import shows the fallback list",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fallback",
+      "name": "the list is visible with a banner and an explicit Retry",
+      "pass": true,
+      "detail": "{\"rows\":4,\"listH\":638,\"status\":\"3D view unavailable · Showing the project list. Selecting, inspecting and exiting still work.\",\"retry\":true,\"canvases\":0}"
+    },
+    {
+      "scenario": "fallback",
+      "name": "selecting a list row calls the same selection callback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fallback",
+      "name": "Retry after the module recovers mounts one canvas and keeps the selection",
+      "pass": true,
+      "detail": "{\"canvases\":1,\"selected\":true,\"contexts\":1}"
+    },
+    {
+      "scenario": "fallback",
+      "name": "a renderer that cannot be created falls back and leaves no canvas",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fallback",
+      "name": "a partly constructed renderer releases its context and canvas",
+      "pass": true,
+      "detail": "{\"before\":{\"contexts\":2,\"raf\":{\"requested\":1,\"fired\":1,\"cancelled\":1},\"lost\":2,\"canvases\":0},\"half\":{\"contexts\":3,\"raf\":{\"requested\":1,\"fired\":1,\"cancelled\":1},\"lost\":3,\"canvases\":0}}"
+    },
+    {
+      "scenario": "fallback",
+      "name": "the context loss was injected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fallback",
+      "name": "context loss shows the fallback, keeps the HTML selection and removes the canvas",
+      "pass": true,
+      "detail": "{\"mode\":\"fallback\",\"selected\":true,\"canvases\":0,\"status\":\"3D view lost its graphics context · Showing the project list. Retry to draw it again.\",\"contextLoss\":1}"
+    },
+    {
+      "scenario": "fallback",
+      "name": "Retry draws again with exactly one canvas and the selection intact",
+      "pass": true,
+      "detail": "{\"canvases\":1,\"probe\":{\"contexts\":5,\"raf\":{\"requested\":4,\"fired\":4,\"cancelled\":2},\"lost\":4,\"canvases\":1},\"selected\":true,\"frames\":3}"
+    },
+    {
+      "scenario": "discreet",
+      "name": "control: the normal display does contain project and session names",
+      "pass": true,
+      "detail": "[\"Ledger\",\"Reports\",\"Imports\",\"Invoices\",\"Export\",\"Check totals\",\"export.mjs\",\"Review export\",\"Synthetic\"]"
+    },
+    {
+      "scenario": "discreet",
+      "name": "discreet display removes names, tools and identifiers from text, attributes and accessible names",
+      "pass": true,
+      "detail": "{\"leaks\":[],\"sample\":[\"Project 1, Session 1, working\",\"Project 1, 4 idle sessions, folded. Press Enter to expand\",\"Project 2, Session 2, working\"]}"
+    },
+    {
+      "scenario": "discreet",
+      "name": "opting out restores the names",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "scenario": "motion",
+      "name": "the reset animation takes several frames normally and a single frame with reduced motion",
+      "pass": true,
+      "detail": "{\"normal\":16,\"reduced\":1}"
+    },
+    {
+      "scenario": "dense",
+      "name": "dense scene: waiting label kept, others suppressed by priority",
+      "pass": true,
+      "detail": "{\"placed\":7,\"hidden\":2,\"forced\":0}"
+    },
+    {
+      "scenario": "dense",
+      "name": "orbit samples were captured (timing reported, not gated on software rendering)",
+      "pass": true,
+      "detail": "{\"n\":121,\"p50\":0.5,\"p95\":1.4,\"max\":35}"
+    },
+    {
+      "scenario": "sustained",
+      "name": "a sustained orbit of the dense scene drew a frame per animation frame",
+      "pass": true,
+      "detail": "{\"renderer\":\"ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\",\"seconds\":3.23,\"frames\":102,\"fps\":31.6,\"intervalMs\":{\"n\":102,\"p50\":33.3,\"p95\":49.9,\"max\":599.94},\"drawMs\":{\"n\":103,\"p50\":1,\"p95\":1.4,\"max\":34.4}}"
+    },
+    {
+      "scenario": "sizes",
+      "name": "sparse-1024.png: the waiting label stays placed at 1024x768",
+      "pass": true,
+      "detail": "{\"placed\":7,\"hidden\":2,\"forced\":0}"
+    },
+    {
+      "scenario": "sizes",
+      "name": "narrow-390.png: the waiting label stays placed at 390x844",
+      "pass": true,
+      "detail": "{\"placed\":4,\"hidden\":5,\"forced\":0}"
+    }
+  ],
+  "consoleLines": [
+    "log: THREE.WebGLRenderer: Context Lost."
+  ],
+  "requestsServed": 225,
+  "vendorRequests": 28
+}

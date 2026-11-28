@@ -1,6 +1,7 @@
 import { h, setAttr, setData, show, txt } from './dom.mjs';
 import { ctxLevel, fmtInt, fmtPct, fmtTok, plural, provLetter, provName, shortModel, shortReason, toolIcon } from './format.mjs';
 import { headline } from '../data/selectors.mjs';
+import { entityKey } from './entity-key.mjs';
 import { glyph, icon, provBadge, statusTag } from './status.mjs';
 
 // Sessions the network draws and the vitals count: open ones, plus ended ones for 15 minutes (or while a session
@@ -13,6 +14,48 @@ export function shownSessions(sessions, now) {
   return sessions.filter(x => x.status !== 'ended' || live.some(l => l.startedBy === x.id) || (x.endedAt && t - x.endedAt < 15 * 60_000));
 }
 
+/** List the public sessions and running agents in scope, with stable aliases while discreet. */
+export function createSessionList({ store, actions, onSelect }) {
+  const list = h('ul', { class: 'cp-pre-list', 'aria-label': 'Live sessions and running subagents' });
+  const aliases = { Session: new Map(), Agent: new Map() };
+  function row(selection, state, project, title, agent = false) {
+    const key = entityKey(selection.sessionId, selection.agentId);
+    const masked = actions.discreet.get();
+    if (masked) {
+      const kind = agent ? 'Agent' : 'Session';
+      const numbers = aliases[kind];
+      if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
+      project = '';
+      title = `${kind} ${numbers.get(key)}`;
+    }
+    const tag = statusTag();
+    tag.set(state);
+    const select = h('button', { type: 'button', class: 'cp-pre-row', 'aria-label': `${project} ${title}`.trim(),
+      'data-entity-key': masked ? null : key, on: { click: () => onSelect(selection, select) } },
+    tag.el, h('span', { class: 'label', text: project }), h('span', { class: 'cp-pre-title', text: title }));
+    return h('li', { class: agent ? 'cp-pre-sub' : null }, select);
+  }
+  function draw() {
+    const project = actions.getProject();
+    const sessions = store.getSnapshot()?.sessions ?? [];
+    const live = sessions.filter(session => session.status !== 'ended' && (!project || session.project === project));
+    const rows = [];
+    for (const session of live) {
+      rows.push(row({ sessionId: session.id, agentId: null }, viewStatus(session),
+        session.project || '', session.title || session.name || 'Untitled session'));
+      for (const agent of (session.subagents || []).filter(a => a.state === 'running')) {
+        rows.push(row({ sessionId: session.id, agentId: agent.id }, 'running', '', agent.description || agent.type || 'Subagent', true));
+      }
+    }
+    list.replaceChildren(...rows);
+    show(list, rows.length > 0);
+  }
+  const stop = store.subscribe(event => { if (event.type === 'snapshot') draw(); });
+  const stopProject = actions.subscribeProject(draw);
+  const stopDiscreet = actions.discreet.subscribe(draw);
+  draw();
+  return { el: list, close() { stop(); stopProject(); stopDiscreet(); list.remove(); } };
+}
 
 function contextMeter(label = 'Context') {
   const fill = h('span', { class: 'bar-f' });
@@ -98,6 +141,19 @@ function windowLink(compact = false) {
     }
     setAttr(el, 'href', href);
     show(el, !!href);
+  } };
+}
+/** The "Inspect" control of a card or row: opens the shared inspector for this session. Null when the page has none. */
+function inspectButton(api, compact = false) {
+  if (!api.inspect) return { el: null, set() {} };
+  let current = null;
+  const el = h('button', { class: 'chip inspect-btn', type: 'button' }, icon('search'), compact ? null : h('span', { text: 'Inspect' }));
+  el.addEventListener('click', e => { e.stopPropagation(); if (current) api.inspect({ sessionId: current.id, agentId: null }, el); });
+  return { el, set(x) {
+    current = x;
+    const name = x.title || x.name || 'Untitled session';
+    setAttr(el, 'aria-label', 'Inspect ' + name);
+    setAttr(el, 'data-tip', 'Inspect');
   } };
 }
 export function createSessionComponents({ lifetime, motion, now, timing, effects }) {
@@ -205,7 +261,7 @@ export function createSessionComponents({ lifetime, motion, now, timing, effects
     const title = h('h3', { class: 'card-title trunc', 'data-tip-if': 'trunc' });
     const mChip = h('span', { class: 'chip' });
     const bName = h('span', { class: 'trunc' }), bChip = h('span', { class: 'card-br mono', 'data-tip-if': 'trunc' }, icon('branch'), bName);
-    const prov = provBadge();
+    const prov = provBadge(), inspect = inspectButton(api);
     const sbyName = h('span', { class: 'trunc' });
     const sby = h('button', { class: 'chip', type: 'button', hidden: true }, icon('agent'), h('span', { text: 'Started by' }), sbyName);
     const ageEl = h('span'), toolsEl = h('span');
@@ -214,7 +270,7 @@ export function createSessionComponents({ lifetime, motion, now, timing, effects
     const el = h('article', { class: 'card cutbox', tabindex: '-1' },
       h('div', { class: 'card-scan', 'aria-hidden': 'true' }), h('div', { class: 'card-glow', 'aria-hidden': 'true' }),
       h('header', { class: 'card-h' }, h('div', { class: 'card-proj' }, proj.el, bChip), h('span', { class: 'card-meta mono' }, ageEl, ' · ', toolsEl), tag.el),
-      h('div', { class: 'card-tr' }, title, h('div', { class: 'card-chips' }, mChip, prov.el, sby, openWindow.el)),
+      h('div', { class: 'card-tr' }, title, h('div', { class: 'card-chips' }, mChip, prov.el, sby, openWindow.el, inspect.el)),
       sumEl, work.el, nowRow.el, h('div', { class: 'meters' }, tok.el, cr.el, ctx.el), activity.el, subs.el);
     let st = null, sbyId = null;
     sby.addEventListener('click', e => { e.stopPropagation(); if (sbyId) api.jump?.(sbyId); });
@@ -223,9 +279,9 @@ export function createSessionComponents({ lifetime, motion, now, timing, effects
       update(x, c = {}) {
         const vs = viewStatus(x);
         if (st && st !== vs) glitch(el);
-        st = vs; setData(el, 's', st); setData(el, 'id', x.id);
+        st = vs; setData(el, 's', st); setData(el, 'id', x.id); setData(el, 'entityKey', entityKey(x.id));
         proj.set(x.project); setData(el, 'project', x.project);
-        openWindow.set(x);
+        openWindow.set(x); inspect.set(x);
         tag.set(vs);
         const t = x.title || x.name || 'Untitled session';
         txt(title, t); title.dataset.tip = t;
@@ -254,13 +310,13 @@ export function createSessionComponents({ lifetime, motion, now, timing, effects
   function compactRow(api = {}) {
     const tag = statusTag();
     const p = projectLabel(api, 'cr-p label trunc'), t = h('span', { class: 'cr-t trunc', 'data-tip-if': 'trunc' });
-    const openWindow = windowLink(true);
+    const openWindow = windowLink(true), inspect = inspectButton(api, true);
     const m = h('span', { class: 'cr-m trunc' }), v = h('span', { class: 'cr-v' });
     const wIc = h('span', { style: 'display:flex' }), wT = h('span', { class: 'trunc', 'data-tip-if': 'trunc' }), wTm = h('span', { class: 'mono' });
     const k = h('span', { class: 'cr-k' }), c = h('span', { class: 'cr-c' }), n = h('span', { class: 'cr-n' });
     const work = workLabel();
     const el = h('div', { class: 'crow', tabindex: '-1' }, tag.el, p.el,
-      h('span', { class: 'cr-title' }, h('span', { class: 'cr-title-line' }, openWindow.el, t), work.el),
+      h('span', { class: 'cr-title' }, h('span', { class: 'cr-title-line' }, openWindow.el, inspect.el, t), work.el),
       m, v, h('span', { class: 'cr-w' }, wIc, wT, wTm), k, c, n);
     let icName = null, st = null;
     el.addEventListener('click', () => api.open?.(el.dataset.id));
@@ -269,10 +325,10 @@ export function createSessionComponents({ lifetime, motion, now, timing, effects
       update(x, cxt = {}) {
         const vs = viewStatus(x);
         if (st && st !== vs) glitch(el);
-        st = vs; setData(el, 's', vs); setData(el, 'id', x.id);
+        st = vs; setData(el, 's', vs); setData(el, 'id', x.id); setData(el, 'entityKey', entityKey(x.id));
         tag.set(vs);
         p.set(x.project); setData(el, 'project', x.project);
-        openWindow.set(x);
+        openWindow.set(x); inspect.set(x);
         const title = x.title || x.name || 'Untitled session'; txt(t, title); t.dataset.tip = title;
         setData(el, 'work', work.set(x.work, cxt.plans) ? '1' : null);
         txt(m, (x.agent === 'codex' ? 'Codex · ' : '') + shortModel(x.model)); setData(m, 'tip', x.modelRaw);

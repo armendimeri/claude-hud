@@ -4,6 +4,7 @@ import { BASE_HEADERS, PAGE_HEADERS, hostAllowed, readJsonBody, writeAllowed } f
 import { createSse } from './sse.mjs';
 
 const EVENT_BODY_MAX = 256 << 10;
+const OPERATOR_PREFIX = '/api/operator';
 const USAGE_BODY_MAX = 16 << 10;
 
 function send(res, code, body, headers = {}) {
@@ -21,8 +22,11 @@ function sendJson(res, obj) {
  * @param {{ host: string, port: number, hostname: string, lan: boolean }} options.config
  * @param {import('../contract/snapshot.mjs').HudSource} options.source
  * @param {{ ingestHook(value: unknown): Promise<[number, string]>, reportUsage?(value: unknown): Promise<[number, string]> }} options.writer
+ * @param {{ handle(req: http.IncomingMessage, res: http.ServerResponse, context: { port: number }): Promise<void> }|null} [options.operator]
+ *   Optional private operator routes under /api/operator (operator-cockpit P8). They apply their own loopback, origin
+ *   and pairing checks; without them every /api/operator path is 404.
  */
-export function createHttpServer({ config, source, writer }) {
+export function createHttpServer({ config, source, writer, operator = null }) {
   const stream = createSse(source);
   const server = http.createServer(handle);
   let starting;
@@ -33,6 +37,11 @@ export function createHttpServer({ config, source, writer }) {
       const port = req.socket.localPort;
       if (!hostAllowed(req.headers.host || '', { port, hostname: config.hostname, lan: config.lan })) {
         return send(res, 403, 'Forbidden\n');
+      }
+      // Private routes come before public matching. They refuse LAN peers and LAN host names themselves.
+      if (req.url === OPERATOR_PREFIX || req.url.startsWith(OPERATOR_PREFIX + '/') || req.url.startsWith(OPERATOR_PREFIX + '?')) {
+        if (!operator) return send(res, 404, 'Not found\n');
+        return await operator.handle(req, res, { port });
       }
       const read = req.method === 'GET' || req.method === 'HEAD';
       // Match asset paths before URL parsing can normalize dot segments or backslashes.

@@ -109,3 +109,13 @@ button.warning-text:hover { text-decoration: underline; }
 .tk-collapse .ic { transition: transform .2s var(--ease); }
 .p-tick.collapsed .tk-collapse .ic { transform: rotate(180deg); }
 
+
+/* Cockpit entry in the toolbar, and the masked shell shown instead of the dashboard while discreet display is on. */
+.cockpit-open { height: 32px; padding: 0 12px; gap: 6px; }
+.cockpit-open .ic { width: 16px; height: 16px; }
+@media (max-width: 599px) { .cockpit-open span { display: none; } .cockpit-open { min-width: 32px; padding: 0 8px; } }
+.masked { position: relative; z-index: 1; display: grid; gap: 16px; align-content: center; justify-items: start; max-width: 560px; min-height: 60vh; margin: 0 auto; padding: 24px 16px; }
+.masked h1 { margin: 0; font: 600 18px/24px var(--f-label); letter-spacing: .14em; text-transform: uppercase; color: var(--ink); }
+.masked p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 20px; }
+.masked-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.masked .btn { height: 44px; }

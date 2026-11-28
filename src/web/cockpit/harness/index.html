@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cockpit scene harness</title>
+<link rel="stylesheet" href="/src/web/styles/foundation.css">
+<link rel="stylesheet" href="/src/web/cockpit/scene.css">
+<style>
+  /* Isolated harness (P2). Not served by the HUD; P7 owns asset registration. */
+  html, body { height: 100%; overflow: hidden; }
+  #host { position: absolute; left: 24px; top: 136px; width: 1392px; height: 696px; border: 1px solid var(--line); background: radial-gradient(ellipse 80% 70% at 50% 42%, #0a1522 0%, var(--void) 100%); }
+  #bar { position: absolute; left: 24px; top: 16px; right: 24px; height: 56px; display: flex; align-items: center; gap: 16px; }
+  #bar .label { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div id="bar"><span class="label">Cockpit scene harness</span><span id="readout" class="mono" aria-live="off"></span></div>
+<div id="host"></div>
+<script>
+  // Installed before any module so every WebGL context and animation frame request of the page is counted.
+  (() => {
+    const contexts = [];
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+      const ctx = getContext.call(this, type, ...rest);
+      if (ctx && /webgl/.test(type) && !contexts.some(c => c.gl === ctx)) contexts.push({ gl: ctx, type, canvas: this, at: performance.now() });
+      return ctx;
+    };
+    const raf = { requested: 0, fired: 0, cancelled: 0 };
+    const request = window.requestAnimationFrame.bind(window), cancel = window.cancelAnimationFrame.bind(window);
+    window.requestAnimationFrame = fn => { raf.requested++; return request(t => { raf.fired++; fn(t); }); };
+    window.cancelAnimationFrame = id => { raf.cancelled++; cancel(id); };
+    window.__probe = { contexts, raf };
+  })();
+</script>
+<script type="module" src="/src/web/cockpit/harness/harness.mjs"></script>
+</body>
+</html>

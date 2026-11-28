@@ -1,0 +1,12 @@
+{
+  "name": "three",
+  "version": "0.180.0",
+  "license": "MIT",
+  "source": "npm registry tarball three-0.180.0.tgz (npm pack three@0.180.0), files under package/build/ and package/LICENSE",
+  "files": {
+    "three.module.min.js": { "bytes": 338908, "sha256": "e2b5ee6bccd38fd6d8a2428546b83c5f2426d84b152ef82be8055556e3b40eb6", "imports": ["./three.core.min.js"] },
+    "three.core.min.js": { "bytes": 381124, "sha256": "61ba0df005b05991361d040d8ff670e1aadfd0ce7aeebd1fdb0725957a8957de", "imports": [] },
+    "LICENSE": { "bytes": 1081, "sha256": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601", "imports": [] }
+  },
+  "usage": "Imported on demand by src/web/cockpit/scene.mjs as ../vendor/three/three.module.min.js. Not part of the initial entry graph."
+}

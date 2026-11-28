@@ -1,0 +1,63 @@
+/* Cockpit 3D scene (P2). Uses the foundation.css tokens. Only the 11, 13, 15 and 18 px type sizes. */
+.cockpit-scene { position: relative; width: 100%; height: 100%; min-height: 240px; overflow: hidden; color: var(--ink, #d6f3ff); }
+.cs-canvas { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.cockpit-scene[data-mode="3d"] .cs-canvas:active { cursor: grabbing; }
+.cockpit-scene[data-hover="1"] .cs-canvas { cursor: pointer; }
+.cs-gl { display: block; position: absolute; left: 0; top: 0; }
+.cs-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+/* Labels: a dark plate, title over status. Plain HTML text. */
+.cs-label { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; padding: 1px 4px 1px 6px; border-left: 2px solid var(--sc, var(--arc)); background: rgba(8, 17, 28, .88); font: 600 13px/16px var(--f-body, system-ui); will-change: transform; }
+.cs-label[hidden], .cs-group[hidden] { display: none; }
+.cs-label[data-c="alert"] { --sc: var(--alert); } .cs-label[data-c="amber"] { --sc: var(--amber); } .cs-label[data-c="ok"] { --sc: var(--ok); }
+.cs-label[data-c="agent"] { --sc: var(--agent); } .cs-label[data-c="arc"] { --sc: var(--arc); } .cs-label[data-c="dim"] { --sc: var(--ink-3); }
+.cs-label[data-s="needs-you"] { border-left-width: 4px; box-shadow: 0 0 0 1px var(--alert); }
+.cs-label-title { color: var(--ink); }
+.cs-label-row { display: flex; white-space: nowrap; align-items: center; gap: 4px; color: var(--sc); }
+.cs-label-state { color: var(--sc); }
+.cs-label-time { color: var(--ink-2); font-size: 11px; line-height: 16px; margin-left: auto; }
+.cs-label-icon, .cs-row-icon { display: inline-flex; color: var(--sc); }
+.cs-label.is-hover { background: rgba(16, 34, 52, .96); }
+.cs-label.is-selected { box-shadow: 0 0 0 1px var(--arc); }
+.cs-label.is-selected .cs-label-title { text-decoration: underline; text-decoration-color: var(--arc); text-underline-offset: 3px; text-decoration-thickness: 2px; }
+.cs-label.is-focus { outline: 2px solid var(--arc); outline-offset: 2px; }
+.cs-group { position: absolute; left: 0; top: 0; display: flex; justify-content: center; gap: 8px; height: 18px; font: 600 11px/18px var(--f-label, system-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.cs-group-counts { color: var(--ink-3); }
+.cs-badge { position: absolute; left: 0; top: 0; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--arc); text-shadow: 0 0 4px #000; }
+.cs-note { position: absolute; left: 12px; bottom: 12px; color: var(--ink-2); background: rgba(8, 17, 28, .88); padding: 2px 8px; }
+.cs-empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--ink-2); font-size: 13px; pointer-events: none; }
+.cs-empty[hidden] { display: none; }
+
+/* Buttons and the status banner: 44 px targets. */
+.cs-btn { min-height: 44px; min-width: 44px; padding: 0 16px; border: 1px solid var(--line, rgba(41, 230, 255, .22)); background: rgba(8, 17, 28, .94); color: var(--ink); font: 600 11px/16px var(--f-label, system-ui); letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+.cs-btn:hover { border-color: var(--arc); color: var(--arc); }
+.cs-btn[hidden] { display: none; }
+.cs-reset { position: absolute; right: 12px; bottom: 12px; }
+.cs-status { position: absolute; left: 0; right: 0; top: 0; z-index: 2; display: flex; align-items: center; gap: 16px; min-height: 48px; padding: 2px 12px; background: rgba(8, 17, 28, .94); border: 1px solid var(--line, rgba(41, 230, 255, .22)); font: 400 13px/20px var(--f-body, system-ui); color: var(--ink-2); }
+.cs-status[hidden] { display: none; }
+.cs-status-text { flex: 1; min-width: 0; }
+
+/* The list: the keyboard and screen reader path in 3D mode, the visible fallback otherwise. */
+.cs-list { position: absolute; left: 0; right: 0; bottom: 0; top: 0; overflow: auto; background: transparent; }
+.cockpit-scene:not([data-mode="3d"]) .cs-list { top: 56px; padding: 0 0 8px; }
+.cockpit-scene[data-mode="3d"] .cs-list { width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cs-row { position: relative; display: grid; grid-template-columns: 14px 120px minmax(0, 1fr) minmax(0, 220px) 56px; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid var(--arc-06, rgba(41, 230, 255, .06)); cursor: pointer; color: var(--ink); font: 600 13px/16px var(--f-body, system-ui); }
+.cs-row[data-c="alert"] { --sc: var(--alert); } .cs-row[data-c="amber"] { --sc: var(--amber); } .cs-row[data-c="ok"] { --sc: var(--ok); }
+.cs-row[data-c="agent"] { --sc: var(--agent); } .cs-row[data-c="arc"] { --sc: var(--arc); } .cs-row[data-c="dim"] { --sc: var(--ink-3); }
+.cs-row-state { color: var(--sc); }
+.cs-row-tool, .cs-row-time { color: var(--ink-2); font-size: 11px; }
+.cs-row-time { text-align: right; }
+.cs-row:hover { background: var(--arc-06, rgba(41, 230, 255, .06)); }
+.cs-row.is-selected { outline: 2px solid var(--arc); outline-offset: -2px; }
+.cs-row.is-focus { box-shadow: inset 4px 0 0 var(--arc); }
+.cs-row-head { display: flex; align-items: center; min-height: 32px; padding: 0 16px; color: var(--ink-2); background: var(--arc-06, rgba(41, 230, 255, .06)); }
+.cs-list:focus-visible { outline: none; }
+.cockpit-scene:not([data-mode="3d"]) .cs-list:focus-visible { outline: 2px solid var(--arc); outline-offset: -2px; }
+
+/* While reconnecting the picture is last known state: dimmed and desaturated, as in the dashboard. */
+.cockpit-scene[data-connection="reconnecting"] .cs-canvas, .cockpit-scene[data-connection="reconnecting"] .cs-labels, .cockpit-scene[data-connection="reconnecting"] .cs-list { opacity: .5; filter: grayscale(.6); }
+
+/* Reduced motion: no animation in the scene. The spinning glyph is a static open ring and the word carries the state. */
+@media (prefers-reduced-motion: reduce) { .cockpit-scene .gl.spin { animation: none; } }
+.rm .cockpit-scene .gl.spin { animation: none; }
+@media (max-width: 600px) { .cs-row { grid-template-columns: 14px 96px minmax(0, 1fr) 56px; } .cs-row-tool { display: none; } }

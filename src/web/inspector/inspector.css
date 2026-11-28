@@ -1,0 +1,59 @@
+/* Shared session inspector (P3). Needs the foundation tokens already loaded by hud.css. Type sizes 11/13/15/18 only. */
+.insp { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; padding: 12px 20px 20px; overflow-y: auto; background: var(--deep); color: var(--ink); border-left: 1px solid var(--line); font: 400 13px/20px var(--f-body); }
+.insp-bar { display: flex; align-items: center; min-height: 44px; flex: none; }
+.insp-spacer { flex: 1; }
+.insp-close, .insp-back { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 22px; color: var(--ink-2); background: transparent; }
+.insp-close:hover, .insp-back:hover { color: var(--ink); border-color: var(--arc-35); }
+.insp-close .ic { width: 16px; height: 16px; }
+.insp-back { display: none; padding: 0 16px; font: 600 13px/16px var(--f-label); letter-spacing: .14em; text-transform: uppercase; }
+.insp[data-mode=sheet] .insp-back { display: inline-flex; }
+.insp[data-mode=sheet] { padding: 12px; border-left: 0; border-top: 1px solid var(--arc-35); }
+
+.insp-card { display: flex; flex-direction: column; gap: 8px; flex: none; }
+.insp-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.insp-title { margin: 0; font: 600 15px/20px var(--f-body); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.insp-title:focus-visible { outline: 2px solid var(--arc); outline-offset: 2px; }
+.insp-meta, .insp-vitals { margin: 0; font-size: 11px; line-height: 16px; color: var(--ink-2); overflow-wrap: anywhere; }
+.insp-now { margin: 0; font: 400 13px/20px var(--f-mono); color: var(--ink); overflow-wrap: anywhere; }
+
+.insp-note { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.insp-warn { color: var(--amber); }
+.insp-conn { color: var(--amber); }
+.insp-gate { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; flex: none; }
+
+.insp-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--arc-35); color: var(--arc); background: var(--arc-06); font: 600 13px/16px var(--f-label); letter-spacing: .14em; text-transform: uppercase; }
+.insp-btn:hover:not(:disabled) { background: var(--arc-15); }
+.insp-btn:disabled { color: var(--ink-3); border-color: var(--line); background: transparent; cursor: not-allowed; }
+
+.insp-conv { display: flex; flex-direction: column; gap: 8px; min-height: 120px; flex: 1 1 200px; }
+.insp-state { color: var(--ink-2); }
+.insp-state[data-state=error] { color: var(--alert); }
+.insp-state[data-state=partial] { color: var(--amber); }
+.insp-older { align-self: flex-start; }
+.insp-log { position: relative; flex: 1; min-height: 80px; margin: 0; padding: 0; list-style: none; overflow-y: auto; overflow-anchor: none; border: 1px solid var(--line); }
+.insp-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.insp-row[data-kind=user] { border-left: 2px solid var(--arc); }
+.insp-row[data-kind=tool] { color: var(--ink-2); font-family: var(--f-mono); font-size: 11px; line-height: 16px; }
+.insp-who { color: var(--ink-3); }
+.insp-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.insp-trunc { font-size: 11px; line-height: 16px; color: var(--ink-3); }
+
+.insp-interaction { display: flex; flex-direction: column; gap: 12px; flex: none; }
+.insp-req { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line); }
+.insp-req[data-kind=question], .insp-req[data-kind=permission] { border-color: color-mix(in srgb, var(--alert) 55%, transparent); }
+.insp-req-text { margin: 0; font: 600 15px/20px var(--f-body); overflow-wrap: anywhere; }
+.insp-ask { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.insp-ask legend { padding: 0; margin-bottom: 8px; color: var(--ink-2); }
+.insp-choice { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; overflow-wrap: anywhere; }
+.insp-choice:has(input:checked) { border: 2px solid var(--arc); padding: 0 11px; }
+.insp-choice input { width: 16px; height: 16px; accent-color: var(--arc); }
+.insp-input { width: 100%; min-height: 64px; padding: 8px 12px; resize: vertical; border: 1px solid var(--line); background: transparent; color: var(--ink); font: 400 13px/20px var(--f-body); overflow-wrap: anywhere; }
+.insp-input:disabled { color: var(--ink-3); }
+.insp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.insp-send { align-self: flex-start; }
+.insp-deliveries { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.insp-delivery { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink-2); overflow-wrap: anywhere; }
+.insp-delivery[data-status=acknowledged] .label { color: var(--ok); }
+.insp-delivery[data-status=rejected] .label { color: var(--alert); }
+.insp-delivery[data-status=delivery-unknown] .label, .insp-delivery[data-status=pending] .label { color: var(--amber); }
+@media (prefers-reduced-motion: reduce) { .insp * { transition: none !important; animation: none !important; } }

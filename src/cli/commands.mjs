@@ -8,7 +8,7 @@ async function serve(config, demoMode) {
   ]);
   const { lan, host, port } = config;
   const runtime = demoMode ? runtimeModule.createDemoRuntime(config, demoMode) : runtimeModule.createLiveRuntime(config);
-  const http = createHttpServer({ config, source: runtime.source, writer: runtime.writer });
+  const http = createHttpServer({ config, source: runtime.source, writer: runtime.writer, operator: runtime.operator });
   const close = () => Promise.all([http.close(), runtime.close()]);
   process.on('uncaughtException', error => console.error('error:', error));
   process.on('unhandledRejection', error => console.error('error:', error));
@@ -49,6 +49,8 @@ function helpText(PORT) {
   node hud.mjs uninstall       remove only the HUD's hooks from those files (HUD_NO_AUTOINSTALL=1 stops the re-adding)
   node hud.mjs autostart on|off  start the HUD at logon (Task Scheduler, no window), or stop doing so
                                (add --lan to autostart on to start it open to the network)
+  node hud.mjs operator pair    print a one-time code (5 minutes) that pairs a browser on this PC with the running HUD
+                               for private history (add --port=<n> for a HUD on another port)
   node hud.mjs lint [repo] [--json]  check a repository against the agent workflow standard
   node hud.mjs selftest        check the model normaliser, redaction and plan parser
   node hud-hook.mjs             the silent hook forwarder (node hud.mjs hook still works)
@@ -72,6 +74,8 @@ export async function runCommand(argv, args) {
       return (await import('../platform/windows-autostart.mjs')).autostart(argument, readConfig({ argv }));
     case 'lint':
       return (await import('./lint.mjs')).lint(args.slice(1));
+    case 'operator':
+      return (await import('../operator/access.mjs')).operatorCommand(args.slice(1), readConfig({ argv }));
     case 'selftest':
       return (await import('./selftest.mjs')).selftest(readConfig({ argv }));
     case 'help':

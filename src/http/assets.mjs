@@ -5,6 +5,7 @@ export const ASSET_PREFIX = '/assets/';
 
 const SOURCE_ROOT = new URL('../', import.meta.url);
 const JS = 'text/javascript; charset=utf-8';
+const CSS = 'text/css; charset=utf-8';
 const TYPES = new Map([
   [ASSET_PREFIX + 'entry.mjs', JS],
   [ASSET_PREFIX + 'design.mjs', JS],
@@ -50,6 +51,27 @@ const TYPES = new Map([
   [ASSET_PREFIX + 'styles/motion.css', 'text/css; charset=utf-8'],
   [ASSET_PREFIX + 'styles/kiosk.css', 'text/css; charset=utf-8'],
   [ASSET_PREFIX + 'styles/gallery.css', 'text/css; charset=utf-8'],
+  // Cockpit route (operator-cockpit P7). The dashboard's first request graph never reaches any of these: they are
+  // fetched by dynamic import() or <link> only when the cockpit or an inspector is opened.
+  [ASSET_PREFIX + 'components/entity-key.mjs', JS],
+  [ASSET_PREFIX + 'components/discreet.mjs', JS],
+  [ASSET_PREFIX + 'components/route.mjs', JS],
+  [ASSET_PREFIX + 'components/page-effects.mjs', JS],
+  [ASSET_PREFIX + 'components/inspector-slot.mjs', JS],
+  [ASSET_PREFIX + 'views/cockpit-page.mjs', JS],
+  [ASSET_PREFIX + 'styles/cockpit.css', CSS],
+  [ASSET_PREFIX + 'cockpit/scene.mjs', JS],
+  [ASSET_PREFIX + 'cockpit/layout.mjs', JS],
+  [ASSET_PREFIX + 'cockpit/projection.mjs', JS],
+  [ASSET_PREFIX + 'cockpit/scene.css', CSS],
+  [ASSET_PREFIX + 'inspector/panel.mjs', JS],
+  [ASSET_PREFIX + 'inspector/state.mjs', JS],
+  [ASSET_PREFIX + 'inspector/inspector.css', CSS],
+  // Three.js 0.180.0 (MIT), two native modules plus its licence. Not listed: src/web/cockpit/harness/ and
+  // src/web/inspector/harness/ (test pages, kept out of the allowlist and the archive).
+  [ASSET_PREFIX + 'vendor/three/three.module.min.js', JS],
+  [ASSET_PREFIX + 'vendor/three/three.core.min.js', JS],
+  [ASSET_PREFIX + 'vendor/three/LICENSE', 'text/plain; charset=utf-8'],
 ]);
 
 export async function readPublicAsset(target) {

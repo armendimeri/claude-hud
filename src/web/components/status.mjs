@@ -25,6 +25,10 @@ export const ICONS = {
   chevron: [['path', { d: 'M7 10l5 5 5-5' }]],
   clock: [['circle', { cx: 12, cy: 12, r: 8.5 }], ['path', { d: 'M12 7.5V12l3 2' }]],
   slash: [['path', { d: 'M5 5l14 14' }]],
+  cockpit: [['path', { d: 'M12 3l8 4.5v9L12 21l-8-4.5v-9z' }], ['path', { d: 'M4 7.5l8 4.5 8-4.5M12 12v9' }]],
+  eye: [['path', { d: 'M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z' }], ['circle', { cx: 12, cy: 12, r: 3 }]],
+  'eye-off': [['path', { d: 'M3 3l18 18' }], ['path', { d: 'M10.6 5.7A9 9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.9 3.7M6.4 7.6A15 15 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 3.4-.7M9.9 9.9a3 3 0 0 0 4.2 4.2' }]],
+  back: [['path', { d: 'M10 6l-6 6 6 6M4 12h16' }]],
 };
 export function icon(name, cls) {
   const svg = s('svg', { class: 'ic' + (cls ? ' ' + cls : ''), viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' });
